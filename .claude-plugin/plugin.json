@@ -11,5 +11,8 @@
   "license": "MIT",
   "keywords": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"],
   "skills": "./skills/",
-  "agents": "./agents/"
+  "agents": [
+    "./agents/spec-writer.md",
+    "./agents/tdd-implementer.md"
+  ]
 }
