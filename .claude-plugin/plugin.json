@@ -10,6 +10,7 @@
   "repository": "https://github.com/skdkfk8758/vibespec",
   "license": "MIT",
   "keywords": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"],
+  "mcpServers": "./.mcp.json",
   "skills": "./skills/",
   "agents": [
     "./agents/spec-writer.md",

@@ -54,11 +54,26 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      rm -rf {old_installPath}
      ```
 
-6. **결과 보고**
+6. **MCP 설정 경로 갱신**
+   - 프로젝트별 `.mcp.json`에 이전 캐시 경로가 하드코딩되어 있으면 MCP 연결이 깨집니다.
+   - 아래 위치의 `.mcp.json` 파일에서 이전 경로를 새 경로로 치환하세요:
+     1. 현재 작업 디렉토리: `./.mcp.json`
+     2. 홈 디렉토리: `~/.mcp.json`
+   - 치환 대상: `{old_installPath}` → `{new_installPath}`
+   - 예시:
+     ```
+     vibespec-marketplace/vibespec/0.5.0/dist/mcp/server.js
+     → vibespec-marketplace/vibespec/0.6.1/dist/mcp/server.js
+     ```
+   - `.mcp.json` 파일이 없거나 vibespec 경로가 없으면 건너뛰세요.
+   - 플러그인의 `.claude-plugin/.mcp.json`은 `${CLAUDE_PLUGIN_ROOT}` 변수를 사용하므로 별도 갱신이 불필요합니다.
+
+7. **결과 보고**
    ```
    VibeSpec 업데이트 완료!
    - 이전: v{old_version}
    - 최신: v{new_version}
+   - MCP 경로: {갱신됨 / 변경 없음}
 
    변경사항을 적용하려면 Claude Code를 재시작하세요.
    ```
