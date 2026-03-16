@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.1] - 2026-03-17
+
+### 문서
+- **readme**: v0.7.0 기준으로 README 최신화 — 누락된 슬래시 커맨드 4개, MCP 도구 5개, Plugin Structure 반영 (5f91655)
+- **skills**: vs-release Phase 1에 README 동기화 검증 단계 추가 (5f91655)
+
 ## [0.7.0] - 2026-03-17
 
 ### 새 기능
