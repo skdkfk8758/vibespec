@@ -54,6 +54,47 @@ task
   });
 
 task
+  .command('create')
+  .requiredOption('--plan <plan_id>', 'Plan ID')
+  .requiredOption('--title <title>', 'Task title')
+  .option('--parent <parent_id>', 'Parent task ID for subtasks')
+  .option('--spec <spec>', 'Task specification')
+  .option('--acceptance <acceptance>', 'Acceptance criteria')
+  .description('Create a new task')
+  .action((opts: { plan: string; title: string; parent?: string; spec?: string; acceptance?: string }) => {
+    const { taskModel } = initModels();
+    try {
+      const created = taskModel.create(opts.plan, opts.title, {
+        parentId: opts.parent,
+        spec: opts.spec,
+        acceptance: opts.acceptance,
+      });
+      console.log(`Created task: ${created.id} "${created.title}" (${created.status})`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(message);
+      process.exit(1);
+    }
+  });
+
+task
+  .command('next')
+  .argument('<plan_id>', 'Plan ID')
+  .description('Get the next pending task')
+  .action((planId: string) => {
+    const { taskModel } = initModels();
+    const todos = taskModel.getByPlan(planId, { status: 'todo' });
+    if (todos.length === 0) {
+      console.log('No pending tasks.');
+      return;
+    }
+    const t = todos[0];
+    console.log(`Next: ${t.id} "${t.title}"`);
+    if (t.spec) console.log(`Spec: ${t.spec}`);
+    if (t.acceptance) console.log(`Acceptance: ${t.acceptance}`);
+  });
+
+task
   .command('show')
   .argument('<id>', 'Task ID')
   .description('Show task details')
