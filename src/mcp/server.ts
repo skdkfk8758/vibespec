@@ -146,6 +146,17 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
+          name: 'vp_plan_approve',
+          description: 'Approve a plan after spec review (changes status from active to approved)',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              plan_id: { type: 'string', description: 'Plan ID' },
+            },
+            required: ['plan_id'],
+          },
+        },
+        {
           name: 'vp_plan_list',
           description: 'List plans, optionally filtered by status',
           inputSchema: {
@@ -393,6 +404,20 @@ export function createServer(db: Database.Database): Server {
         if (!result.found) return result.response;
         const archived = planModel.archive(check.parsed.plan_id);
         return ok(archived);
+      }
+
+      case 'vp_plan_approve': {
+        const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
+        if (!check.valid) return check.response;
+        const result = getPlanOrError(check.parsed.plan_id);
+        if (!result.found) return result.response;
+        try {
+          const approved = planModel.approve(check.parsed.plan_id);
+          return ok(approved);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return err(message);
+        }
       }
 
       case 'vp_plan_list': {

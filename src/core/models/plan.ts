@@ -118,6 +118,20 @@ export class PlanModel {
     this.db.prepare('DELETE FROM plans WHERE id = ?').run(id);
   }
 
+  approve(id: string): Plan {
+    const plan = this.getById(id);
+    if (!plan) throw new Error(`Plan not found: ${id}`);
+    if (plan.status !== 'active') {
+      throw new Error(`Only active plans can be approved. Current status: ${plan.status}`);
+    }
+    const oldStatus = plan.status;
+
+    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
+    stmt.run('approved', id);
+    this.events?.record('plan', id, 'approved', JSON.stringify({ status: oldStatus }), JSON.stringify({ status: 'approved' }));
+    return this.getById(id)!;
+  }
+
   archive(id: string): Plan {
     const plan = this.getById(id);
     if (!plan) throw new Error(`Plan not found: ${id}`);

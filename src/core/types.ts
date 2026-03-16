@@ -1,4 +1,4 @@
-export type PlanStatus = 'draft' | 'active' | 'completed' | 'archived';
+export type PlanStatus = 'draft' | 'active' | 'approved' | 'completed' | 'archived';
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'skipped';
 export type AlertType = 'stale' | 'blocked' | 'completable' | 'forgotten';
 
