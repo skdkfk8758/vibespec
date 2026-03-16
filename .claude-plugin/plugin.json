@@ -9,5 +9,6 @@
   "homepage": "https://github.com/skdkfk8758/vibespec",
   "repository": "https://github.com/skdkfk8758/vibespec",
   "license": "MIT",
-  "keywords": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"]
+  "keywords": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"],
+  "skills": "./skills/"
 }
