@@ -1,6 +1,6 @@
 ---
 name: vs-resume
-description: 이전 세션 컨텍스트 복원. 마지막 작업 내용을 불러오고 현재 상태를 보여준 뒤 다음 할 일을 제안합니다.
+description: Use when resuming a previous session. 마지막 작업 내용을 불러오고 현재 상태를 조회한 뒤 다음 할 일을 제안합니다.
 ---
 
 # Session Resume

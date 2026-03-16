@@ -1,6 +1,6 @@
 ---
 name: vs-commit
-description: VibeSpec 연동 커밋. 변경사항을 논리 단위로 그룹화하고, 현재 진행 중인 태스크 ID를 커밋 메시지에 포함하여 트레이서빌리티를 확보합니다.
+description: Use when committing changes with VibeSpec task traceability. 변경사항을 논리 단위로 그룹화하고, 현재 진행 중인 태스크 ID를 커밋 메시지에 포함합니다.
 ---
 
 # VibeSpec Commit

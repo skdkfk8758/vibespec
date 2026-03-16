@@ -1,6 +1,6 @@
 ---
 name: vs-next
-description: 다음 태스크 가져오기. 다음 pending 태스크를 조회하고 작업을 시작합니다.
+description: Use when fetching and starting the next pending task from the active plan.
 ---
 
 # Next Task

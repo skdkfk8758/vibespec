@@ -1,6 +1,6 @@
 ---
 name: vs-review
-description: 스펙 리뷰 및 에디터 편집. 플랜의 스펙과 태스크를 외부 에디터에서 열어 사용자가 직접 확인/수정하고, DB에 반영한 뒤 approved 상태로 전환합니다.
+description: Use when reviewing and editing specs. 플랜의 스펙과 태스크를 외부 에디터에서 열어 확인/수정하고, DB에 반영한 뒤 approved 상태로 전환합니다.
 ---
 
 # Spec Review & Edit

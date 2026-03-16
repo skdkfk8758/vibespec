@@ -1,6 +1,6 @@
 ---
 name: vs-pick
-description: 태스크 선택 실행. 플랜의 태스크 목록을 보여주고 사용자가 원하는 태스크를 골라 작업을 시작합니다.
+description: Use when selecting a specific task from the plan to start working on.
 ---
 
 # Pick Task
