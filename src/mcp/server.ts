@@ -24,6 +24,38 @@ const pkg = require('../../package.json') as { version: string };
 
 const VALID_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'done', 'blocked', 'skipped'];
 
+function ok(data: unknown) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+  };
+}
+
+function err(error: string, hint?: string) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(hint ? { error, hint } : { error }) }],
+    isError: true,
+  };
+}
+
+function requireArgs<T extends Record<string, unknown>>(
+  args: Record<string, unknown> | undefined,
+  required: string[],
+): { valid: true; parsed: T } | { valid: false; response: ReturnType<typeof err> } {
+  const safeArgs = (args ?? {}) as Record<string, unknown>;
+  for (const key of required) {
+    if (safeArgs[key] === undefined || safeArgs[key] === null || safeArgs[key] === '') {
+      return {
+        valid: false,
+        response: err(
+          `Missing required parameter: ${key}`,
+          `Required parameters: ${required.join(', ')}`,
+        ),
+      };
+    }
+  }
+  return { valid: true, parsed: safeArgs as T };
+}
+
 export function createServer(db: Database.Database): Server {
   // Instantiate models
   const eventModel = new EventModel(db);
@@ -175,7 +207,7 @@ export function createServer(db: Database.Database): Server {
         },
         {
           name: 'vp_task_block',
-          description: 'Mark a task as blocked',
+          description: 'Mark a task as blocked with an optional reason',
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -232,6 +264,23 @@ export function createServer(db: Database.Database): Server {
     };
   });
 
+  // Helper to find plan or return error
+  function getPlanOrError(planId: string) {
+    const plan = planModel.getById(planId);
+    if (!plan) {
+      return { found: false as const, response: err('Plan not found', 'Use vp_plan_list to see available plans') };
+    }
+    return { found: true as const, plan };
+  }
+
+  function getTaskOrError(taskId: string) {
+    const task = taskModel.getById(taskId);
+    if (!task) {
+      return { found: false as const, response: err('Task not found', 'Use vp_plan_get with a plan_id to see its tasks') };
+    }
+    return { found: true as const, task };
+  }
+
   // Register CallTool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
@@ -240,10 +289,7 @@ export function createServer(db: Database.Database): Server {
       case 'vp_dashboard': {
         const overview = dashboardEngine.getOverview();
         const alerts = alertsEngine.getAlerts();
-        const result = { overview, alerts };
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return ok({ overview, alerts });
       }
 
       case 'vp_context_resume': {
@@ -253,201 +299,146 @@ export function createServer(db: Database.Database): Server {
           : contextModel.getLatest(3);
         const overview = dashboardEngine.getOverview();
         const alerts = alertsEngine.getAlerts();
-        const result = { context_logs: contextLogs, overview, alerts };
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return ok({ context_logs: contextLogs, overview, alerts });
       }
 
       case 'vp_plan_create': {
-        const { title, spec, summary } = args as { title: string; spec?: string; summary?: string };
+        const check = requireArgs<{ title: string; spec?: string; summary?: string }>(
+          args as Record<string, unknown>, ['title'],
+        );
+        if (!check.valid) return check.response;
+        const { title, spec, summary } = check.parsed;
         const plan = planModel.create(title, spec, summary);
         const activePlan = planModel.activate(plan.id);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(activePlan, null, 2) }],
-        };
+        return ok(activePlan);
       }
 
       case 'vp_plan_get': {
-        const { plan_id } = args as { plan_id: string };
-        const plan = planModel.getById(plan_id);
-        if (!plan) {
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Plan not found' }) }],
-            isError: true,
-          };
-        }
-        const tasks = taskModel.getTree(plan_id);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ plan, tasks }, null, 2) }],
-        };
+        const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
+        if (!check.valid) return check.response;
+        const result = getPlanOrError(check.parsed.plan_id);
+        if (!result.found) return result.response;
+        const tasks = taskModel.getTree(check.parsed.plan_id);
+        return ok({ plan: result.plan, tasks });
       }
 
       case 'vp_plan_complete': {
-        const { plan_id } = args as { plan_id: string };
-        const plan = planModel.getById(plan_id);
-        if (!plan) {
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Plan not found' }) }],
-            isError: true,
-          };
-        }
+        const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
+        if (!check.valid) return check.response;
+        const result = getPlanOrError(check.parsed.plan_id);
+        if (!result.found) return result.response;
         try {
-          const completed = lifecycleEngine.completePlan(plan_id);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(completed, null, 2) }],
-          };
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
-            isError: true,
-          };
+          const completed = lifecycleEngine.completePlan(check.parsed.plan_id);
+          return ok(completed);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return err(message);
         }
       }
 
       case 'vp_plan_archive': {
-        const { plan_id } = args as { plan_id: string };
-        const plan = planModel.getById(plan_id);
-        if (!plan) {
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Plan not found' }) }],
-            isError: true,
-          };
-        }
-        const archived = planModel.archive(plan_id);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(archived, null, 2) }],
-        };
+        const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
+        if (!check.valid) return check.response;
+        const result = getPlanOrError(check.parsed.plan_id);
+        if (!result.found) return result.response;
+        const archived = planModel.archive(check.parsed.plan_id);
+        return ok(archived);
       }
 
       case 'vp_plan_list': {
         const { status } = (args as { status?: string } | undefined) ?? {};
         const filter = status ? { status: status as import('../core/types.js').PlanStatus } : undefined;
         const plans = planModel.list(filter);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(plans, null, 2) }],
-        };
+        return ok(plans);
       }
 
       case 'vp_task_create': {
-        const { plan_id, title, parent_id, spec, acceptance } = args as {
+        const check = requireArgs<{
           plan_id: string;
           title: string;
           parent_id?: string;
           spec?: string;
           acceptance?: string;
-        };
-        const task = taskModel.create(plan_id, title, {
-          parentId: parent_id,
-          spec,
-          acceptance,
-        });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(task, null, 2) }],
-        };
+        }>(args as Record<string, unknown>, ['plan_id', 'title']);
+        if (!check.valid) return check.response;
+        const { plan_id, title, parent_id, spec, acceptance } = check.parsed;
+        try {
+          const task = taskModel.create(plan_id, title, {
+            parentId: parent_id,
+            spec,
+            acceptance,
+          });
+          return ok(task);
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return err(message);
+        }
       }
 
       case 'vp_task_update': {
-        const { task_id, status } = args as { task_id: string; status: string };
+        const check = requireArgs<{ task_id: string; status: string }>(
+          args as Record<string, unknown>, ['task_id', 'status'],
+        );
+        if (!check.valid) return check.response;
+        const { task_id, status } = check.parsed;
         if (!VALID_STATUSES.includes(status as TaskStatus)) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify({
-                  error: 'Invalid status. Must be: todo, in_progress, done, blocked, skipped',
-                }),
-              },
-            ],
-            isError: true,
-          };
+          return err(
+            'Invalid status. Must be: todo, in_progress, done, blocked, skipped',
+          );
         }
-        const existing = taskModel.getById(task_id);
-        if (!existing) {
-          return {
-            content: [
-              { type: 'text' as const, text: JSON.stringify({ error: 'Task not found' }) },
-            ],
-            isError: true,
-          };
-        }
+        const taskResult = getTaskOrError(task_id);
+        if (!taskResult.found) return taskResult.response;
         const updatedTask = taskModel.updateStatus(task_id, status as TaskStatus);
         const completionCheck = lifecycleEngine.autoCheckCompletion(updatedTask.plan_id);
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ task: updatedTask, completion_check: completionCheck }, null, 2),
-            },
-          ],
-        };
+        return ok({ task: updatedTask, completion_check: completionCheck });
       }
 
       case 'vp_task_get': {
-        const { task_id } = args as { task_id: string };
-        const task = taskModel.getById(task_id);
-        if (!task) {
-          return {
-            content: [
-              { type: 'text' as const, text: JSON.stringify({ error: 'Task not found' }) },
-            ],
-            isError: true,
-          };
-        }
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(task, null, 2) }],
-        };
+        const check = requireArgs<{ task_id: string }>(args as Record<string, unknown>, ['task_id']);
+        if (!check.valid) return check.response;
+        const taskResult = getTaskOrError(check.parsed.task_id);
+        if (!taskResult.found) return taskResult.response;
+        return ok(taskResult.task);
       }
 
       case 'vp_task_next': {
-        const { plan_id } = args as { plan_id: string };
-        const todoTasks = taskModel.getByPlan(plan_id, { status: 'todo' });
+        const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
+        if (!check.valid) return check.response;
+        const todoTasks = taskModel.getByPlan(check.parsed.plan_id, { status: 'todo' });
         if (todoTasks.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify({ message: 'No pending tasks' }),
-              },
-            ],
-          };
+          return ok({ message: 'No pending tasks', hint: 'All tasks are done. Use vp_plan_complete to finish the plan.' });
         }
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(todoTasks[0], null, 2) }],
-        };
+        return ok(todoTasks[0]);
       }
 
       case 'vp_task_block': {
-        const { task_id, reason } = args as { task_id: string; reason?: string };
-        const existingTask = taskModel.getById(task_id);
-        if (!existingTask) {
-          return {
-            content: [
-              { type: 'text' as const, text: JSON.stringify({ error: 'Task not found' }) },
-            ],
-            isError: true,
-          };
+        const check = requireArgs<{ task_id: string; reason?: string }>(
+          args as Record<string, unknown>, ['task_id'],
+        );
+        if (!check.valid) return check.response;
+        const taskResult = getTaskOrError(check.parsed.task_id);
+        if (!taskResult.found) return taskResult.response;
+        const blockedTask = taskModel.updateStatus(check.parsed.task_id, 'blocked');
+        if (check.parsed.reason) {
+          eventModel.record(
+            'task', check.parsed.task_id, 'blocked_reason',
+            null, JSON.stringify({ reason: check.parsed.reason }),
+          );
         }
-        const blockedTask = taskModel.updateStatus(task_id, 'blocked');
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(blockedTask, null, 2) }],
-        };
+        return ok({ ...blockedTask, block_reason: check.parsed.reason ?? null });
       }
 
       case 'vp_context_save': {
-        const { summary, plan_id, session_id } = args as {
-          summary: string;
-          plan_id?: string;
-          session_id?: string;
-        };
+        const check = requireArgs<{ summary: string; plan_id?: string; session_id?: string }>(
+          args as Record<string, unknown>, ['summary'],
+        );
+        if (!check.valid) return check.response;
+        const { summary, plan_id, session_id } = check.parsed;
         const contextLog = contextModel.save(summary, {
           planId: plan_id,
           sessionId: session_id,
         });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(contextLog, null, 2) }],
-        };
+        return ok(contextLog);
       }
 
       case 'vp_stats': {
@@ -457,24 +448,20 @@ export function createServer(db: Database.Database): Server {
         if (plan_id) {
           result.estimated_completion = statsEngine.getEstimatedCompletion(plan_id);
         }
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-        };
+        return ok(result);
       }
 
       case 'vp_history': {
-        const { entity_type, entity_id } = args as {
-          entity_type: string;
-          entity_id: string;
-        };
-        const events = eventModel.getByEntity(entity_type, entity_id);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(events, null, 2) }],
-        };
+        const check = requireArgs<{ entity_type: string; entity_id: string }>(
+          args as Record<string, unknown>, ['entity_type', 'entity_id'],
+        );
+        if (!check.valid) return check.response;
+        const events = eventModel.getByEntity(check.parsed.entity_type, check.parsed.entity_id);
+        return ok(events);
       }
 
       default:
-        throw new Error(`Unknown tool: ${name}`);
+        return err(`Unknown tool: ${name}`);
     }
   });
 

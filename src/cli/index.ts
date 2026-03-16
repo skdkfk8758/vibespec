@@ -15,6 +15,16 @@ import type { TaskStatus, PlanStatus } from '../core/types.js';
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
 
+function initModels() {
+  const db = getDb();
+  initSchema(db);
+  const events = new EventModel(db);
+  const planModel = new PlanModel(db, events);
+  const taskModel = new TaskModel(db, events);
+  const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
+  return { db, events, planModel, taskModel, lifecycle };
+}
+
 const program = new Command();
 program.name('vp').description('VibeSpec CLI').version(pkg.version);
 
@@ -22,8 +32,7 @@ program
   .command('dashboard')
   .description('Show all active plans overview')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const { db } = initModels();
     const dashboard = new DashboardEngine(db);
     const alerts = new AlertsEngine(db);
     const overview = dashboard.getOverview();
@@ -39,10 +48,7 @@ task
   .argument('<status>', 'New status (todo, in_progress, done, blocked, skipped)')
   .description('Update task status')
   .action((id: string, status: string) => {
-    const db = getDb();
-    initSchema(db);
-    const events = new EventModel(db);
-    const taskModel = new TaskModel(db, events);
+    const { taskModel } = initModels();
     const updated = taskModel.updateStatus(id, status as TaskStatus);
     console.log(`Task ${updated.id}: ${updated.title} → ${updated.status}`);
   });
@@ -52,9 +58,7 @@ task
   .argument('<id>', 'Task ID')
   .description('Show task details')
   .action((id: string) => {
-    const db = getDb();
-    initSchema(db);
-    const taskModel = new TaskModel(db);
+    const { taskModel } = initModels();
     const t = taskModel.getById(id);
     if (!t) {
       console.error(`Task not found: ${id}`);
@@ -76,8 +80,7 @@ program
   .argument('[plan_id]', 'Optional plan ID to scope stats')
   .description('Show velocity and estimates')
   .action((planId?: string) => {
-    const db = getDb();
-    initSchema(db);
+    const { db } = initModels();
     const stats = new StatsEngine(db);
     const velocity = stats.getVelocity(planId);
     const estimate = planId ? stats.getEstimatedCompletion(planId) : undefined;
@@ -91,11 +94,9 @@ program
   .argument('<id>', 'Entity ID')
   .description('Show change history')
   .action((type: string, id: string) => {
-    const db = getDb();
-    initSchema(db);
-    const eventModel = new EventModel(db);
-    const events = eventModel.getByEntity(type, id);
-    console.log(formatHistory(events));
+    const { events } = initModels();
+    const eventList = events.getByEntity(type, id);
+    console.log(formatHistory(eventList));
   });
 
 const plan = program.command('plan').description('Manage plans');
@@ -105,10 +106,7 @@ plan
   .option('--status <status>', 'Filter by status (draft, active, completed, archived)')
   .description('List plans')
   .action((opts: { status?: string }) => {
-    const db = getDb();
-    initSchema(db);
-    const events = new EventModel(db);
-    const planModel = new PlanModel(db, events);
+    const { planModel } = initModels();
     const plans = planModel.list(opts.status ? { status: opts.status as PlanStatus } : undefined);
     console.log(formatPlanList(plans));
   });
@@ -118,11 +116,7 @@ plan
   .argument('<id>', 'Plan ID')
   .description('Show plan details with task tree')
   .action((id: string) => {
-    const db = getDb();
-    initSchema(db);
-    const events = new EventModel(db);
-    const planModel = new PlanModel(db, events);
-    const taskModel = new TaskModel(db, events);
+    const { planModel, taskModel } = initModels();
     const p = planModel.getById(id);
     if (!p) {
       console.error(`Plan not found: ${id}`);
@@ -138,10 +132,7 @@ plan
   .option('--spec <spec>', 'Plan specification')
   .description('Create a new plan and activate it')
   .action((opts: { title: string; spec?: string }) => {
-    const db = getDb();
-    initSchema(db);
-    const events = new EventModel(db);
-    const planModel = new PlanModel(db, events);
+    const { planModel } = initModels();
     const created = planModel.create(opts.title, opts.spec);
     const activated = planModel.activate(created.id);
     console.log(`Created plan: ${activated.id} "${activated.title}" (${activated.status})`);
@@ -152,17 +143,12 @@ plan
   .argument('<id>', 'Plan ID')
   .description('Complete a plan')
   .action((id: string) => {
-    const db = getDb();
-    initSchema(db);
-    const events = new EventModel(db);
-    const planModel = new PlanModel(db, events);
-    const taskModel = new TaskModel(db, events);
-    const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
+    const { lifecycle } = initModels();
     try {
       const completed = lifecycle.completePlan(id);
       console.log(`Plan completed: ${completed.id} "${completed.title}"`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       console.error(message);
       process.exit(1);
     }
