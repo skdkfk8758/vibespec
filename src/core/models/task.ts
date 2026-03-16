@@ -155,6 +155,22 @@ export class TaskModel {
     return this.getById(id)!;
   }
 
+  delete(id: string): void {
+    const task = this.getById(id);
+    if (!task) throw new Error(`Task not found: ${id}`);
+    // Delete events for child tasks
+    this.db.prepare(
+      'DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)',
+    ).run(id);
+    // Delete child tasks
+    this.db.prepare('DELETE FROM tasks WHERE parent_id = ?').run(id);
+    // Delete events for this task
+    this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
+    // Delete the task
+    this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+    this.events?.record('task', id, 'deleted', JSON.stringify({ title: task.title }), null);
+  }
+
   getByPlan(planId: string, filter?: { status?: TaskStatus }): Task[] {
     if (filter?.status) {
       return this.db

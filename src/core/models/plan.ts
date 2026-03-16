@@ -100,6 +100,24 @@ export class PlanModel {
     return this.getById(id)!;
   }
 
+  delete(id: string): void {
+    const plan = this.getById(id);
+    if (!plan) throw new Error(`Plan not found: ${id}`);
+    if (plan.status !== 'draft') {
+      throw new Error(`Only draft plans can be deleted. Current status: ${plan.status}`);
+    }
+    // Delete events referencing tasks in this plan
+    this.db.prepare(
+      'DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)',
+    ).run(id);
+    // Delete events referencing the plan itself
+    this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
+    // Delete tasks (FK constraint)
+    this.db.prepare('DELETE FROM tasks WHERE plan_id = ?').run(id);
+    // Delete the plan
+    this.db.prepare('DELETE FROM plans WHERE id = ?').run(id);
+  }
+
   archive(id: string): Plan {
     const plan = this.getById(id);
     if (!plan) throw new Error(`Plan not found: ${id}`);

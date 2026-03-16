@@ -218,6 +218,56 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
+          name: 'vp_plan_update',
+          description: 'Update a plan title, spec, or summary',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              plan_id: { type: 'string', description: 'Plan ID' },
+              title: { type: 'string', description: 'New title' },
+              spec: { type: 'string', description: 'New spec' },
+              summary: { type: 'string', description: 'New summary' },
+            },
+            required: ['plan_id'],
+          },
+        },
+        {
+          name: 'vp_plan_delete',
+          description: 'Delete a draft plan and all its tasks',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              plan_id: { type: 'string', description: 'Plan ID (must be in draft status)' },
+            },
+            required: ['plan_id'],
+          },
+        },
+        {
+          name: 'vp_task_edit',
+          description: 'Edit a task title, spec, or acceptance criteria',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              task_id: { type: 'string', description: 'Task ID' },
+              title: { type: 'string', description: 'New title' },
+              spec: { type: 'string', description: 'New spec' },
+              acceptance: { type: 'string', description: 'New acceptance criteria' },
+            },
+            required: ['task_id'],
+          },
+        },
+        {
+          name: 'vp_task_delete',
+          description: 'Delete a task and its subtasks',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              task_id: { type: 'string', description: 'Task ID' },
+            },
+            required: ['task_id'],
+          },
+        },
+        {
           name: 'vp_context_save',
           description: 'Save a context log entry for the current session',
           inputSchema: {
@@ -352,6 +402,32 @@ export function createServer(db: Database.Database): Server {
         return ok(plans);
       }
 
+      case 'vp_plan_update': {
+        const check = requireArgs<{ plan_id: string; title?: string; spec?: string; summary?: string }>(
+          args as Record<string, unknown>, ['plan_id'],
+        );
+        if (!check.valid) return check.response;
+        const result = getPlanOrError(check.parsed.plan_id);
+        if (!result.found) return result.response;
+        const { plan_id: _pid, ...fields } = check.parsed;
+        const updated = planModel.update(check.parsed.plan_id, fields);
+        return ok(updated);
+      }
+
+      case 'vp_plan_delete': {
+        const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
+        if (!check.valid) return check.response;
+        const result = getPlanOrError(check.parsed.plan_id);
+        if (!result.found) return result.response;
+        try {
+          planModel.delete(check.parsed.plan_id);
+          return ok({ deleted: true, plan_id: check.parsed.plan_id });
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return err(message);
+        }
+      }
+
       case 'vp_task_create': {
         const check = requireArgs<{
           plan_id: string;
@@ -426,6 +502,32 @@ export function createServer(db: Database.Database): Server {
           );
         }
         return ok({ ...blockedTask, block_reason: check.parsed.reason ?? null });
+      }
+
+      case 'vp_task_edit': {
+        const check = requireArgs<{ task_id: string; title?: string; spec?: string; acceptance?: string }>(
+          args as Record<string, unknown>, ['task_id'],
+        );
+        if (!check.valid) return check.response;
+        const taskResult3 = getTaskOrError(check.parsed.task_id);
+        if (!taskResult3.found) return taskResult3.response;
+        const { task_id: _tid, ...editFields } = check.parsed;
+        const editedTask = taskModel.update(check.parsed.task_id, editFields);
+        return ok(editedTask);
+      }
+
+      case 'vp_task_delete': {
+        const check = requireArgs<{ task_id: string }>(args as Record<string, unknown>, ['task_id']);
+        if (!check.valid) return check.response;
+        const taskResult4 = getTaskOrError(check.parsed.task_id);
+        if (!taskResult4.found) return taskResult4.response;
+        try {
+          taskModel.delete(check.parsed.task_id);
+          return ok({ deleted: true, task_id: check.parsed.task_id });
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          return err(message);
+        }
       }
 
       case 'vp_context_save': {
