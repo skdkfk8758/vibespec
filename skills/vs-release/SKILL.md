@@ -28,6 +28,19 @@ git log --oneline v{current}..HEAD
 - 새로운 커밋이 없으면 STOP: "마지막 릴리즈 이후 변경사항이 없습니다."
 - 테스트 실행: `npm test` — 실패하면 STOP: "테스트가 실패합니다. 수정 후 다시 시도하세요."
 - 빌드 실행: `npm run build` — 실패하면 STOP: "빌드가 실패합니다. 수정 후 다시 시도하세요."
+- README 동기화 검증:
+  1. `README.md`의 Slash Commands 테이블과 `skills/` 디렉토리의 실제 스킬 목록을 비교
+  2. `README.md`의 MCP Tools 테이블과 `src/`의 실제 MCP 도구 목록을 비교
+  3. `README.md`의 Plugin Structure 트리와 실제 디렉토리 구조를 비교
+  4. 누락/불일치가 있으면 사용자에게 보고하고 자동 수정 제안:
+     ```
+     README 동기화 필요:
+     - 누락된 스킬: /vs-pick, /vs-review
+     - 누락된 MCP 도구: vp_plan_update, vp_insights
+     자동 수정할까요? (Y / 건너뛰기)
+     ```
+  5. **Y** → README를 수정하고 릴리즈 커밋에 포함
+  6. **건너뛰기** → 경고만 남기고 계속 진행
 
 ### Phase 2: 버전 결정
 
@@ -85,7 +98,7 @@ git log --oneline v{current}..HEAD
 ### Phase 5: 릴리즈 커밋 + 태그
 
 ```bash
-git add CHANGELOG.md package.json .claude-plugin/plugin.json .claude-plugin/marketplace.json
+git add CHANGELOG.md package.json .claude-plugin/plugin.json .claude-plugin/marketplace.json README.md
 git commit -m "$(cat <<'EOF'
 chore(release): v{next} 릴리즈
 
