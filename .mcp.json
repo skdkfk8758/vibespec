@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "vibespec": {
-      "command": "node",
-      "args": ["dist/mcp/server.js"]
-    }
-  }
-}
