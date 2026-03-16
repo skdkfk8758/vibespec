@@ -1,27 +1,41 @@
 # VibeSpec
 
-SDD(Spec-Driven Development) 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 MCP 플러그인.
+SDD(Spec-Driven Development) 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 Claude Code 플러그인.
 
-Claude Code에서 플랜을 세우고, 태스크를 추적하고, 진행 상황을 한눈에 파악할 수 있습니다.
+Claude Code에서 스펙을 작성하고, 플랜을 세우고, 태스크를 추적하고, 진행 상황을 한눈에 파악할 수 있습니다.
 
 ## Features
 
-- **MCP Server** — Claude Code에 12개 도구를 제공하는 MCP 서버
+- **Claude Code Plugin** — 슬래시 커맨드, 훅, 에이전트를 포함한 통합 플러그인
+- **MCP Server** — 15개 도구를 제공하는 MCP 서버
 - **CLI (`vp`)** — 터미널에서 직접 플랜/태스크를 관리하는 CLI
+- **SDD Workflow** — Spec → Plan → Tasks → Implementation 자동 워크플로우
 - **SQLite 기반** — `better-sqlite3`로 로컬에 데이터 저장, 별도 서버 불필요
 - **Dashboard & Alerts** — 프로그레스 바, stale/blocked/completable 자동 감지
 - **Velocity & ETA** — 태스크 완료 속도 기반 예상 완료일 산출
 - **Context Resume** — 세션 간 컨텍스트 저장/복원
 
-## Installation
+## Install (Plugin)
+
+Claude Code 안에서:
+
+```bash
+# 1. 마켓플레이스 등록
+/plugin marketplace add skdkfk8758/vibespec
+
+# 2. 플러그인 설치
+/plugin install vibespec
+```
+
+설치하면 MCP 서버, Skills, Hooks가 자동으로 등록됩니다.
+
+## Install (Manual)
 
 ```bash
 npm install -g vibespec
 ```
 
-## Setup (Claude Code MCP)
-
-`~/.claude/settings.json`에 추가:
+`~/.claude/settings.json`에 MCP 서버 수동 추가:
 
 ```json
 {
@@ -32,6 +46,26 @@ npm install -g vibespec
     }
   }
 }
+```
+
+## Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/vibespec:setup` | 초기 설정 및 SDD 워크플로우 안내 |
+| `/vibespec:plan` | 스펙 작성 → 플랜 생성 → 태스크 분해 |
+| `/vibespec:dashboard` | 활성 플랜 진행률, 알림, 속도 통계 |
+| `/vibespec:resume` | 이전 세션 컨텍스트 복원 |
+| `/vibespec:next` | 다음 태스크 가져와서 작업 시작 |
+
+## SDD Workflow
+
+```
+1. /vibespec:resume     → 이전 세션 복원
+2. /vibespec:plan       → 스펙 작성 + 태스크 분해
+3. /vibespec:next       → 태스크 하나씩 구현
+4. /vibespec:dashboard  → 진행 현황 확인
+5. 반복
 ```
 
 ## MCP Tools
@@ -53,6 +87,28 @@ npm install -g vibespec
 | `vp_context_save` | 컨텍스트 로그 저장 |
 | `vp_stats` | 속도 통계 + 예상 완료일 |
 | `vp_history` | 엔티티 변경 이력 조회 |
+
+## Plugin Structure
+
+```
+vibespec/
+├── .claude-plugin/
+│   ├── plugin.json          # 플러그인 매니페스트
+│   └── marketplace.json     # 마켓플레이스 배포 설정
+├── .mcp.json                # MCP 서버 자동 등록
+├── skills/
+│   ├── setup/SKILL.md       # /vibespec:setup
+│   ├── plan/SKILL.md        # /vibespec:plan
+│   ├── dashboard/SKILL.md   # /vibespec:dashboard
+│   ├── resume/SKILL.md      # /vibespec:resume
+│   └── next/SKILL.md        # /vibespec:next
+├── hooks/
+│   ├── hooks.json           # 플러그인 훅 정의
+│   └── on-commit-sync.sh    # 커밋 시 태스크 연동
+├── agents/
+│   └── spec-writer.md       # SDD 스펙 작성 에이전트
+└── src/                     # MCP 서버 + CLI 소스
+```
 
 ## CLI Usage
 
