@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0] - 2026-03-16
+
+### 새 기능
+- **db**: task_metrics 테이블 및 plan_metrics 뷰 스키마 추가 (e72b095)
+- **models**: TaskMetricsModel CRUD 및 duration 자동 계산 구현 (c8d1d68)
+- **mcp**: vp_task_update에 metrics 필드 및 자동 수집 추가 (8d05e1a)
+- **skills**: /vs-review 스펙 리뷰 및 에디터 편집 스킬 추가 (26c3683)
+- **skills**: /vs-update 플러그인 셀프 업데이트 커맨드 추가 (55bf289)
+- **skills**: vs-pick 태스크 선택 실행 스킬 추가 (94d67a0)
+- **skills**: vs-release 릴리즈 자동화 스킬 추가 (96247e8)
+
+### 버그 수정
+- **plugin**: marketplace.json 플러그인 이름을 vibespec으로 복원 (9c21214)
+
+### 기타
+- **docs**: 완료된 플랜 태스크 문서 삭제 (0d9fd7c)
+
 ## [0.4.0] - 2026-03-16
 
 ### 새 기능
