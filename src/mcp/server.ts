@@ -15,6 +15,7 @@ import { DashboardEngine } from '../core/engine/dashboard.js';
 import { AlertsEngine } from '../core/engine/alerts.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { StatsEngine } from '../core/engine/stats.js';
+import { InsightsEngine } from '../core/engine/insights.js';
 import { getDb } from '../core/db/connection.js';
 import { initSchema } from '../core/db/schema.js';
 import type { TaskStatus } from '../core/types.js';
@@ -70,6 +71,7 @@ export function createServer(db: Database.Database): Server {
   const alertsEngine = new AlertsEngine(db);
   const lifecycleEngine = new LifecycleEngine(db, planModel, taskModel, eventModel);
   const statsEngine = new StatsEngine(db);
+  const insightsEngine = new InsightsEngine(db);
 
   // Create MCP Server
   const server = new Server(
@@ -331,6 +333,22 @@ export function createServer(db: Database.Database): Server {
               entity_id: { type: 'string', description: 'ID of the entity' },
             },
             required: ['entity_type', 'entity_id'],
+          },
+        },
+        {
+          name: 'vp_insights',
+          description:
+            'Get learning insights from task completion history — blocked patterns, duration stats, success rates, and recommendations',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              scope: {
+                type: 'string',
+                description:
+                  'What insights to return: blocked_patterns, duration_stats, success_rates, or all (default: all)',
+              },
+            },
+            required: [],
           },
         },
       ],
@@ -616,6 +634,30 @@ export function createServer(db: Database.Database): Server {
         if (!check.valid) return check.response;
         const events = eventModel.getByEntity(check.parsed.entity_type, check.parsed.entity_id);
         return ok(events);
+      }
+
+      case 'vp_insights': {
+        const { scope } = (args as { scope?: string } | undefined) ?? {};
+        const validScopes = ['blocked_patterns', 'duration_stats', 'success_rates', 'all'];
+        const selectedScope = scope && validScopes.includes(scope) ? scope : 'all';
+
+        const result: Record<string, unknown> = {};
+
+        if (selectedScope === 'all' || selectedScope === 'blocked_patterns') {
+          result.blocked_patterns = insightsEngine.getBlockedPatterns();
+        }
+        if (selectedScope === 'all' || selectedScope === 'duration_stats') {
+          result.duration_stats = insightsEngine.getDurationStats();
+        }
+        if (selectedScope === 'all' || selectedScope === 'success_rates') {
+          result.success_rates = insightsEngine.getSuccessRates();
+        }
+        if (selectedScope === 'all') {
+          result.recommendations = insightsEngine.getRecommendations();
+          result.confidence = insightsEngine.getConfidenceLevel();
+        }
+
+        return ok(result);
       }
 
       default:
