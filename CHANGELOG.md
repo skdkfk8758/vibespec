@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] - 2026-03-17
+
+### 버그 수정
+- **skills**: Skills 2.0 description 패턴 준수 — 모든 vs 스킬의 description을 "Use when..." 패턴으로 변환 (c079fc7)
+
 ## [0.6.0] - 2026-03-16
 
 ### 새 기능
