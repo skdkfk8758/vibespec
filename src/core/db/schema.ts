@@ -64,10 +64,45 @@ export function initSchema(db: Database.Database): void {
     WHERE p.status IN ('active', 'draft')
     GROUP BY p.id;
 
+    CREATE TABLE IF NOT EXISTS task_metrics (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id         TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+      plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      duration_min    REAL,
+      final_status    TEXT NOT NULL,
+      block_reason    TEXT,
+      impl_status     TEXT,
+      test_count      INTEGER,
+      files_changed   INTEGER,
+      has_concerns    BOOLEAN DEFAULT 0,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE VIEW IF NOT EXISTS plan_metrics AS
+    SELECT
+      p.id,
+      p.title,
+      p.status,
+      COUNT(tm.id) AS recorded_tasks,
+      ROUND(AVG(tm.duration_min), 2) AS avg_duration_min,
+      SUM(CASE WHEN tm.final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
+      SUM(CASE WHEN tm.final_status = 'done' THEN 1 ELSE 0 END) AS done_count,
+      SUM(CASE WHEN tm.has_concerns = 1 THEN 1 ELSE 0 END) AS concern_count,
+      ROUND(
+        SUM(CASE WHEN tm.final_status = 'done' THEN 1.0 ELSE 0 END)
+        / MAX(COUNT(tm.id), 1) * 100
+      ) AS success_rate
+    FROM plans p
+    JOIN task_metrics tm ON tm.plan_id = p.id
+    WHERE p.status IN ('completed', 'archived')
+    GROUP BY p.id;
+
     CREATE INDEX IF NOT EXISTS idx_tasks_plan_id ON tasks(plan_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
     CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
     CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
     CREATE INDEX IF NOT EXISTS idx_context_log_plan ON context_log(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_task_metrics_plan_id ON task_metrics(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_task_metrics_task_id ON task_metrics(task_id);
   `);
 }
