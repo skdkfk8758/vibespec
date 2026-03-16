@@ -67,3 +67,42 @@ export interface Alert {
   entity_id: string;
   message: string;
 }
+
+export interface BlockedPattern {
+  reason: string;
+  count: number;
+  pct: number;
+}
+
+export interface DurationStats {
+  avg_min: number;
+  median_min: number;
+  sample_count: number;
+}
+
+export interface SuccessRates {
+  overall: number;
+  by_plan: Array<{ title: string; rate: number; count: number }>;
+}
+
+export interface InsightsResult {
+  blocked_patterns: BlockedPattern[];
+  duration_stats: DurationStats;
+  success_rates: SuccessRates;
+  recommendations: string[];
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface TaskMetrics {
+  id: number;
+  task_id: string;
+  plan_id: string;
+  duration_min: number | null;
+  final_status: string;
+  block_reason: string | null;
+  impl_status: string | null;
+  test_count: number | null;
+  files_changed: number | null;
+  has_concerns: boolean;
+  created_at: string;
+}
