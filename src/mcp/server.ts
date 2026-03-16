@@ -17,6 +17,10 @@ import { StatsEngine } from '../core/engine/stats.js';
 import { getDb } from '../core/db/connection.js';
 import { initSchema } from '../core/db/schema.js';
 import type { TaskStatus } from '../core/types.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const pkg = require('../../package.json') as { version: string };
 
 const VALID_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'done', 'blocked', 'skipped'];
 
@@ -35,7 +39,7 @@ export function createServer(db: Database.Database): Server {
 
   // Create MCP Server
   const server = new Server(
-    { name: 'vibespec', version: '0.1.0' },
+    { name: 'vibespec', version: pkg.version },
     { capabilities: { tools: {} } },
   );
 

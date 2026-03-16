@@ -1,5 +1,5 @@
-#!/usr/bin/env node
 import { Command } from 'commander';
+import { createRequire } from 'node:module';
 import { getDb } from '../core/db/connection.js';
 import { initSchema } from '../core/db/schema.js';
 import { DashboardEngine } from '../core/engine/dashboard.js';
@@ -12,8 +12,11 @@ import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList } from './formatters.js';
 import type { TaskStatus, PlanStatus } from '../core/types.js';
 
+const require = createRequire(import.meta.url);
+const pkg = require('../../package.json') as { version: string };
+
 const program = new Command();
-program.name('vp').description('VibeSpec CLI').version('0.1.0');
+program.name('vp').description('VibeSpec CLI').version(pkg.version);
 
 program
   .command('dashboard')

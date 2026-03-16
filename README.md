@@ -57,6 +57,7 @@ npm install -g vibespec
 | `/vs-dashboard` | 활성 플랜 진행률, 알림, 속도 통계 |
 | `/vs-resume` | 이전 세션 컨텍스트 복원 |
 | `/vs-next` | 다음 태스크 가져와서 작업 시작 |
+| `/vs-commit` | 변경사항 논리 그룹화 + 태스크 연동 커밋 |
 
 ## SDD Workflow
 
@@ -95,19 +96,23 @@ vibespec/
 ├── .claude-plugin/
 │   ├── plugin.json          # 플러그인 매니페스트
 │   └── marketplace.json     # 마켓플레이스 배포 설정
-├── .mcp.json                # MCP 서버 자동 등록
 ├── skills/
 │   ├── vs-setup/SKILL.md       # /vs-setup
 │   ├── vs-plan/SKILL.md        # /vs-plan
 │   ├── vs-dashboard/SKILL.md   # /vs-dashboard
 │   ├── vs-resume/SKILL.md      # /vs-resume
-│   └── vs-next/SKILL.md        # /vs-next
+│   ├── vs-next/SKILL.md        # /vs-next
+│   └── vs-commit/SKILL.md      # /vs-commit
 ├── hooks/
 │   ├── hooks.json           # 플러그인 훅 정의
 │   └── on-commit-sync.sh    # 커밋 시 태스크 연동
 ├── agents/
-│   └── spec-writer.md       # SDD 스펙 작성 에이전트
-└── src/                     # MCP 서버 + CLI 소스
+│   ├── spec-writer.md          # SDD 스펙 작성 에이전트
+│   ├── spec-writer/
+│   │   ├── TEMPLATE.md         # 스펙 템플릿
+│   │   └── EXAMPLE.md          # 스펙 예시
+│   └── tdd-implementer.md      # TDD 구현 에이전트
+└── src/                        # MCP 서버 + CLI 소스
 ```
 
 ## CLI Usage
