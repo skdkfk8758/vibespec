@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0] - 2026-03-16
+
+### 새 기능
+- **tools**: Plan/Task 편집·삭제 MCP 도구 추가 — vp_plan_update, vp_plan_delete, vp_task_edit, vp_task_delete (54958a9)
+- **cli**: task create, task next 명령어 추가 (f8bb8cb)
+
+### 버그 수정
+- **deploy**: npm 패키지에 플러그인 파일(agents, skills, hooks, .claude-plugin) 포함 (ec6475a)
+- **project**: MCP 서버/CLI 버전 하드코딩 제거, README 정확성 수정, shebang 중복 수정 (966826d)
+- **skills**: 미존재 plan-reviewer 에이전트 참조 제거, verification 스킬 폴백 처리, vs-setup 진단 강화 (b62cb74)
+
+### 리팩토링
+- **core**: MCP 에러 핸들링 강화(ok/err/requireArgs 헬퍼), DB 경로 .git 기반 탐색 + VIBESPEC_DB_PATH 환경변수 지원, CLI initModels() 팩토리 통일 (bb42c2d)
+- **agents**: spec-writer 에이전트를 TEMPLATE.md/EXAMPLE.md 분리 구조로 리팩토링 (886762b)
+
+### 테스트
+- **e2e**: 전체 워크플로우 통합 테스트 9개 추가 — 라이프사이클, 블로커, 컨텍스트, 트리, 에러 핸들링 (54f63b4)
+
 ## [0.3.2] - 2026-03-16
 
 ### 버그 수정
