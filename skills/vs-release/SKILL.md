@@ -50,7 +50,7 @@ git log --oneline v{current}..HEAD
    - `BREAKING CHANGE` 또는 `!:` → **major**
    - `feat` → **minor**
    - `fix`, `refactor`, `perf`, `chore`, `docs`, `test`, `ci` → **patch**
-4. 사용자에게 확인:
+4. 사용자에게 확인 (릴리즈 전체 흐름을 한 번에 결정):
    ```
    현재 버전: v{current}
    새 버전: v{next} ({bump_type})
@@ -59,8 +59,14 @@ git log --oneline v{current}..HEAD
    - abc1234 feat(auth): 로그인 API 추가
    - def5678 fix(db): 쿼리 타임아웃 수정
 
-   진행할까요? (Y / 버전 직접 입력)
+   진행할까요?
+   - Y: 릴리즈 생성 + push + GitHub Release까지 전부 수행
+   - local: 릴리즈 커밋 + 태그만 생성 (push 안 함)
+   - 버전 직접 입력 (예: 1.0.0)
    ```
+   → **Y** 선택 시 Phase 3~7을 push + GitHub Release 포함하여 논스톱 실행
+   → **local** 선택 시 Phase 3~5만 실행하고 Phase 7에서 "로컬만" 보고
+   → 버전 직접 입력 시 해당 버전으로 덮어쓰고 동일하게 진행
 
 ### Phase 3: 체인지로그 생성
 
@@ -108,20 +114,9 @@ EOF
 git tag v{next}
 ```
 
-### Phase 6: GitHub Release 생성
+### Phase 6: Push + GitHub Release 생성
 
-사용자에게 push 및 릴리즈 생성 여부 확인:
-
-```
-릴리즈 준비 완료!
-
-- 커밋: chore(release): v{next} 릴리즈
-- 태그: v{next}
-
-GitHub에 push하고 Release를 생성할까요? (Y / N)
-```
-
-**Y** 선택 시:
+Phase 2에서 **Y**를 선택한 경우에만 실행. **local** 선택 시 이 단계를 건너뛰고 Phase 7로 이동.
 
 ```bash
 git push origin main
@@ -130,9 +125,6 @@ gh release create v{next} --title "v{next}" --notes-file - <<'EOF'
 {changelog_section}
 EOF
 ```
-
-**N** 선택 시:
-→ 로컬 커밋+태그만 유지, 나중에 수동으로 push 가능하다고 안내
 
 ### Phase 7: 결과 보고
 
@@ -153,7 +145,7 @@ EOF
 - NEVER release with failing tests or build
 - NEVER release with uncommitted changes
 - NEVER force-push tags — 태그가 이미 존재하면 STOP
-- NEVER skip user confirmation at Phase 2 and Phase 6
+- NEVER skip user confirmation at Phase 2 — 이것이 유일한 확인 지점
 - 체인지로그는 한글로 작성
 - 커밋 메시지의 scope와 설명을 그대로 활용
 - CHANGELOG.md의 기존 내용을 절대 삭제하지 않음
