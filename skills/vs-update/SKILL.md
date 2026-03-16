@@ -1,0 +1,64 @@
+---
+name: vs-update
+description: VibeSpec 플러그인을 최신 버전으로 업데이트합니다. 마켓플레이스 캐시 갱신, 플러그인 캐시 교체, 레지스트리 업데이트를 자동 수행합니다.
+---
+
+# VibeSpec Update
+
+VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
+
+## Steps
+
+1. **현재 설치 정보 확인**
+   - `~/.claude/plugins/installed_plugins.json`에서 `vibespec@vibespec-marketplace` 항목을 읽으세요
+   - 현재 설치된 버전과 installPath를 기록하세요
+   - 항목이 없으면 STOP: "VibeSpec이 설치되어 있지 않습니다. `/plugin marketplace add skdkfk8758/vibespec` 후 `/plugin install vibespec`으로 설치하세요."
+
+2. **마켓플레이스 캐시 갱신**
+   ```bash
+   cd ~/.claude/plugins/marketplaces/vibespec-marketplace && git fetch origin && git reset --hard origin/main
+   ```
+   - 갱신 후 `.claude-plugin/marketplace.json`에서 최신 version을 읽으세요
+   - 현재 설치된 버전과 동일하면 STOP: "이미 최신 버전입니다 (v{version})."
+
+3. **새 버전 캐시 생성**
+   - 최신 version 값과 git commit SHA를 기록하세요:
+     ```bash
+     cd ~/.claude/plugins/marketplaces/vibespec-marketplace && git rev-parse HEAD
+     ```
+   - 새 캐시 디렉토리를 생성하고 파일을 복사하세요:
+     ```bash
+     NEW_DIR=~/.claude/plugins/cache/vibespec-marketplace/vibespec/{new_version}
+     mkdir -p "$NEW_DIR"
+     cd ~/.claude/plugins/marketplaces/vibespec-marketplace
+     cp -R .claude-plugin agents skills hooks "$NEW_DIR/"
+     ```
+   - 빌드가 필요한 경우 (dist/ 디렉토리):
+     ```bash
+     cd ~/.claude/plugins/marketplaces/vibespec-marketplace
+     npm ci && npm run build
+     cp -R dist "$NEW_DIR/"
+     cp package.json "$NEW_DIR/"
+     ```
+
+4. **레지스트리 업데이트**
+   - `~/.claude/plugins/installed_plugins.json`의 `vibespec@vibespec-marketplace` 항목을 업데이트하세요:
+     - `installPath` → 새 캐시 디렉토리 경로
+     - `version` → 새 버전
+     - `lastUpdated` → 현재 ISO 타임스탬프
+     - `gitCommitSha` → 새 커밋 SHA
+
+5. **이전 캐시 정리**
+   - 이전 버전의 캐시 디렉토리를 삭제하세요:
+     ```bash
+     rm -rf {old_installPath}
+     ```
+
+6. **결과 보고**
+   ```
+   VibeSpec 업데이트 완료!
+   - 이전: v{old_version}
+   - 최신: v{new_version}
+
+   변경사항을 적용하려면 Claude Code를 재시작하세요.
+   ```
