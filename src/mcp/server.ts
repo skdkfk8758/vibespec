@@ -10,6 +10,7 @@ import { PlanModel } from '../core/models/plan.js';
 import { TaskModel } from '../core/models/task.js';
 import { EventModel } from '../core/models/event.js';
 import { ContextModel } from '../core/models/context.js';
+import { TaskMetricsModel } from '../core/models/task-metrics.js';
 import { DashboardEngine } from '../core/engine/dashboard.js';
 import { AlertsEngine } from '../core/engine/alerts.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
@@ -62,6 +63,7 @@ export function createServer(db: Database.Database): Server {
   const planModel = new PlanModel(db, eventModel);
   const taskModel = new TaskModel(db, eventModel);
   const contextModel = new ContextModel(db);
+  const taskMetricsModel = new TaskMetricsModel(db);
 
   // Instantiate engines
   const dashboardEngine = new DashboardEngine(db);
@@ -190,6 +192,16 @@ export function createServer(db: Database.Database): Server {
             properties: {
               task_id: { type: 'string', description: 'Task ID' },
               status: { type: 'string', description: 'New status: todo, in_progress, done, blocked, skipped' },
+              metrics: {
+                type: 'object',
+                description: 'Optional implementation metrics to record',
+                properties: {
+                  impl_status: { type: 'string', description: 'DONE, DONE_WITH_CONCERNS, or BLOCKED' },
+                  test_count: { type: 'number', description: 'Number of tests written' },
+                  files_changed: { type: 'number', description: 'Number of files changed' },
+                  has_concerns: { type: 'boolean', description: 'Whether there are concerns' },
+                },
+              },
             },
             required: ['task_id', 'status'],
           },
@@ -477,11 +489,20 @@ export function createServer(db: Database.Database): Server {
       }
 
       case 'vp_task_update': {
-        const check = requireArgs<{ task_id: string; status: string }>(
+        const check = requireArgs<{
+          task_id: string;
+          status: string;
+          metrics?: {
+            impl_status?: string;
+            test_count?: number;
+            files_changed?: number;
+            has_concerns?: boolean;
+          };
+        }>(
           args as Record<string, unknown>, ['task_id', 'status'],
         );
         if (!check.valid) return check.response;
-        const { task_id, status } = check.parsed;
+        const { task_id, status, metrics } = check.parsed;
         if (!VALID_STATUSES.includes(status as TaskStatus)) {
           return err(
             'Invalid status. Must be: todo, in_progress, done, blocked, skipped',
@@ -491,6 +512,16 @@ export function createServer(db: Database.Database): Server {
         if (!taskResult.found) return taskResult.response;
         const updatedTask = taskModel.updateStatus(task_id, status as TaskStatus);
         const completionCheck = lifecycleEngine.autoCheckCompletion(updatedTask.plan_id);
+
+        // Auto-record metrics for terminal statuses
+        if (['done', 'blocked', 'skipped'].includes(status)) {
+          try {
+            taskMetricsModel.record(task_id, updatedTask.plan_id, status, metrics);
+          } catch {
+            // Metrics recording is non-blocking; main status update takes priority
+          }
+        }
+
         return ok({ task: updatedTask, completion_check: completionCheck });
       }
 

@@ -4,6 +4,7 @@ import { initSchema } from '../../core/db/schema.js';
 import { createServer } from '../server.js';
 import { PlanModel } from '../../core/models/plan.js';
 import { TaskModel } from '../../core/models/task.js';
+import { TaskMetricsModel } from '../../core/models/task-metrics.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type Database from 'better-sqlite3';
@@ -159,6 +160,136 @@ describe('MCP Task Tools', () => {
       const parsed = parseResult(result);
       expect(parsed.status).toBe('blocked');
       expect(parsed.id).toBe(task.id);
+    });
+  });
+
+  describe('vp_task_update metrics integration', () => {
+    let taskMetricsModel: TaskMetricsModel;
+
+    beforeEach(() => {
+      taskMetricsModel = new TaskMetricsModel(db);
+    });
+
+    it('should have metrics as optional field in inputSchema', async () => {
+      const tools = await client.listTools();
+      const taskUpdateTool = tools.tools.find((t) => t.name === 'vp_task_update');
+      expect(taskUpdateTool).toBeDefined();
+      const props = taskUpdateTool!.inputSchema.properties as Record<string, unknown>;
+      expect(props.metrics).toBeDefined();
+      // metrics should not be in required
+      const required = taskUpdateTool!.inputSchema.required as string[];
+      expect(required).not.toContain('metrics');
+    });
+
+    it('should auto-record task_metrics when status changes to done', async () => {
+      const task = taskModel.create(planId, 'Metrics Task');
+
+      await client.callTool({
+        name: 'vp_task_update',
+        arguments: { task_id: task.id, status: 'done' },
+      });
+
+      const metrics = taskMetricsModel.getByTask(task.id);
+      expect(metrics).not.toBeNull();
+      expect(metrics!.task_id).toBe(task.id);
+      expect(metrics!.plan_id).toBe(planId);
+      expect(metrics!.final_status).toBe('done');
+    });
+
+    it('should store impl_status and test_count when metrics provided', async () => {
+      const task = taskModel.create(planId, 'Metrics Detail Task');
+
+      await client.callTool({
+        name: 'vp_task_update',
+        arguments: {
+          task_id: task.id,
+          status: 'done',
+          metrics: {
+            impl_status: 'DONE',
+            test_count: 5,
+            files_changed: 3,
+            has_concerns: false,
+          },
+        },
+      });
+
+      const metrics = taskMetricsModel.getByTask(task.id);
+      expect(metrics).not.toBeNull();
+      expect(metrics!.impl_status).toBe('DONE');
+      expect(metrics!.test_count).toBe(5);
+      expect(metrics!.files_changed).toBe(3);
+      expect(metrics!.has_concerns).toBe(0);
+    });
+
+    it('should record metrics without metrics param (duration/final_status only)', async () => {
+      const task = taskModel.create(planId, 'No Metrics Param Task');
+
+      await client.callTool({
+        name: 'vp_task_update',
+        arguments: { task_id: task.id, status: 'done' },
+      });
+
+      const metrics = taskMetricsModel.getByTask(task.id);
+      expect(metrics).not.toBeNull();
+      expect(metrics!.final_status).toBe('done');
+      expect(metrics!.impl_status).toBeNull();
+      expect(metrics!.test_count).toBeNull();
+    });
+
+    it('should record metrics when status changes to blocked', async () => {
+      const task = taskModel.create(planId, 'Blocked Metrics Task');
+
+      await client.callTool({
+        name: 'vp_task_update',
+        arguments: { task_id: task.id, status: 'blocked' },
+      });
+
+      const metrics = taskMetricsModel.getByTask(task.id);
+      expect(metrics).not.toBeNull();
+      expect(metrics!.final_status).toBe('blocked');
+    });
+
+    it('should record metrics when status changes to skipped', async () => {
+      const task = taskModel.create(planId, 'Skipped Metrics Task');
+
+      await client.callTool({
+        name: 'vp_task_update',
+        arguments: { task_id: task.id, status: 'skipped' },
+      });
+
+      const metrics = taskMetricsModel.getByTask(task.id);
+      expect(metrics).not.toBeNull();
+      expect(metrics!.final_status).toBe('skipped');
+    });
+
+    it('should NOT record metrics when status changes to in_progress', async () => {
+      const task = taskModel.create(planId, 'In Progress Task');
+
+      await client.callTool({
+        name: 'vp_task_update',
+        arguments: { task_id: task.id, status: 'in_progress' },
+      });
+
+      const metrics = taskMetricsModel.getByTask(task.id);
+      expect(metrics).toBeNull();
+    });
+
+    it('should not block main status update if metrics recording fails', async () => {
+      const task = taskModel.create(planId, 'Resilient Task');
+
+      // Drop the task_metrics table to simulate a failure
+      db.exec('DROP TABLE IF EXISTS task_metrics');
+
+      const result = await client.callTool({
+        name: 'vp_task_update',
+        arguments: { task_id: task.id, status: 'done' },
+      });
+
+      // Main update should still succeed
+      const parsed = parseResult(result);
+      expect(parsed.task.status).toBe('done');
+      expect(parsed.task.id).toBe(task.id);
+      expect(parsed.completion_check).toBeDefined();
     });
   });
 });
