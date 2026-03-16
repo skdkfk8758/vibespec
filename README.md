@@ -52,19 +52,19 @@ npm install -g vibespec
 
 | Command | Description |
 |---------|-------------|
-| `/vibespec:setup` | 초기 설정 및 SDD 워크플로우 안내 |
-| `/vibespec:plan` | 스펙 작성 → 플랜 생성 → 태스크 분해 |
-| `/vibespec:dashboard` | 활성 플랜 진행률, 알림, 속도 통계 |
-| `/vibespec:resume` | 이전 세션 컨텍스트 복원 |
-| `/vibespec:next` | 다음 태스크 가져와서 작업 시작 |
+| `/vs-setup` | 초기 설정 및 SDD 워크플로우 안내 |
+| `/vs-plan` | 스펙 작성 → 플랜 생성 → 태스크 분해 |
+| `/vs-dashboard` | 활성 플랜 진행률, 알림, 속도 통계 |
+| `/vs-resume` | 이전 세션 컨텍스트 복원 |
+| `/vs-next` | 다음 태스크 가져와서 작업 시작 |
 
 ## SDD Workflow
 
 ```
-1. /vibespec:resume     → 이전 세션 복원
-2. /vibespec:plan       → 스펙 작성 + 태스크 분해
-3. /vibespec:next       → 태스크 하나씩 구현
-4. /vibespec:dashboard  → 진행 현황 확인
+1. /vs-resume     → 이전 세션 복원
+2. /vs-plan       → 스펙 작성 + 태스크 분해
+3. /vs-next       → 태스크 하나씩 구현
+4. /vs-dashboard  → 진행 현황 확인
 5. 반복
 ```
 
@@ -97,11 +97,11 @@ vibespec/
 │   └── marketplace.json     # 마켓플레이스 배포 설정
 ├── .mcp.json                # MCP 서버 자동 등록
 ├── skills/
-│   ├── setup/SKILL.md       # /vibespec:setup
-│   ├── plan/SKILL.md        # /vibespec:plan
-│   ├── dashboard/SKILL.md   # /vibespec:dashboard
-│   ├── resume/SKILL.md      # /vibespec:resume
-│   └── next/SKILL.md        # /vibespec:next
+│   ├── vs-setup/SKILL.md       # /vs-setup
+│   ├── vs-plan/SKILL.md        # /vs-plan
+│   ├── vs-dashboard/SKILL.md   # /vs-dashboard
+│   ├── vs-resume/SKILL.md      # /vs-resume
+│   └── vs-next/SKILL.md        # /vs-next
 ├── hooks/
 │   ├── hooks.json           # 플러그인 훅 정의
 │   └── on-commit-sync.sh    # 커밋 시 태스크 연동

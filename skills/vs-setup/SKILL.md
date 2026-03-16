@@ -1,5 +1,5 @@
 ---
-name: setup
+name: vs-setup
 description: VibeSpec 초기 설정 및 SDD 워크플로우 안내. 처음 사용하는 사용자에게 사용법을 설명하고 첫 플랜 생성을 도와줍니다.
 ---
 
@@ -16,10 +16,10 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
 2. **SDD 워크플로우 설명**
    사용자에게 다음을 설명하세요:
    - VibeSpec은 **Spec → Plan → Tasks → Implementation** 사이클을 따릅니다
-   - 매 세션 시작 시 `/vibespec:resume`으로 이전 컨텍스트를 복원합니다
-   - `/vibespec:plan`으로 스펙을 작성하고 태스크로 분해합니다
-   - `/vibespec:next`로 다음 태스크를 가져와 작업합니다
-   - `/vibespec:dashboard`로 전체 진행 현황을 봅니다
+   - 매 세션 시작 시 `/vs-resume`으로 이전 컨텍스트를 복원합니다
+   - `/vs-plan`으로 스펙을 작성하고 태스크로 분해합니다
+   - `/vs-next`로 다음 태스크를 가져와 작업합니다
+   - `/vs-dashboard`로 전체 진행 현황을 봅니다
 
 3. **첫 플랜 생성 (선택)**
    - 사용자에게 첫 플랜을 만들지 물어보세요

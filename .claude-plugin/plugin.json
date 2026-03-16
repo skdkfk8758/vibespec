@@ -1,5 +1,5 @@
 {
-  "name": "vibespec",
+  "name": "vs",
   "version": "0.2.1",
   "description": "SDD(Spec-Driven Development) 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
   "author": {
@@ -10,5 +10,6 @@
   "repository": "https://github.com/skdkfk8758/vibespec",
   "license": "MIT",
   "keywords": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "agents": "./agents/"
 }

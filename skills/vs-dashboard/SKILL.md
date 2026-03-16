@@ -1,5 +1,5 @@
 ---
-name: dashboard
+name: vs-dashboard
 description: 프로젝트 현황 대시보드. 활성 플랜 진행률, 알림, 속도 통계를 한눈에 보여줍니다.
 ---
 
@@ -32,4 +32,4 @@ description: 프로젝트 현황 대시보드. 활성 플랜 진행률, 알림, 
    - completable 플랜 → 플랜 완료 제안
    - blocked 태스크 → 차단 해소 제안
    - stale 태스크 → 리뷰 제안
-   - 그 외 → `/vibespec:next`로 다음 태스크 시작 제안
+   - 그 외 → `/vs-next`로 다음 태스크 시작 제안
