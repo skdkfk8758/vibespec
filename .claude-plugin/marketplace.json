@@ -1,14 +1,17 @@
 {
   "name": "vibespec",
+  "description": "SDD 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
   "owner": {
-    "name": "skdkfk8758"
+    "name": "skdkfk8758",
+    "url": "https://github.com/skdkfk8758"
   },
   "plugins": [
     {
       "name": "vibespec",
+      "description": "SDD(Spec-Driven Development) 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
       "source": "./",
-      "description": "SDD 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
-      "version": "0.10.1"
+      "category": "development",
+      "tags": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"]
     }
   ]
 }
