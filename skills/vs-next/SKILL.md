@@ -46,9 +46,12 @@ description: Use when fetching and starting the next pending task from the activ
      → 차단 사유를 사용자에게 보여주고 대응 방법을 논의하세요
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
-     → 최종 검증을 실행하세요: 테스트(`npm test`), 빌드(`npm run build`), lint 확인
-     → (verification 스킬이 설치되어 있으면 활용, 없으면 직접 검증)
-     → 검증 통과 후 `vp_task_update`로 status를 done으로 변경하세요
+     → `verification` 스킬을 실행하세요
+       - 전달 컨텍스트: 현재 태스크 정보(title, spec, acceptance), tdd-implementer 리포트(있는 경우)
+       - 스킬이 PASS/WARN/FAIL 판정과 리포트를 반환합니다
+     → PASS: `vp_task_update`로 status를 done으로 변경하세요
+     → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (metrics에 `has_concerns: true` 기록)
+     → FAIL: 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
    - `vp_context_save`로 완료 내용을 저장하세요
    **체크포인트**: "태스크 완료! 다음 태스크 계속 / 커밋 정리 / 대시보드 확인 중 선택해주세요."
 
