@@ -156,10 +156,7 @@ npm install -g vibespec
 
 ```
 vibespec/
-├── .claude-plugin/
-│   ├── plugin.json          # 플러그인 매니페스트
-│   ├── marketplace.json     # 마켓플레이스 배포 설정
-│   └── .mcp.json            # MCP 서버 선언 (${CLAUDE_PLUGIN_ROOT} 변수)
+├── .mcp.json                  # MCP 서버 선언
 ├── skills/
 │   ├── vs-setup/SKILL.md       # /vs-setup
 │   ├── vs-plan/SKILL.md        # /vs-plan

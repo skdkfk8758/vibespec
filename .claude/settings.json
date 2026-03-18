@@ -7,10 +7,6 @@
           {
             "type": "command",
             "command": ".claude/hooks/check-readme.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/check-plugin-json.sh"
           }
         ]
       }
