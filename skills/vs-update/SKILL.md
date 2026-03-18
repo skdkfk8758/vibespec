@@ -18,7 +18,7 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
    ```bash
    cd ~/.claude/plugins/marketplaces/vibespec-marketplace && git fetch origin && git reset --hard origin/main
    ```
-   - 갱신 후 `package.json`에서 최신 version을 읽으세요
+   - 갱신 후 `.claude-plugin/marketplace.json`에서 최신 version을 읽으세요
    - 현재 설치된 버전과 동일하면 STOP: "이미 최신 버전입니다 (v{version})."
 
 3. **새 버전 캐시를 임시 디렉토리에 생성 (안전한 빌드)**
@@ -33,7 +33,7 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      rm -rf "$TMP_DIR"
      mkdir -p "$TMP_DIR"
      cd ~/.claude/plugins/marketplaces/vibespec-marketplace
-     cp -R agents skills hooks "$TMP_DIR/"
+     cp -R .claude-plugin agents skills hooks "$TMP_DIR/"
      ```
    - 빌드가 필요한 경우 (dist/ 디렉토리):
      ```bash
@@ -43,6 +43,7 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      cp package.json "$TMP_DIR/"
      ```
    - **빌드 검증** — 아래 필수 항목이 모두 존재하는지 확인하세요:
+     - `$TMP_DIR/.claude-plugin/plugin.json`
      - `$TMP_DIR/skills/` (1개 이상의 SKILL.md)
      - dist가 필요한 경우: `$TMP_DIR/dist/mcp/server.js`
    - 검증 실패 시 임시 디렉토리를 정리하고 STOP:
@@ -84,6 +85,8 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      → vibespec-marketplace/vibespec/0.6.1/dist/mcp/server.js
      ```
    - `.mcp.json` 파일이 없거나 vibespec 경로가 없으면 건너뛰세요.
+   - 플러그인의 `.claude-plugin/.mcp.json`은 `${CLAUDE_PLUGIN_ROOT}` 변수를 사용하므로 별도 갱신이 불필요합니다.
+
 8. **결과 보고**
    ```
    VibeSpec 업데이트 완료!

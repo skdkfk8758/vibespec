@@ -98,11 +98,13 @@ git log --oneline v{current}..HEAD
 아래 파일들의 version 필드를 새 버전으로 변경:
 
 1. `package.json` — `"version": "{next}"`
+2. `.claude-plugin/plugin.json` — `"version": "{next}"`
+3. `.claude-plugin/marketplace.json` — plugins[0].version → `"{next}"`
 
 ### Phase 5: 릴리즈 커밋 + 태그
 
 ```bash
-git add CHANGELOG.md package.json README.md
+git add CHANGELOG.md package.json .claude-plugin/plugin.json .claude-plugin/marketplace.json README.md
 git commit -m "$(cat <<'EOF'
 chore(release): v{next} 릴리즈
 

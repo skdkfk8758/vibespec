@@ -42,7 +42,8 @@
     "dist",
     "agents",
     "skills",
-    "hooks"
+    "hooks",
+    ".claude-plugin"
   ],
   "license": "MIT"
 }

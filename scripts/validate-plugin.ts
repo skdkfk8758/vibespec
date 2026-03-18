@@ -5,6 +5,7 @@ import path from "path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SKILLS_DIR = path.join(ROOT, "skills");
 const AGENTS_DIR = path.join(ROOT, "agents");
+const PLUGIN_JSON = path.join(ROOT, ".claude-plugin", "plugin.json");
 const HOOKS_JSON = path.join(ROOT, "hooks", "hooks.json");
 
 const C = { RED: "\x1b[91m", GREEN: "\x1b[92m", YELLOW: "\x1b[93m", CYAN: "\x1b[96m", BOLD: "\x1b[1m", DIM: "\x1b[2m", RESET: "\x1b[0m" };
@@ -78,6 +79,17 @@ function validateHooks(): VR {
   r.info.push(`${count} hooks`); return r;
 }
 
+function validatePlugin(): VR {
+  const r = vr();
+  if (!fs.existsSync(PLUGIN_JSON)) { r.errors.push("Missing plugin.json"); return r; }
+  let data: Record<string, unknown>;
+  try { data = JSON.parse(fs.readFileSync(PLUGIN_JSON, "utf-8")); } catch { r.errors.push("Invalid JSON"); return r; }
+  for (const f of ["name", "version", "description"]) if (!data[f]) r.errors.push(`Missing: ${f}`);
+  const v = data.version as string;
+  if (v && !/^\d+\.\d+\.\d+$/.test(v)) r.warnings.push(`Version '${v}' not semver`);
+  r.info.push(`v${v || "unknown"}`); return r;
+}
+
 function print(r: VR, indent = 4) {
   const p = " ".repeat(indent);
   for (const e of r.errors) console.log(`${p}${C.RED}✗ ERROR:${C.RESET} ${e}`);
@@ -85,19 +97,21 @@ function print(r: VR, indent = 4) {
   for (const i of r.info) console.log(`${p}${C.DIM}ℹ ${i}${C.RESET}`);
 }
 
+const pluginR = validatePlugin();
 const { results: skillR, count: sc } = validateSkills();
 const { results: agentR, count: ac } = validateAgents();
 const hookR = validateHooks();
 
-let te = hookR.errors.length;
-let tw = hookR.warnings.length;
+let te = pluginR.errors.length + hookR.errors.length;
+let tw = pluginR.warnings.length + hookR.warnings.length;
 for (const v of Object.values(skillR)) { te += v.errors.length; tw += v.warnings.length; }
 for (const v of Object.values(agentR)) { te += v.errors.length; tw += v.warnings.length; }
 
-console.log(`\n${C.BOLD}${"=".repeat(60)}\n VibeSpec Validator\n${"=".repeat(60)}${C.RESET}\n`);
+console.log(`\n${C.BOLD}${"=".repeat(60)}\n VibeSpec Plugin Validator\n${"=".repeat(60)}${C.RESET}\n`);
 const status = te === 0 ? `${C.GREEN}✓ PASS${C.RESET}` : `${C.RED}✗ FAIL${C.RESET}`;
-console.log(`${C.BOLD}${C.CYAN}┌─ VibeSpec${C.RESET}  [${sc} skills, ${ac} agents]  ${status}${tw > 0 ? ` ${C.YELLOW}(${tw} warnings)${C.RESET}` : ""}`);
+console.log(`${C.BOLD}${C.CYAN}┌─ Plugin: vs${C.RESET}  [${sc} skills, ${ac} agents]  ${status}${tw > 0 ? ` ${C.YELLOW}(${tw} warnings)${C.RESET}` : ""}`);
 
+if (pluginR.errors.length || pluginR.warnings.length) { console.log(`  ${C.BOLD}Manifest:${C.RESET}`); print(pluginR); }
 const si = Object.entries(skillR).filter(([,v]) => v.errors.length || v.warnings.length);
 if (si.length) { console.log(`  ${C.BOLD}Skills with issues:${C.RESET}`); for (const [n,v] of si) { console.log(`    ${n}:`); print(v, 6); } }
 const ai = Object.entries(agentR).filter(([,v]) => v.errors.length || v.warnings.length);
