@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2] - 2026-03-18
+
+### 문서
+- **readme**: 설치 가이드를 멀티 플랫폼 형식으로 개선 — Claude Cowork, Claude Code CLI, Other AI Assistants, Manual 섹션 분리 (f47272e)
+
+### 버그 수정
+- **test**: velocity 테스트 날짜를 상대 날짜로 변경 — 시간 경과 시 윈도우 밖으로 밀리는 문제 수정 (85f98ff)
+
 ## [0.9.0] - 2026-03-18
 
 ### 새 기능
