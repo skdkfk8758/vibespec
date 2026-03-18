@@ -44,6 +44,8 @@ description: Use when selecting a specific task from the plan to start working o
    - 태스크 제목, spec, acceptance criteria를 보여주세요
    - 서브태스크가 있으면 함께 표시하세요
 
+   **체크포인트**: "선택한 태스크: {title}. 시작 / 다른 태스크 선택 / 취소 중 선택해주세요."
+
 5. **구현**
    - `vp_task_update`로 status를 in_progress로 변경하세요
    - 태스크의 TDD 적합성을 판단하세요:
@@ -68,4 +70,10 @@ description: Use when selecting a specific task from the plan to start working o
      → (verification 스킬이 설치되어 있으면 활용, 없으면 직접 검증)
      → 검증 통과 후 `vp_task_update`로 status를 done으로 변경하세요
    - `vp_context_save`로 완료 내용을 저장하세요
-   - 다음 태스크를 계속 선택할지 물어보세요
+
+
+## 다음 단계
+
+- → `/vs-next`로 순차 진행 복귀
+- → `/vs-commit`으로 변경사항 커밋
+- → `/vs-dashboard`로 전체 현황 확인

@@ -29,7 +29,16 @@ description: Use when checking project status dashboard. 활성 플랜 진행률
    - 활성 플랜이 있으면 plan_id를 넘겨 예상 완료일도 보여주세요
 
 4. **다음 액션 제안**
+
+   **체크포인트**: 아래 상황에 맞는 액션을 제안하고 사용자의 선택을 받으세요:
    - completable 플랜 → 플랜 완료 제안
    - blocked 태스크 → 차단 해소 제안
    - stale 태스크 → 리뷰 제안
    - 그 외 → `/vs-next`로 다음 태스크 시작 제안
+
+## 다음 단계
+
+- → `/vs-next`로 다음 태스크 시작
+- → `/vs-commit`으로 미커밋 변경사항 정리
+- → `/vs-review`로 스펙 점검
+- 플랜 완료 근접 시 → `/vs-release`로 릴리즈 준비

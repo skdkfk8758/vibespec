@@ -26,6 +26,8 @@ description: Use when fetching and starting the next pending task from the activ
 
 4. **구현**
    - `vp_task_update`로 status를 in_progress로 변경하세요
+
+   **체크포인트**: "이 태스크를 시작합니다. TDD 에이전트 디스패치 / 직접 구현 / 건너뛰기 중 선택해주세요."
    - 태스크의 TDD 적합성을 판단하세요:
 
    **TDD 적합** (함수, API, 서비스, 데이터 처리, 비즈니스 로직):
@@ -48,4 +50,11 @@ description: Use when fetching and starting the next pending task from the activ
      → (verification 스킬이 설치되어 있으면 활용, 없으면 직접 검증)
      → 검증 통과 후 `vp_task_update`로 status를 done으로 변경하세요
    - `vp_context_save`로 완료 내용을 저장하세요
-   - 다음 태스크가 있으면 계속할지 물어보세요
+   **체크포인트**: "태스크 완료! 다음 태스크 계속 / 커밋 정리 / 대시보드 확인 중 선택해주세요."
+
+## 다음 단계
+
+- → `/vs-next`로 다음 태스크 계속 진행
+- → `/vs-commit`으로 변경사항 논리 단위 커밋
+- → `/vs-dashboard`로 진행률 확인
+- 블로커 발견 시 → `/vs-pick`으로 다른 태스크 선택
