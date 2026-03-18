@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.0] - 2026-03-18
+
+### 새 기능
+- **hooks**: 세션 안전망 훅 추가 — Stop 시 git stash 자동 보존, SessionStart 시 stash 감지 알림 주입 (6871ffb)
+- **hooks**: 워크트리 나갈 때 /vs-merge 안내 메시지 자동 표시 (6871ffb)
+- **vs-merge**: 워크트리 squash-merge 스킬 추가 — 6단계 Phase로 고품질 커밋 메시지 생성 (8d27aef)
+- **vs-resume**: stash 복원 단계 추가 — 세션 안전망 훅과 연동하여 감지·복원·삭제 선택 (46ea9b2)
+
+### 문서
+- **readme**: 신규 스킬·훅 문서화 및 Worktree Workflow, Session Safety Net 섹션 추가 (6a09b88)
+
 ## [0.7.3] - 2026-03-17
 
 ### 리팩토링
