@@ -66,9 +66,27 @@ description: Use when selecting a specific task from the plan to start working o
      → 차단 사유를 사용자에게 보여주고 대응 방법을 논의하세요
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
-     → `verification` 스킬을 실행하세요
+     → `verification` 스킬과 `codex-review` 스킬을 **병렬로** 실행하세요
        - 전달 컨텍스트: 현재 태스크 정보(title, spec, acceptance), tdd-implementer 리포트(있는 경우)
-       - 스킬이 PASS/WARN/FAIL 판정과 리포트를 반환합니다
+       - 각 스킬이 독립적으로 PASS/WARN/FAIL/SKIP 판정과 리포트를 반환합니다
+     → **종합 판정 규칙:**
+       - codex-review가 SKIP이면 → verification 결과만으로 판정
+       - 둘 다 PASS → **PASS**
+       - 하나라도 WARN (나머지 PASS 또는 SKIP) → **WARN**
+       - 하나라도 FAIL → **FAIL**
+     → **종합 리포트**를 다음 형식으로 출력하세요:
+       ```
+       ## 종합 검증 리포트
+
+       ### 최종 판정: [PASS | WARN | FAIL]
+
+       ### Verification (기술 검증)
+       [verification 리포트 요약 — verdict, 테스트/빌드/lint 결과, acceptance 충족률]
+
+       ### Codex Review (코드 리뷰)
+       [codex-review 리포트 요약 — verdict, 주요 발견사항]
+       (SKIP인 경우: "Codex 리뷰를 건너뛰었습니다: {사유}")
+       ```
      → PASS: `vp_task_update`로 status를 done으로 변경하세요
      → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (metrics에 `has_concerns: true` 기록)
      → FAIL: 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
