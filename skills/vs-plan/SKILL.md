@@ -60,7 +60,12 @@ description: Use when creating a spec-driven plan. 요구사항을 분석하여 
    - 정성적 기준 (사용자 경험, 코드 품질 등)
    ```
 
-   **체크포인트**: "스펙을 검토해주세요. 승인 / 수정 요청 / 처음부터 재작성 중 선택해주세요."
+   **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+   - header: "스펙 검토"
+   - 선택지:
+     - label: "승인", description: "현재 스펙으로 플랜 생성을 진행합니다"
+     - label: "수정 요청", description: "피드백을 반영하여 스펙을 수정합니다"
+     - label: "처음부터 재작성", description: "스펙을 처음부터 다시 작성합니다"
 
 3. **플랜 생성**
    - 승인된 스펙으로 `vp_plan_create`를 호출하세요
@@ -80,7 +85,12 @@ description: Use when creating a spec-driven plan. 요구사항을 분석하여 
    - **성공 지표**: 스펙의 Success Criteria가 구체적이고 측정 가능한가?
    - **플랜 크기**: 태스크가 5개를 초과하면 플랜 분할을 제안하세요
 
-   **체크포인트**: "태스크 분해 리뷰 결과입니다. 승인 / 개선점 반영 후 재확인 / 재분류 중 선택해주세요."
+   **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+   - header: "플랜 리뷰"
+   - 선택지:
+     - label: "승인", description: "현재 태스크 분해로 진행합니다"
+     - label: "개선점 반영 후 재확인", description: "피드백을 반영하여 태스크를 수정하고 다시 확인합니다"
+     - label: "재분류", description: "태스크를 처음부터 다시 분해합니다"
    개선점을 반영했으면 최종 태스크 목록을 다시 보여주고 승인을 받으세요.
 
 6. **태스크 생성**
