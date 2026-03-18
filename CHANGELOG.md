@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0] - 2026-03-18
+
+### 새 기능
+- **codex-review**: Codex CLI 크로스 리뷰 스킬 추가 — 구현 완료 후 codex review로 크로스 모델 코드 리뷰 수행, graceful skip 지원 (77399ea)
+- **workflow**: vs-next/vs-pick에 codex-review 병렬 실행 및 종합 리포트 통합 — verification과 codex-review 병렬 실행, PASS/WARN/FAIL 합산 판정 (b9f4bc9)
+- **vs-plan**: 체크포인트에 AskUserQuestion 인터랙티브 선택 UI 적용 — 스펙 검토/플랜 리뷰 체크포인트를 인터랙티브 선택지로 개선 (39dad8f)
+
 ## [0.11.1] - 2026-03-18
 
 ### 버그 수정
