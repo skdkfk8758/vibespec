@@ -1,6 +1,7 @@
 ---
 name: verification
 description: Use when verifying task completion before marking as done. Checks acceptance criteria, tests, build, and lint against the task spec.
+invocation: user
 ---
 
 # Task Verification

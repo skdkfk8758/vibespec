@@ -1,6 +1,7 @@
 ---
 name: vs-next
 description: Use when fetching and starting the next pending task from the active plan.
+invocation: user
 ---
 
 # Next Task

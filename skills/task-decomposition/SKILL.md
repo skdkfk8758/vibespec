@@ -1,6 +1,7 @@
 ---
 name: task-decomposition
 description: "Use when referencing task decomposition principles. 15-30분 단위 분해, 의존성 순서 결정, acceptance criteria 작성법, 플랜 크기 판단 기준을 제공합니다. vs-plan, spec-writer가 참조합니다."
+invocation: auto
 type: domain
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: codex-review
 description: Use when performing cross-model code review with Codex CLI. 구현 완료 후 codex review를 실행하여 코드 품질, 버그, 설계 관점의 독립적 리뷰를 제공합니다.
+invocation: user
 ---
 
 # Codex CLI 크로스 리뷰
