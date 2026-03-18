@@ -24,45 +24,52 @@ describe('StatsEngine', () => {
   });
 
   describe('getVelocity', () => {
+    // Helper: 오늘 기준 N일 전 날짜 문자열 반환
+    function daysAgo(n: number): string {
+      const d = new Date();
+      d.setDate(d.getDate() - n);
+      return d.toISOString().split('T')[0];
+    }
+
     it('should calculate velocity from completed tasks over 3 days', () => {
       const plan = planModel.create('Velocity Plan');
       planModel.activate(plan.id);
 
-      // Day 1 (2026-03-14): 2 tasks completed
+      // Day 1 (2일 전): 2 tasks completed
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
       taskModel.updateStatus(t1.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-14');
+      ).run(daysAgo(2));
       taskModel.updateStatus(t2.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-14');
+      ).run(daysAgo(2));
 
-      // Day 2 (2026-03-15): 1 task completed
+      // Day 2 (1일 전): 1 task completed
       const t3 = taskModel.create(plan.id, 'Task 3');
       taskModel.updateStatus(t3.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-15');
+      ).run(daysAgo(1));
 
-      // Day 3 (2026-03-16): 3 tasks completed
+      // Day 3 (오늘): 3 tasks completed
       const t4 = taskModel.create(plan.id, 'Task 4');
       const t5 = taskModel.create(plan.id, 'Task 5');
       const t6 = taskModel.create(plan.id, 'Task 6');
       taskModel.updateStatus(t4.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-16');
+      ).run(daysAgo(0));
       taskModel.updateStatus(t5.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-16');
+      ).run(daysAgo(0));
       taskModel.updateStatus(t6.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-16');
+      ).run(daysAgo(0));
 
       // 6 completions over 3-day window
       const result = stats.getVelocity(plan.id, 3);
@@ -86,11 +93,11 @@ describe('StatsEngine', () => {
       taskModel.updateStatus(t1.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-16');
+      ).run(daysAgo(0));
       taskModel.updateStatus(t2.id, 'done');
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-      ).run('2026-03-16');
+      ).run(daysAgo(0));
 
       const result = stats.getVelocity(undefined, 7);
       expect(result.total_completed).toBe(2);
@@ -103,12 +110,17 @@ describe('StatsEngine', () => {
       planModel.activate(plan.id);
 
       // Create 6 done tasks + 4 remaining
+      const estDaysAgo = (n: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() - n);
+        return d.toISOString().split('T')[0];
+      };
       for (let i = 1; i <= 6; i++) {
         const t = taskModel.create(plan.id, `Done Task ${i}`);
         taskModel.updateStatus(t.id, 'done');
         db.prepare(
           "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
-        ).run('2026-03-16');
+        ).run(estDaysAgo(0));
       }
       // 4 remaining tasks (todo)
       for (let i = 1; i <= 4; i++) {
