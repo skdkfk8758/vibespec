@@ -1,6 +1,6 @@
 {
   "name": "vs",
-  "version": "0.9.4",
+  "version": "0.10.0",
   "description": "SDD(Spec-Driven Development) 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
   "author": {
     "name": "skdkfk8758",
@@ -9,7 +9,14 @@
   "homepage": "https://github.com/skdkfk8758/vibespec",
   "repository": "https://github.com/skdkfk8758/vibespec",
   "license": "MIT",
-  "keywords": ["sdd", "vibecoding", "plan", "task", "mcp", "spec"],
+  "keywords": [
+    "sdd",
+    "vibecoding",
+    "plan",
+    "task",
+    "mcp",
+    "spec"
+  ],
   "mcpServers": "./.mcp.json",
   "skills": "./skills/",
   "agents": [

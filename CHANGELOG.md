@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0] - 2026-03-18
+
+### 새 기능
+- **verification**: 태스크 완료 검증 스킬 추가 — acceptance criteria + 테스트/빌드/lint 기반 PASS/WARN/FAIL 판정 (a2d3465)
+- **vs-next/vs-pick**: 완료 처리에서 verification 스킬 명시 호출 및 판정별 분기 처리 연동 (a2d3465)
+
+### 문서
+- **readme**: 설치 가이드를 Claude Code marketplace 기준으로 최신화, 마켓플레이스 이름 수정 (a2d3465)
+
 ## [0.9.4] - 2026-03-18
 
 ### 리팩토링
