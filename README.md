@@ -64,6 +64,16 @@ npm install -g vibespec
 | `/vs-release` | Conventional Commits 기반 릴리즈 자동화 |
 | `/vs-update` | 플러그인을 최신 버전으로 업데이트 |
 
+### Domain Skills (자동 참조)
+
+| Skill | Description |
+|-------|-------------|
+| `sdd-methodology` | SDD 원칙, 스펙 구조, 품질 체크리스트 |
+| `tdd-principles` | RED-GREEN-REFACTOR, AAA 패턴, TDD 적합성 판단 |
+| `task-decomposition` | 15-30분 분해, INVEST 원칙, AC 작성법 |
+
+도메인 스킬은 명시적 호출 없이 관련 커맨드 실행 시 Claude가 자동으로 참조합니다.
+
 ## SDD Workflow
 
 ```
@@ -132,7 +142,10 @@ vibespec/
 │   ├── vs-commit/SKILL.md      # /vs-commit
 │   ├── vs-merge/SKILL.md       # /vs-merge
 │   ├── vs-release/SKILL.md     # /vs-release
-│   └── vs-update/SKILL.md      # /vs-update
+│   ├── vs-update/SKILL.md      # /vs-update
+│   ├── sdd-methodology/SKILL.md   # 도메인: SDD 원칙
+│   ├── tdd-principles/SKILL.md    # 도메인: TDD 원칙
+│   └── task-decomposition/SKILL.md # 도메인: 태스크 분해
 ├── hooks/
 │   ├── hooks.json              # 플러그인 훅 정의
 │   ├── on-commit-sync.sh       # 커밋 시 태스크 연동
@@ -145,6 +158,9 @@ vibespec/
 │   │   ├── TEMPLATE.md         # 스펙 템플릿
 │   │   └── EXAMPLE.md          # 스펙 예시
 │   └── tdd-implementer.md      # TDD 구현 에이전트
+├── scripts/
+│   └── validate-plugin.ts     # 플러그인 유효성 검증
+├── CONTRIBUTING.md             # 기여 가이드
 └── src/                        # MCP 서버 + CLI 소스
 ```
 

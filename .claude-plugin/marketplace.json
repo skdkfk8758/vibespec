@@ -8,7 +8,7 @@
       "name": "vibespec",
       "source": "./",
       "description": "SDD 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
-      "version": "0.8.0"
+      "version": "0.9.0"
     }
   ]
 }
