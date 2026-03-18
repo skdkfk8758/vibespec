@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.10.1] - 2026-03-18
+
+### 버그 수정
+- **plugin**: dist/ 빌드 결과물을 git에 포함하여 GitHub 릴리즈 설치 시 "Source path does not exist" 오류 해결 (596fd1f)
+
 ## [0.10.0] - 2026-03-18
 
 ### 새 기능
