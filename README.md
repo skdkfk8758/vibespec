@@ -60,18 +60,32 @@ npm install -g vibespec
 | `/vs-pick` | 태스크 목록에서 선택하여 작업 시작 |
 | `/vs-review` | 스펙/태스크를 인터랙티브 선택하여 에디터에서 확인·수정 |
 | `/vs-commit` | 변경사항 논리 그룹화 + 태스크 연동 커밋 |
+| `/vs-merge` | 워크트리 브랜치를 squash-merge로 메인 브랜치에 병합 |
 | `/vs-release` | Conventional Commits 기반 릴리즈 자동화 |
 | `/vs-update` | 플러그인을 최신 버전으로 업데이트 |
 
 ## SDD Workflow
 
 ```
-1. /vs-resume     → 이전 세션 복원
+1. /vs-resume     → 이전 세션 복원 (stash 자동 감지)
 2. /vs-plan       → 스펙 작성 + 태스크 분해
 3. /vs-next       → 태스크 하나씩 구현
 4. /vs-dashboard  → 진행 현황 확인
 5. 반복
 ```
+
+### Worktree Workflow
+
+```
+1. /worktree      → 격리된 워크트리에서 작업
+2. /vs-next       → 태스크 구현
+3. /vs-merge      → squash-merge로 메인 브랜치에 병합
+```
+
+### Session Safety Net
+
+세션 종료 시 미커밋 변경사항이 있으면 자동으로 `git stash`에 보존됩니다.
+다음 세션 시작 시 자동으로 감지되어 `/vs-resume`으로 복원할 수 있습니다.
 
 ## MCP Tools
 
@@ -116,11 +130,15 @@ vibespec/
 │   ├── vs-pick/SKILL.md        # /vs-pick
 │   ├── vs-review/SKILL.md      # /vs-review
 │   ├── vs-commit/SKILL.md      # /vs-commit
+│   ├── vs-merge/SKILL.md       # /vs-merge
 │   ├── vs-release/SKILL.md     # /vs-release
 │   └── vs-update/SKILL.md      # /vs-update
 ├── hooks/
-│   ├── hooks.json           # 플러그인 훅 정의
-│   └── on-commit-sync.sh    # 커밋 시 태스크 연동
+│   ├── hooks.json              # 플러그인 훅 정의
+│   ├── on-commit-sync.sh       # 커밋 시 태스크 연동
+│   ├── session-stash.sh        # 세션 종료 시 미커밋 변경 stash 보존
+│   ├── session-restore-check.sh # 세션 시작 시 stash 감지 알림
+│   └── worktree-exit-guide.sh  # 워크트리 나갈 때 vs-merge 안내
 ├── agents/
 │   ├── spec-writer.md          # SDD 스펙 작성 에이전트
 │   ├── spec-writer/
