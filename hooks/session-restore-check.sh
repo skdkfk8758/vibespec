@@ -32,26 +32,36 @@ while IFS= read -r line; do
     continue
   fi
 
-  # 필드 수로 새/구 형식 판별
+  # 필드 수로 새/구 형식 엄격 판별 (-eq 6 또는 -eq 4만 허용)
   FIELD_COUNT=$(echo "$MSG" | tr ':' '\n' | wc -l | tr -d ' ')
 
-  if [ "$FIELD_COUNT" -ge 6 ]; then
+  if [ "$FIELD_COUNT" -eq 6 ]; then
     # 새 형식: vibespec-session:{branch}:{worktree_path}:{plan_id}:{task_id}:{timestamp}
     STASH_BRANCH=$(echo "$MSG" | cut -d: -f2)
     PLAN=$(echo "$MSG" | cut -d: -f4)
     TASK=$(echo "$MSG" | cut -d: -f5)
     TS=$(echo "$MSG" | cut -d: -f6)
-  else
+  elif [ "$FIELD_COUNT" -eq 4 ]; then
     # 기존 형식: vibespec-session:{plan_id}:{task_id}:{timestamp}
     STASH_BRANCH="unknown"
     PLAN=$(echo "$MSG" | cut -d: -f2)
     TASK=$(echo "$MSG" | cut -d: -f3)
     TS=$(echo "$MSG" | cut -d: -f4)
+  else
+    # 예상 외 형식 — 건너뛰기
+    OTHER_COUNT=$((OTHER_COUNT + 1))
+    continue
   fi
 
-  if [ "$STASH_BRANCH" = "$CURRENT_BRANCH" ] || [ "$STASH_BRANCH" = "unknown" ]; then
+  # detached HEAD는 브랜치 식별자가 아니므로 매치하지 않음
+  if [ "$CURRENT_BRANCH" = "HEAD" ] || [ "$STASH_BRANCH" = "HEAD" ]; then
+    OTHER_COUNT=$((OTHER_COUNT + 1))
+  elif [ "$STASH_BRANCH" = "$CURRENT_BRANCH" ]; then
     MATCHED_COUNT=$((MATCHED_COUNT + 1))
     MATCHED_DETAILS="${MATCHED_DETAILS}  - ${STASH_REF}: branch=${STASH_BRANCH}, plan=${PLAN}, task=${TASK}, saved=${TS}\n"
+  elif [ "$STASH_BRANCH" = "unknown" ]; then
+    # 구형 포맷은 ambiguous — 별도 카운트하되 매치에 포함하지 않음
+    OTHER_COUNT=$((OTHER_COUNT + 1))
   else
     OTHER_COUNT=$((OTHER_COUNT + 1))
   fi

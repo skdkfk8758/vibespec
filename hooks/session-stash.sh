@@ -65,8 +65,14 @@ VS_STASH_REFS=$(git stash list 2>/dev/null | grep 'vibespec-session' | cut -d: -
 VS_STASH_COUNT=$(echo "$VS_STASH_REFS" | grep -c 'stash@' 2>/dev/null || echo "0")
 
 if [ "$VS_STASH_COUNT" -gt "$MAX_STASH" ]; then
-  # 가장 오래된 것(높은 인덱스)부터 삭제 — 역순으로 drop해야 인덱스가 밀리지 않음
+  # 높은 인덱스(오래된 것)부터 삭제해야 인덱스가 밀리지 않음
+  # tac은 macOS에 없으므로 tail -r 사용 (BSD 호환)
   DROP_REFS=$(echo "$VS_STASH_REFS" | tail -n +"$((MAX_STASH + 1))")
+  if command -v tac &>/dev/null; then
+    DROP_REFS=$(echo "$DROP_REFS" | tac)
+  else
+    DROP_REFS=$(echo "$DROP_REFS" | tail -r)
+  fi
   echo "$DROP_REFS" | while IFS= read -r ref; do
     [ -n "$ref" ] && git stash drop "$ref" 2>/dev/null || true
   done

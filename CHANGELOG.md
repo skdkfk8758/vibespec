@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.1] - 2026-03-18
+
+### 버그 수정
+- **hooks**: stash 훅 워크트리 교차 오염 방지 — 워크트리에서 Stop 훅 stash push 비활성화, stash 메시지에 브랜치명 포함 (448a970)
+- **hooks**: stash 무한 누적 방지 — vibespec-session stash 최대 5개 제한, 초과 시 FIFO 삭제 (448a970)
+- **hooks**: session-restore-check 브랜치 필터링 — 현재 브랜치와 일치하는 stash만 복원 안내, 기존/새 형식 호환 (448a970)
+- **vs-resume**: 브랜치 검증 지침 추가 — stash 테이블에 브랜치/일치 컬럼, 불일치 복원 시 경고 (448a970)
+
 ## [0.11.0] - 2026-03-18
 
 ### 새 기능
