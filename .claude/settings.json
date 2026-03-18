@@ -15,5 +15,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "vibespec@vibespec": true
   }
 }
