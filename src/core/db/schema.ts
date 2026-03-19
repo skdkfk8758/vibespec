@@ -8,6 +8,8 @@ export function initSchema(db: Database.Database): void {
       status      TEXT NOT NULL CHECK(status IN ('draft','active','completed','archived')) DEFAULT 'draft',
       summary     TEXT,
       spec        TEXT,
+      branch      TEXT,
+      worktree_name TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -51,6 +53,8 @@ export function initSchema(db: Database.Database): void {
       p.id,
       p.title,
       p.status,
+      p.branch,
+      p.worktree_name,
       COUNT(t.id) AS total_tasks,
       SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
       SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
@@ -105,4 +109,47 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_task_metrics_plan_id ON task_metrics(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_metrics_task_id ON task_metrics(task_id);
   `);
+
+  applyMigrations(db);
+}
+
+export function applyMigrations(db: Database.Database): void {
+  const version = db.pragma('user_version', { simple: true }) as number;
+
+  if (version < 1) {
+    const columns = db.pragma('table_info(plans)') as Array<{ name: string }>;
+    const hasColumn = (name: string) => columns.some((c) => c.name === name);
+
+    if (!hasColumn('branch')) {
+      db.exec('ALTER TABLE plans ADD COLUMN branch TEXT');
+    }
+    if (!hasColumn('worktree_name')) {
+      db.exec('ALTER TABLE plans ADD COLUMN worktree_name TEXT');
+    }
+
+    db.exec('DROP VIEW IF EXISTS plan_progress');
+    db.exec(`
+      CREATE VIEW plan_progress AS
+      SELECT
+        p.id,
+        p.title,
+        p.status,
+        p.branch,
+        p.worktree_name,
+        COUNT(t.id) AS total_tasks,
+        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
+        SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
+        SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
+        ROUND(
+          SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END)
+          / MAX(COUNT(t.id), 1) * 100
+        ) AS progress_pct
+      FROM plans p
+      LEFT JOIN tasks t ON t.plan_id = p.id
+      WHERE p.status IN ('active', 'draft')
+      GROUP BY p.id
+    `);
+
+    db.pragma('user_version = 1');
+  }
 }

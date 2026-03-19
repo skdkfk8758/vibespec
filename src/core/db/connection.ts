@@ -1,10 +1,17 @@
 import Database from 'better-sqlite3';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
+import { execSync } from 'node:child_process';
 
 let _db: Database.Database | null = null;
 
-function findProjectRoot(startDir: string): string {
+export interface GitContext {
+  branch: string | null;
+  worktreeName: string | null;
+  isWorktree: boolean;
+}
+
+export function findProjectRoot(startDir: string): string {
   let dir = startDir;
   while (dir !== dirname(dir)) {
     const gitPath = resolve(dir, '.git');
@@ -25,9 +32,42 @@ function findProjectRoot(startDir: string): string {
   return startDir;
 }
 
+export function detectGitContext(): GitContext {
+  try {
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+
+    const gitDir = execSync('git rev-parse --git-dir', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+
+    const isWorktree = gitDir.includes('/worktrees/');
+    let worktreeName: string | null = null;
+    if (isWorktree) {
+      const match = gitDir.match(/\/worktrees\/([^/]+)$/);
+      worktreeName = match ? match[1] : null;
+    }
+
+    return {
+      branch: branch === 'HEAD' ? null : branch,
+      worktreeName,
+      isWorktree,
+    };
+  } catch {
+    return { branch: null, worktreeName: null, isWorktree: false };
+  }
+}
+
 function resolveDbPath(): string {
   if (process.env.VIBESPEC_DB_PATH) {
     return process.env.VIBESPEC_DB_PATH;
+  }
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.PROJECT_DIR;
+  if (projectDir) {
+    return resolve(findProjectRoot(projectDir), 'vibespec.db');
   }
   const root = findProjectRoot(process.cwd());
   return resolve(root, 'vibespec.db');

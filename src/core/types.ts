@@ -8,6 +8,8 @@ export interface Plan {
   status: PlanStatus;
   summary: string | null;
   spec: string | null;
+  branch: string | null;
+  worktree_name: string | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -54,6 +56,8 @@ export interface PlanProgress {
   id: string;
   title: string;
   status: PlanStatus;
+  branch: string | null;
+  worktree_name: string | null;
   total_tasks: number;
   done_tasks: number;
   active_tasks: number;
