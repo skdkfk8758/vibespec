@@ -41,12 +41,18 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      cd ~/.claude/plugins/marketplaces/vibespec-marketplace
      npm ci && npm run build
      cp -R dist "$TMP_DIR/"
-     cp package.json "$TMP_DIR/"
+     cp package.json package-lock.json "$TMP_DIR/"
      ```
+   - **런타임 의존성 설치** (better-sqlite3 등 native 모듈이 external로 빌드되므로 필수):
+     ```bash
+     cd "$TMP_DIR" && npm ci --production
+     ```
+     - 이 단계가 없으면 MCP 서버 시작 시 `better-sqlite3` 모듈을 찾지 못해 연결이 실패합니다.
    - **빌드 검증** — 아래 필수 항목이 모두 존재하는지 확인하세요:
      - `$TMP_DIR/.claude-plugin/plugin.json`
      - `$TMP_DIR/skills/` (1개 이상의 SKILL.md)
      - dist가 필요한 경우: `$TMP_DIR/dist/mcp/server.js`
+     - native 의존성: `$TMP_DIR/node_modules/better-sqlite3`
    - 검증 실패 시 임시 디렉토리를 정리하고 STOP:
      ```bash
      rm -rf "$TMP_DIR"
