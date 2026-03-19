@@ -11,6 +11,7 @@ export default defineConfig([
     sourcemap: true,
     dts: false,
     external: ['better-sqlite3'],
+    noExternal: ['@modelcontextprotocol/sdk'],
   },
   {
     entry: { 'cli/index': 'src/cli/index.ts' },
@@ -21,6 +22,7 @@ export default defineConfig([
     sourcemap: true,
     dts: false,
     external: ['better-sqlite3'],
+    noExternal: ['@modelcontextprotocol/sdk'],
     banner: {
       js: '#!/usr/bin/env node',
     },
