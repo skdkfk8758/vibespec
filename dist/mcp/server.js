@@ -20806,8 +20806,37 @@ var StdioServerTransport = class {
   }
 };
 
+// node_modules/nanoid/index.js
+import { webcrypto as crypto } from "crypto";
+
+// node_modules/nanoid/url-alphabet/index.js
+var urlAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
+
+// node_modules/nanoid/index.js
+var POOL_SIZE_MULTIPLIER = 128;
+var pool;
+var poolOffset;
+function fillPool(bytes) {
+  if (!pool || pool.length < bytes) {
+    pool = Buffer.allocUnsafe(bytes * POOL_SIZE_MULTIPLIER);
+    crypto.getRandomValues(pool);
+    poolOffset = 0;
+  } else if (poolOffset + bytes > pool.length) {
+    crypto.getRandomValues(pool);
+    poolOffset = 0;
+  }
+  poolOffset += bytes;
+}
+function nanoid3(size = 21) {
+  fillPool(size |= 0);
+  let id = "";
+  for (let i = poolOffset - size; i < poolOffset; i++) {
+    id += urlAlphabet[pool[i] & 63];
+  }
+  return id;
+}
+
 // src/core/models/plan.ts
-import { nanoid as nanoid3 } from "nanoid";
 var PlanModel = class {
   db;
   events;
@@ -20927,7 +20956,6 @@ var PlanModel = class {
 };
 
 // src/core/models/task.ts
-import { nanoid as nanoid4 } from "nanoid";
 var TaskModel = class {
   constructor(db, events) {
     this.db = db;
@@ -20935,7 +20963,7 @@ var TaskModel = class {
   }
   events;
   create(planId, title, opts) {
-    const id = nanoid4(12);
+    const id = nanoid3(12);
     let depth = 0;
     if (opts?.parentId) {
       const parent = this.getById(opts.parentId);
