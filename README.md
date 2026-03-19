@@ -73,6 +73,7 @@ cp -r skills/* ~/.gemini/skills/
 | `/vs-worktree` | 워크트리 생성 + .gitignore 검증 + 의존성 설치 + 테스트 베이스라인 |
 | `/vs-merge` | 워크트리 브랜치를 squash-merge로 메인 브랜치에 병합 |
 | `/vs-release` | Conventional Commits 기반 릴리즈 자동화 |
+| `/vs-plan-verify` | 플랜 전체 구현 완성도 검증 (태스크 상태 + 회귀 테스트 + 성공 기준) |
 | `/vs-update` | 플러그인을 최신 버전으로 업데이트 |
 
 ### Domain Skills (자동 참조)
@@ -155,6 +156,9 @@ vibespec/
 │   ├── vs-commit/SKILL.md      # /vs-commit
 │   ├── vs-merge/SKILL.md       # /vs-merge
 │   ├── vs-release/SKILL.md     # /vs-release
+│   ├── vs-worktree/SKILL.md    # /vs-worktree
+│   ├── vs-exec/SKILL.md        # /vs-exec
+│   ├── vs-plan-verify/SKILL.md # /vs-plan-verify
 │   ├── vs-update/SKILL.md      # /vs-update
 │   ├── verification/SKILL.md         # 도메인: 태스크 완료 검증
 │   ├── codex-review/SKILL.md        # 도메인: Codex CLI 크로스 리뷰
@@ -172,7 +176,9 @@ vibespec/
 │   ├── spec-writer/
 │   │   ├── TEMPLATE.md         # 스펙 템플릿
 │   │   └── EXAMPLE.md          # 스펙 예시
-│   └── tdd-implementer.md      # TDD 구현 에이전트
+│   ├── tdd-implementer.md      # TDD 구현 에이전트
+│   ├── debugger.md             # 태스크 실패 자동 디버깅 에이전트
+│   └── verifier.md             # 태스크 완료 검증 에이전트
 ├── scripts/
 │   └── validate-plugin.ts     # 플러그인 유효성 검증
 ├── CONTRIBUTING.md             # 기여 가이드
