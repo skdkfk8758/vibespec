@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 
 let _db: Database.Database | null = null;
@@ -7,7 +7,19 @@ let _db: Database.Database | null = null;
 function findProjectRoot(startDir: string): string {
   let dir = startDir;
   while (dir !== dirname(dir)) {
-    if (existsSync(resolve(dir, '.git'))) return dir;
+    const gitPath = resolve(dir, '.git');
+    if (existsSync(gitPath)) {
+      const stat = statSync(gitPath);
+      if (stat.isFile()) {
+        const content = readFileSync(gitPath, 'utf-8').trim();
+        const match = content.match(/^gitdir:\s*(.+)/);
+        if (match) {
+          const absGitDir = resolve(dir, match[1]);
+          return absGitDir.replace(/[/\\]\.git[/\\]worktrees[/\\].*$/, '');
+        }
+      }
+      return dir;
+    }
     dir = dirname(dir);
   }
   return startDir;
