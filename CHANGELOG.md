@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0] - 2026-03-19
+
+### 새 기능
+- **db**: plans 테이블에 branch/worktree_name 컬럼 추가 및 user_version 기반 migration 시스템 도입 (6ff2e4c)
+- **plan**: 플랜 생성 시 git branch 자동 기록 및 vp_plan_list branch 필터 지원 (413a563)
+- **hooks**: session-stash/restore 훅의 워크트리 지원 확대 — 워크트리에서도 stash 생성 및 복원 (46e5d5b)
+
 ## [0.13.3] - 2026-03-19
 
 ### 버그 수정
