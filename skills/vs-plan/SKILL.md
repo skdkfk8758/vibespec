@@ -72,7 +72,9 @@ invocation: user
    ```
 
    **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+   - question: "작성된 스펙을 검토해주세요. 어떻게 진행할까요?"
    - header: "스펙 검토"
+   - multiSelect: false
    - 선택지:
      - label: "승인", description: "현재 스펙으로 플랜 생성을 진행합니다"
      - label: "수정 요청", description: "피드백을 반영하여 스펙을 수정합니다"
@@ -97,7 +99,9 @@ invocation: user
    - **플랜 크기**: 태스크가 5개를 초과하면 플랜 분할을 제안하세요
 
    **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+   - question: "태스크 분해 결과를 검토해주세요. 어떻게 진행할까요?"
    - header: "플랜 리뷰"
+   - multiSelect: false
    - 선택지:
      - label: "승인", description: "현재 태스크 분해로 진행합니다"
      - label: "개선점 반영 후 재확인", description: "피드백을 반영하여 태스크를 수정하고 다시 확인합니다"
