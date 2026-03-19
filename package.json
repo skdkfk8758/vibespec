@@ -40,6 +40,7 @@
   },
   "files": [
     "dist",
+    "scripts",
     "agents",
     "skills",
     "hooks",
