@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1] - 2026-03-19
+
+### 버그 수정
+- **vs-plan**: AskUserQuestion 체크포인트에 question, multiSelect 필드 명시 (84bd8a0)
+- **db**: 워크트리 환경에서 프로젝트 루트 탐지 로직 개선 (857e63f)
+- **build**: MCP SDK를 번들에 포함하도록 noExternal 설정 추가 (2bffe3e)
+
 ## [0.13.0] - 2026-03-19
 
 ### 새 기능
