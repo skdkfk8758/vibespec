@@ -20836,6 +20836,77 @@ function nanoid3(size = 21) {
   return id;
 }
 
+// src/core/db/connection.ts
+import Database from "better-sqlite3";
+import { existsSync, statSync, readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { execSync } from "child_process";
+var _db = null;
+function findProjectRoot(startDir) {
+  let dir = startDir;
+  while (dir !== dirname(dir)) {
+    const gitPath = resolve(dir, ".git");
+    if (existsSync(gitPath)) {
+      const stat = statSync(gitPath);
+      if (stat.isFile()) {
+        const content = readFileSync(gitPath, "utf-8").trim();
+        const match = content.match(/^gitdir:\s*(.+)/);
+        if (match) {
+          const absGitDir = resolve(dir, match[1]);
+          return absGitDir.replace(/[/\\]\.git[/\\]worktrees[/\\].*$/, "");
+        }
+      }
+      return dir;
+    }
+    dir = dirname(dir);
+  }
+  return startDir;
+}
+function detectGitContext() {
+  try {
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"]
+    }).trim();
+    const gitDir = execSync("git rev-parse --git-dir", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"]
+    }).trim();
+    const isWorktree = gitDir.includes("/worktrees/");
+    let worktreeName = null;
+    if (isWorktree) {
+      const match = gitDir.match(/\/worktrees\/([^/]+)$/);
+      worktreeName = match ? match[1] : null;
+    }
+    return {
+      branch: branch === "HEAD" ? null : branch,
+      worktreeName,
+      isWorktree
+    };
+  } catch {
+    return { branch: null, worktreeName: null, isWorktree: false };
+  }
+}
+function resolveDbPath() {
+  if (process.env.VIBESPEC_DB_PATH) {
+    return process.env.VIBESPEC_DB_PATH;
+  }
+  const projectDir = process.env.CLAUDE_PROJECT_DIR || process.env.PROJECT_DIR;
+  if (projectDir) {
+    return resolve(findProjectRoot(projectDir), "vibespec.db");
+  }
+  const root = findProjectRoot(process.cwd());
+  return resolve(root, "vibespec.db");
+}
+function getDb(dbPath) {
+  if (_db) return _db;
+  const path = dbPath ?? resolveDbPath();
+  _db = new Database(path);
+  _db.pragma("journal_mode = WAL");
+  _db.pragma("foreign_keys = ON");
+  return _db;
+}
+
 // src/core/models/plan.ts
 var PlanModel = class {
   db;
@@ -20846,12 +20917,13 @@ var PlanModel = class {
   }
   create(title, spec, summary) {
     const id = nanoid3(12);
+    const ctx = detectGitContext();
     const stmt = this.db.prepare(
-      `INSERT INTO plans (id, title, status, spec, summary) VALUES (?, ?, 'draft', ?, ?)`
+      `INSERT INTO plans (id, title, status, spec, summary, branch, worktree_name) VALUES (?, ?, 'draft', ?, ?, ?, ?)`
     );
-    stmt.run(id, title, spec ?? null, summary ?? null);
+    stmt.run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
     const plan = this.getById(id);
-    this.events?.record("plan", plan.id, "created", null, JSON.stringify({ title, status: "draft" }));
+    this.events?.record("plan", plan.id, "created", null, JSON.stringify({ title, status: "draft", branch: ctx.branch }));
     return plan;
   }
   getById(id) {
@@ -20860,12 +20932,19 @@ var PlanModel = class {
     return row ?? null;
   }
   list(filter) {
+    const conditions = [];
+    const params = [];
     if (filter?.status) {
-      const stmt2 = this.db.prepare(`SELECT * FROM plans WHERE status = ? ORDER BY created_at DESC`);
-      return stmt2.all(filter.status);
+      conditions.push("status = ?");
+      params.push(filter.status);
     }
-    const stmt = this.db.prepare(`SELECT * FROM plans ORDER BY created_at DESC`);
-    return stmt.all();
+    if (filter?.branch) {
+      conditions.push("branch = ?");
+      params.push(filter.branch);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const stmt = this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`);
+    return stmt.all(...params);
   }
   update(id, fields) {
     const plan = this.getById(id);
@@ -21620,47 +21699,6 @@ var InsightsEngine = class {
   }
 };
 
-// src/core/db/connection.ts
-import Database from "better-sqlite3";
-import { existsSync, statSync, readFileSync } from "fs";
-import { resolve, dirname } from "path";
-var _db = null;
-function findProjectRoot(startDir) {
-  let dir = startDir;
-  while (dir !== dirname(dir)) {
-    const gitPath = resolve(dir, ".git");
-    if (existsSync(gitPath)) {
-      const stat = statSync(gitPath);
-      if (stat.isFile()) {
-        const content = readFileSync(gitPath, "utf-8").trim();
-        const match = content.match(/^gitdir:\s*(.+)/);
-        if (match) {
-          const absGitDir = resolve(dir, match[1]);
-          return absGitDir.replace(/[/\\]\.git[/\\]worktrees[/\\].*$/, "");
-        }
-      }
-      return dir;
-    }
-    dir = dirname(dir);
-  }
-  return startDir;
-}
-function resolveDbPath() {
-  if (process.env.VIBESPEC_DB_PATH) {
-    return process.env.VIBESPEC_DB_PATH;
-  }
-  const root = findProjectRoot(process.cwd());
-  return resolve(root, "vibespec.db");
-}
-function getDb(dbPath) {
-  if (_db) return _db;
-  const path = dbPath ?? resolveDbPath();
-  _db = new Database(path);
-  _db.pragma("journal_mode = WAL");
-  _db.pragma("foreign_keys = ON");
-  return _db;
-}
-
 // src/core/db/schema.ts
 function initSchema(db) {
   db.exec(`
@@ -21670,6 +21708,8 @@ function initSchema(db) {
       status      TEXT NOT NULL CHECK(status IN ('draft','active','completed','archived')) DEFAULT 'draft',
       summary     TEXT,
       spec        TEXT,
+      branch      TEXT,
+      worktree_name TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -21713,6 +21753,8 @@ function initSchema(db) {
       p.id,
       p.title,
       p.status,
+      p.branch,
+      p.worktree_name,
       COUNT(t.id) AS total_tasks,
       SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
       SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
@@ -21767,6 +21809,43 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_task_metrics_plan_id ON task_metrics(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_metrics_task_id ON task_metrics(task_id);
   `);
+  applyMigrations(db);
+}
+function applyMigrations(db) {
+  const version2 = db.pragma("user_version", { simple: true });
+  if (version2 < 1) {
+    const columns = db.pragma("table_info(plans)");
+    const hasColumn = (name) => columns.some((c) => c.name === name);
+    if (!hasColumn("branch")) {
+      db.exec("ALTER TABLE plans ADD COLUMN branch TEXT");
+    }
+    if (!hasColumn("worktree_name")) {
+      db.exec("ALTER TABLE plans ADD COLUMN worktree_name TEXT");
+    }
+    db.exec("DROP VIEW IF EXISTS plan_progress");
+    db.exec(`
+      CREATE VIEW plan_progress AS
+      SELECT
+        p.id,
+        p.title,
+        p.status,
+        p.branch,
+        p.worktree_name,
+        COUNT(t.id) AS total_tasks,
+        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
+        SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
+        SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
+        ROUND(
+          SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END)
+          / MAX(COUNT(t.id), 1) * 100
+        ) AS progress_pct
+      FROM plans p
+      LEFT JOIN tasks t ON t.plan_id = p.id
+      WHERE p.status IN ('active', 'draft')
+      GROUP BY p.id
+    `);
+    db.pragma("user_version = 1");
+  }
 }
 
 // src/mcp/server.ts
@@ -21896,11 +21975,12 @@ function createServer(db) {
         },
         {
           name: "vp_plan_list",
-          description: "List plans, optionally filtered by status",
+          description: "List plans, optionally filtered by status and/or branch",
           inputSchema: {
             type: "object",
             properties: {
-              status: { type: "string", description: "Optional status filter" }
+              status: { type: "string", description: "Optional status filter" },
+              branch: { type: "string", description: "Optional branch filter" }
             },
             required: []
           }
@@ -22168,9 +22248,11 @@ function createServer(db) {
         }
       }
       case "vp_plan_list": {
-        const { status } = args ?? {};
-        const filter = status ? { status } : void 0;
-        const plans = planModel.list(filter);
+        const { status, branch } = args ?? {};
+        const filter = {};
+        if (status) filter.status = status;
+        if (branch) filter.branch = branch;
+        const plans = planModel.list(Object.keys(filter).length > 0 ? filter : void 0);
         return ok(plans);
       }
       case "vp_plan_update": {
@@ -22357,7 +22439,9 @@ function createServer(db) {
   return server;
 }
 async function main() {
+  console.error(`[vibespec] CWD: ${process.cwd()}`);
   const db = getDb();
+  console.error(`[vibespec] DB: ${db.name}`);
   initSchema(db);
   const server = createServer(db);
   const transport = new StdioServerTransport();
