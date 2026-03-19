@@ -69,6 +69,7 @@ cp -r skills/* ~/.gemini/skills/
 | `/vs-pick` | 태스크 목록에서 선택하여 작업 시작 |
 | `/vs-review` | 스펙/태스크를 인터랙티브 선택하여 에디터에서 확인·수정 |
 | `/vs-commit` | 변경사항 논리 그룹화 + 태스크 연동 커밋 |
+| `/vs-worktree` | 워크트리 생성 + .gitignore 검증 + 의존성 설치 + 테스트 베이스라인 |
 | `/vs-merge` | 워크트리 브랜치를 squash-merge로 메인 브랜치에 병합 |
 | `/vs-release` | Conventional Commits 기반 릴리즈 자동화 |
 | `/vs-update` | 플러그인을 최신 버전으로 업데이트 |
@@ -98,7 +99,7 @@ cp -r skills/* ~/.gemini/skills/
 ### Worktree Workflow
 
 ```
-1. /worktree      → 격리된 워크트리에서 작업
+1. /vs-worktree   → 워크트리 생성 + 환경 셋업 (의존성, 테스트 베이스라인)
 2. /vs-next       → 태스크 구현
 3. /vs-merge      → squash-merge로 메인 브랜치에 병합
 ```
