@@ -162,11 +162,12 @@ export function createServer(db: Database.Database): Server {
         },
         {
           name: 'vp_plan_list',
-          description: 'List plans, optionally filtered by status',
+          description: 'List plans, optionally filtered by status and/or branch',
           inputSchema: {
             type: 'object' as const,
             properties: {
               status: { type: 'string', description: 'Optional status filter' },
+              branch: { type: 'string', description: 'Optional branch filter' },
             },
             required: [],
           },
@@ -451,9 +452,11 @@ export function createServer(db: Database.Database): Server {
       }
 
       case 'vp_plan_list': {
-        const { status } = (args as { status?: string } | undefined) ?? {};
-        const filter = status ? { status: status as import('../core/types.js').PlanStatus } : undefined;
-        const plans = planModel.list(filter);
+        const { status, branch } = (args as { status?: string; branch?: string } | undefined) ?? {};
+        const filter: { status?: import('../core/types.js').PlanStatus; branch?: string } = {};
+        if (status) filter.status = status as import('../core/types.js').PlanStatus;
+        if (branch) filter.branch = branch;
+        const plans = planModel.list(Object.keys(filter).length > 0 ? filter : undefined);
         return ok(plans);
       }
 
@@ -669,7 +672,9 @@ export function createServer(db: Database.Database): Server {
 }
 
 export async function main(): Promise<void> {
+  console.error(`[vibespec] CWD: ${process.cwd()}`);
   const db = getDb();
+  console.error(`[vibespec] DB: ${db.name}`);
   initSchema(db);
   const server = createServer(db);
   const transport = new StdioServerTransport();

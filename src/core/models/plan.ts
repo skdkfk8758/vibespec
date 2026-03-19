@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type { Plan, PlanStatus } from '../types.js';
 import type { EventModel } from './event.js';
+import { detectGitContext } from '../db/connection.js';
 
 export class PlanModel {
   private db: Database.Database;
@@ -14,12 +15,13 @@ export class PlanModel {
 
   create(title: string, spec?: string, summary?: string): Plan {
     const id = nanoid(12);
+    const ctx = detectGitContext();
     const stmt = this.db.prepare(
-      `INSERT INTO plans (id, title, status, spec, summary) VALUES (?, ?, 'draft', ?, ?)`
+      `INSERT INTO plans (id, title, status, spec, summary, branch, worktree_name) VALUES (?, ?, 'draft', ?, ?, ?, ?)`
     );
-    stmt.run(id, title, spec ?? null, summary ?? null);
+    stmt.run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
     const plan = this.getById(id)!;
-    this.events?.record('plan', plan.id, 'created', null, JSON.stringify({ title, status: 'draft' }));
+    this.events?.record('plan', plan.id, 'created', null, JSON.stringify({ title, status: 'draft', branch: ctx.branch }));
     return plan;
   }
 
@@ -29,13 +31,22 @@ export class PlanModel {
     return row ?? null;
   }
 
-  list(filter?: { status?: PlanStatus }): Plan[] {
+  list(filter?: { status?: PlanStatus; branch?: string }): Plan[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
     if (filter?.status) {
-      const stmt = this.db.prepare(`SELECT * FROM plans WHERE status = ? ORDER BY created_at DESC`);
-      return stmt.all(filter.status) as Plan[];
+      conditions.push('status = ?');
+      params.push(filter.status);
     }
-    const stmt = this.db.prepare(`SELECT * FROM plans ORDER BY created_at DESC`);
-    return stmt.all() as Plan[];
+    if (filter?.branch) {
+      conditions.push('branch = ?');
+      params.push(filter.branch);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const stmt = this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`);
+    return stmt.all(...params) as Plan[];
   }
 
   update(id: string, fields: Partial<Pick<Plan, 'title' | 'summary' | 'spec'>>): Plan {

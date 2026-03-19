@@ -139,7 +139,9 @@ describe('PlanModel with EventModel', () => {
     expect(recorded).toHaveLength(1);
     expect(recorded[0].event_type).toBe('created');
     expect(recorded[0].old_value).toBeNull();
-    expect(JSON.parse(recorded[0].new_value!)).toEqual({ title: 'Event Plan', status: 'draft' });
+    const newValue = JSON.parse(recorded[0].new_value!);
+    expect(newValue.title).toBe('Event Plan');
+    expect(newValue.status).toBe('draft');
   });
 
   it('should record an activated event on plan.activate()', () => {
