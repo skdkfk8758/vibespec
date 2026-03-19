@@ -183,6 +183,11 @@ export function createServer(db: Database.Database): Server {
               parent_id: { type: 'string', description: 'Optional parent task ID for subtasks' },
               spec: { type: 'string', description: 'Optional task specification' },
               acceptance: { type: 'string', description: 'Optional acceptance criteria' },
+              depends_on: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Optional list of task IDs this task depends on',
+              },
             },
             required: ['plan_id', 'title'],
           },
@@ -411,7 +416,8 @@ export function createServer(db: Database.Database): Server {
         const result = getPlanOrError(check.parsed.plan_id);
         if (!result.found) return result.response;
         const tasks = taskModel.getTree(check.parsed.plan_id);
-        return ok({ plan: result.plan, tasks });
+        const waves = taskModel.getWaves(check.parsed.plan_id);
+        return ok({ plan: result.plan, tasks, waves });
       }
 
       case 'vp_plan_complete': {
@@ -493,14 +499,16 @@ export function createServer(db: Database.Database): Server {
           parent_id?: string;
           spec?: string;
           acceptance?: string;
+          depends_on?: string[];
         }>(args as Record<string, unknown>, ['plan_id', 'title']);
         if (!check.valid) return check.response;
-        const { plan_id, title, parent_id, spec, acceptance } = check.parsed;
+        const { plan_id, title, parent_id, spec, acceptance, depends_on } = check.parsed;
         try {
           const task = taskModel.create(plan_id, title, {
             parentId: parent_id,
             spec,
             acceptance,
+            dependsOn: depends_on,
           });
           return ok(task);
         } catch (e: unknown) {
@@ -557,11 +565,11 @@ export function createServer(db: Database.Database): Server {
       case 'vp_task_next': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
-        const todoTasks = taskModel.getByPlan(check.parsed.plan_id, { status: 'todo' });
-        if (todoTasks.length === 0) {
-          return ok({ message: 'No pending tasks', hint: 'All tasks are done. Use vp_plan_complete to finish the plan.' });
+        const nextTask = taskModel.getNextAvailable(check.parsed.plan_id);
+        if (!nextTask) {
+          return ok({ message: 'No pending tasks', hint: 'All tasks are done or blocked by dependencies. Use vp_plan_complete to finish the plan.' });
         }
-        return ok(todoTasks[0]);
+        return ok(nextTask);
       }
 
       case 'vp_task_block': {

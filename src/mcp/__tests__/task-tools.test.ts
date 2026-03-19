@@ -292,4 +292,147 @@ describe('MCP Task Tools', () => {
       expect(parsed.completion_check).toBeDefined();
     });
   });
+
+  describe('vp_task_create with depends_on', () => {
+    it('should save depends_on when valid task IDs are provided', async () => {
+      const taskA = taskModel.create(planId, 'Task A');
+
+      const result = await client.callTool({
+        name: 'vp_task_create',
+        arguments: {
+          plan_id: planId,
+          title: 'Task B',
+          depends_on: [taskA.id],
+        },
+      });
+
+      const parsed = parseResult(result);
+      expect(parsed.title).toBe('Task B');
+      expect(parsed.depends_on).toBeDefined();
+      const deps = JSON.parse(parsed.depends_on);
+      expect(deps).toEqual([taskA.id]);
+    });
+
+    it('should return error when depends_on contains non-existent task ID', async () => {
+      const result = await client.callTool({
+        name: 'vp_task_create',
+        arguments: {
+          plan_id: planId,
+          title: 'Task with bad dep',
+          depends_on: ['nonexistent-id'],
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const parsed = parseResult(result);
+      expect(parsed.error).toContain('Dependency task not found');
+    });
+
+    it('should work without depends_on (backward compatibility)', async () => {
+      const result = await client.callTool({
+        name: 'vp_task_create',
+        arguments: {
+          plan_id: planId,
+          title: 'Task without deps',
+        },
+      });
+
+      const parsed = parseResult(result);
+      expect(parsed.title).toBe('Task without deps');
+      expect(parsed.status).toBe('todo');
+      expect(parsed.depends_on).toBeNull();
+    });
+
+    it('should have depends_on in inputSchema', async () => {
+      const tools = await client.listTools();
+      const createTool = tools.tools.find((t) => t.name === 'vp_task_create');
+      expect(createTool).toBeDefined();
+      const props = createTool!.inputSchema.properties as Record<string, unknown>;
+      expect(props.depends_on).toBeDefined();
+      // depends_on should not be required
+      const required = createTool!.inputSchema.required as string[];
+      expect(required).not.toContain('depends_on');
+    });
+  });
+
+  describe('vp_task_next with dependencies', () => {
+    it('should skip tasks whose dependencies are not done', async () => {
+      const taskA = taskModel.create(planId, 'Task A', { sortOrder: 1 });
+      taskModel.create(planId, 'Task B', {
+        sortOrder: 2,
+        dependsOn: [taskA.id],
+      });
+
+      const result = await client.callTool({
+        name: 'vp_task_next',
+        arguments: { plan_id: planId },
+      });
+
+      const parsed = parseResult(result);
+      // Task A has no deps, so it should be returned (not Task B)
+      expect(parsed.title).toBe('Task A');
+    });
+
+    it('should return dependent task after its dependency is done', async () => {
+      const taskA = taskModel.create(planId, 'Task A', { sortOrder: 1 });
+      taskModel.create(planId, 'Task B', {
+        sortOrder: 2,
+        dependsOn: [taskA.id],
+      });
+
+      // Complete Task A
+      taskModel.updateStatus(taskA.id, 'done');
+
+      const result = await client.callTool({
+        name: 'vp_task_next',
+        arguments: { plan_id: planId },
+      });
+
+      const parsed = parseResult(result);
+      expect(parsed.title).toBe('Task B');
+    });
+
+    it('should return no pending tasks when all remaining tasks are blocked by deps', async () => {
+      const taskA = taskModel.create(planId, 'Task A', { sortOrder: 1 });
+      taskModel.create(planId, 'Task B', {
+        sortOrder: 2,
+        dependsOn: [taskA.id],
+      });
+
+      // Block Task A (not done)
+      taskModel.updateStatus(taskA.id, 'blocked');
+
+      const result = await client.callTool({
+        name: 'vp_task_next',
+        arguments: { plan_id: planId },
+      });
+
+      const parsed = parseResult(result);
+      expect(parsed.message).toBe('No pending tasks');
+    });
+  });
+
+  describe('vp_plan_get with waves', () => {
+    it('should include waves array in response', async () => {
+      const taskA = taskModel.create(planId, 'Task A', { sortOrder: 1 });
+      taskModel.create(planId, 'Task B', {
+        sortOrder: 2,
+        dependsOn: [taskA.id],
+      });
+
+      const result = await client.callTool({
+        name: 'vp_plan_get',
+        arguments: { plan_id: planId },
+      });
+
+      const parsed = parseResult(result);
+      expect(parsed.plan).toBeDefined();
+      expect(parsed.tasks).toBeDefined();
+      expect(parsed.waves).toBeDefined();
+      expect(Array.isArray(parsed.waves)).toBe(true);
+      expect(parsed.waves.length).toBe(2);
+      expect(parsed.waves[0].index).toBe(0);
+      expect(parsed.waves[1].index).toBe(1);
+    });
+  });
 });

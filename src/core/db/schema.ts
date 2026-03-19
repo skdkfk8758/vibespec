@@ -24,6 +24,7 @@ export function initSchema(db: Database.Database): void {
       sort_order  INTEGER NOT NULL DEFAULT 0,
       spec        TEXT,
       acceptance  TEXT,
+      depends_on  TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -151,5 +152,16 @@ export function applyMigrations(db: Database.Database): void {
     `);
 
     db.pragma('user_version = 1');
+  }
+
+  if (version < 2) {
+    const columns = db.pragma('table_info(tasks)') as Array<{ name: string }>;
+    const hasColumn = (name: string) => columns.some((c) => c.name === name);
+
+    if (!hasColumn('depends_on')) {
+      db.exec('ALTER TABLE tasks ADD COLUMN depends_on TEXT');
+    }
+
+    db.pragma('user_version = 2');
   }
 }

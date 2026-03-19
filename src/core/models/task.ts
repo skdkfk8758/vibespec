@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
-import type { Task, TaskStatus, TaskTreeNode } from '../types.js';
+import type { Task, TaskStatus, TaskTreeNode, Wave } from '../types.js';
 import type { EventModel } from './event.js';
 
 export class TaskModel {
@@ -18,6 +18,7 @@ export class TaskModel {
       spec?: string;
       acceptance?: string;
       sortOrder?: number;
+      dependsOn?: string[];
     },
   ): Task {
     const id = nanoid(12);
@@ -32,11 +33,18 @@ export class TaskModel {
     }
 
     const sortOrder = opts?.sortOrder ?? 0;
+    const dependsOn = opts?.dependsOn && opts.dependsOn.length > 0
+      ? JSON.stringify(opts.dependsOn)
+      : null;
+
+    if (opts?.dependsOn && opts.dependsOn.length > 0) {
+      this.validateDependencies(planId, id, opts.dependsOn);
+    }
 
     this.db
       .prepare(
-        `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance)
-         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?)`,
+        `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on)
+         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -47,6 +55,7 @@ export class TaskModel {
         sortOrder,
         opts?.spec ?? null,
         opts?.acceptance ?? null,
+        dependsOn,
       );
 
     const task = this.getById(id)!;
@@ -75,6 +84,19 @@ export class TaskModel {
       .all(planId) as Task[];
 
     return this.buildTree(rows);
+  }
+
+  private buildTaskMap(tasks: Task[]): Map<string, Task> {
+    const map = new Map<string, Task>();
+    for (const t of tasks) {
+      map.set(t.id, t);
+    }
+    return map;
+  }
+
+  private parseDeps(task: Task): string[] {
+    if (!task.depends_on) return [];
+    return JSON.parse(task.depends_on);
   }
 
   private buildTree(tasks: Task[]): TaskTreeNode[] {
@@ -108,7 +130,7 @@ export class TaskModel {
 
   update(
     id: string,
-    fields: Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order'>>,
+    fields: Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order' | 'depends_on'>>,
   ): Task {
     const setClauses: string[] = [];
     const values: unknown[] = [];
@@ -128,6 +150,19 @@ export class TaskModel {
     if (fields.sort_order !== undefined) {
       setClauses.push('sort_order = ?');
       values.push(fields.sort_order);
+    }
+    if (fields.depends_on !== undefined) {
+      if (fields.depends_on !== null) {
+        const depIds: string[] = JSON.parse(fields.depends_on);
+        if (depIds.length > 0) {
+          const task = this.getById(id);
+          if (task) {
+            this.validateDependencies(task.plan_id, id, depIds);
+          }
+        }
+      }
+      setClauses.push('depends_on = ?');
+      values.push(fields.depends_on);
     }
 
     if (setClauses.length === 0) {
@@ -169,6 +204,178 @@ export class TaskModel {
     // Delete the task
     this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
     this.events?.record('task', id, 'deleted', JSON.stringify({ title: task.title }), null);
+  }
+
+  validateDependencies(planId: string, taskId: string, dependsOn: string[]): void {
+    if (!dependsOn || dependsOn.length === 0) {
+      return;
+    }
+
+    for (const depId of dependsOn) {
+      // Self-reference check
+      if (depId === taskId) {
+        throw new Error(`Task cannot depend on itself: ${depId}`);
+      }
+
+      // Existence check
+      const depTask = this.getById(depId);
+      if (!depTask) {
+        throw new Error(`Dependency task not found: ${depId}`);
+      }
+
+      // Same plan check
+      if (depTask.plan_id !== planId) {
+        throw new Error(
+          `Dependency task ${depId} belongs to different plan: ${depTask.plan_id}`,
+        );
+      }
+    }
+
+    // Circular dependency check (DFS)
+    // From each dependency, follow depends_on chains. If we reach taskId, it's circular.
+    const visited = new Set<string>();
+
+    const hasCycle = (currentId: string): boolean => {
+      if (currentId === taskId) {
+        return true;
+      }
+      if (visited.has(currentId)) {
+        return false;
+      }
+      visited.add(currentId);
+
+      const current = this.getById(currentId);
+      if (!current || !current.depends_on) {
+        return false;
+      }
+
+      const deps: string[] = JSON.parse(current.depends_on);
+      for (const dep of deps) {
+        if (hasCycle(dep)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    for (const depId of dependsOn) {
+      visited.clear();
+      if (hasCycle(depId)) {
+        throw new Error('Circular dependency detected');
+      }
+    }
+  }
+
+  getWaves(planId: string): Wave[] {
+    const tasks = this.getByPlan(planId);
+    if (tasks.length === 0) return [];
+
+    const taskMap = this.buildTaskMap(tasks);
+    const poisoned = this.findPoisonedTasks(tasks, taskMap);
+
+    // Exclude tasks that depend on blocked/skipped, but keep blocked/skipped tasks themselves
+    const includedTasks = tasks.filter(
+      t => !poisoned.has(t.id) || t.status === 'blocked' || t.status === 'skipped',
+    );
+
+    // Assign wave index: max(wave of deps) + 1, or 0 if no deps
+    const waveIndex = new Map<string, number>();
+    const includedSet = new Set(includedTasks.map(t => t.id));
+
+    const computeWave = (id: string, visited: Set<string>): number => {
+      if (waveIndex.has(id)) return waveIndex.get(id)!;
+      if (visited.has(id)) return 0;
+      visited.add(id);
+
+      const task = taskMap.get(id)!;
+      const deps = this.parseDeps(task).filter(d => includedSet.has(d));
+      if (deps.length === 0) {
+        waveIndex.set(id, 0);
+        return 0;
+      }
+
+      const wave = Math.max(...deps.map(d => computeWave(d, visited))) + 1;
+      waveIndex.set(id, wave);
+      return wave;
+    };
+
+    for (const t of includedTasks) {
+      computeWave(t.id, new Set());
+    }
+
+    // Group by wave, sort tasks within each wave by sort_order
+    const waveMap = new Map<number, Task[]>();
+    for (const t of includedTasks) {
+      const idx = waveIndex.get(t.id) ?? 0;
+      if (!waveMap.has(idx)) waveMap.set(idx, []);
+      waveMap.get(idx)!.push(t);
+    }
+
+    return Array.from(waveMap.keys())
+      .sort((a, b) => a - b)
+      .map(idx => ({
+        index: idx,
+        task_ids: waveMap.get(idx)!
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map(t => t.id),
+      }));
+  }
+
+  getNextAvailable(planId: string): Task | null {
+    const tasks = this.getByPlan(planId);
+    if (tasks.length === 0) return null;
+
+    const taskMap = this.buildTaskMap(tasks);
+
+    const todoTasks = tasks
+      .filter(t => t.status === 'todo')
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    for (const task of todoTasks) {
+      const deps = this.parseDeps(task);
+      if (deps.length === 0) return task;
+
+      const allDone = deps.every(id => taskMap.get(id)?.status === 'done');
+      const anyPoisoned = deps.some(id => {
+        const s = taskMap.get(id)?.status;
+        return s === 'blocked' || s === 'skipped';
+      });
+
+      if (allDone && !anyPoisoned) return task;
+    }
+
+    return null;
+  }
+
+  private findPoisonedTasks(tasks: Task[], taskMap: Map<string, Task>): Set<string> {
+    const poisoned = new Set<string>();
+
+    const check = (id: string, visited: Set<string>): boolean => {
+      if (poisoned.has(id)) return true;
+      if (visited.has(id)) return false;
+      visited.add(id);
+
+      const task = taskMap.get(id);
+      if (!task) return false;
+      if (task.status === 'blocked' || task.status === 'skipped') {
+        poisoned.add(id);
+        return true;
+      }
+
+      for (const dep of this.parseDeps(task)) {
+        if (check(dep, visited)) {
+          poisoned.add(id);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    for (const t of tasks) {
+      if (t.depends_on) check(t.id, new Set());
+    }
+
+    return poisoned;
   }
 
   getByPlan(planId: string, filter?: { status?: TaskStatus }): Task[] {

@@ -24,12 +24,18 @@ export interface Task {
   sort_order: number;
   spec: string | null;
   acceptance: string | null;
+  depends_on: string | null;
   created_at: string;
   completed_at: string | null;
 }
 
 export interface TaskTreeNode extends Task {
   children: TaskTreeNode[];
+}
+
+export interface Wave {
+  index: number;
+  task_ids: string[];
 }
 
 export interface Event {

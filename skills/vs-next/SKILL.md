@@ -53,9 +53,10 @@ invocation: user
      → 차단 사유를 사용자에게 보여주고 대응 방법을 논의하세요
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
-     → `verification` 스킬과 `codex-review` 스킬을 **병렬로** 실행하세요
-       - 전달 컨텍스트: 현재 태스크 정보(title, spec, acceptance), tdd-implementer 리포트(있는 경우)
-       - 각 스킬이 독립적으로 PASS/WARN/FAIL/SKIP 판정과 리포트를 반환합니다
+     → `verifier` 에이전트와 `codex-review` 스킬을 **병렬로** 실행하세요
+       - `verifier` 에이전트 전달 정보: 태스크(title, spec, acceptance), 플랜 컨텍스트, impl_report(있는 경우)
+       - `codex-review` 스킬 전달 정보: 현재 태스크 정보, tdd-implementer 리포트(있는 경우)
+       - 각각 독립적으로 PASS/WARN/FAIL/SKIP 판정과 리포트를 반환합니다
      → **종합 판정 규칙:**
        - codex-review가 SKIP이면 → verification 결과만으로 판정
        - 둘 다 PASS → **PASS**
@@ -76,7 +77,8 @@ invocation: user
        ```
      → PASS: `vp_task_update`로 status를 done으로 변경하세요
      → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (metrics에 `has_concerns: true` 기록)
-     → FAIL: 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
+     → FAIL (단일 태스크 모드): 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
+     → FAIL (배치 모드): `debugger` 에이전트를 자동 디스패치하세요 (Step 7의 자동 재시도 정책 참조)
    - `vp_context_save`로 완료 내용을 저장하세요
    **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - header: "다음 작업"
@@ -95,29 +97,34 @@ invocation: user
 
    남은 todo 태스크를 자동으로 연속 실행합니다. 각 태스크는 fresh 서브에이전트에서 구현하여 컨텍스트 오염을 방지합니다.
 
-   #### 태스크 수집 및 의존성 분석
-   - `vp_plan_get`으로 전체 태스크 트리를 가져오세요
+   #### Wave 수집 및 의존성 분석
+   - `vp_plan_get`으로 전체 태스크 트리와 **waves** 정보를 가져오세요
+   - `waves` 배열이 Wave 단위로 병렬 실행 가능한 태스크 그룹을 제공합니다
    - todo 상태인 태스크만 필터링하세요
-   - 태스크 간 의존성(parent-child, 순서)을 분석하여 실행 순서를 결정하세요
 
-   #### 실행 전략
-   - **의존성 없는 태스크**: 최대 3개까지 병렬 디스패치 (`run_in_background: true`)
-   - **의존성 있는 태스크**: 선행 태스크 완료 후 순차 디스패치
+   #### Wave 기반 실행 전략
+   - **Wave 단위로 실행**: Wave 0의 모든 태스크를 먼저 처리한 후 Wave 1로 진행
+   - **같은 Wave 내 태스크**: 최대 3개까지 병렬 디스패치 (`run_in_background: true`)
+   - **의존성 자동 관리**: `vp_task_next`가 `depends_on` 기반으로 실행 가능한 태스크만 반환하므로, Wave 정보와 함께 사용하면 최적 병렬화 달성
    - 각 태스크마다 Step 5(구현) + Step 6(완료 처리)를 동일하게 적용하세요
      - tdd-implementer 디스패치 또는 직접 구현 판단
-     - verification + codex-review 병렬 리뷰
+     - verifier 에이전트 + codex-review 병렬 리뷰
      - 종합 판정 (PASS/WARN/FAIL)
 
-   #### 자동 재시도 정책
+   #### 자동 재시도 정책 (debugger 에이전트 연동)
    - **PASS**: 다음 태스크 진행
    - **WARN**: 기록 후 다음 태스크 진행 (metrics에 `has_concerns: true`)
-   - **FAIL**: 리뷰 결과를 포함하여 새 서브에이전트로 자동 재디스패치
-     - 최대 2회 재시도
+   - **FAIL**: `debugger` 에이전트를 자동 디스패치
+     - 전달 정보: 태스크(title, spec, acceptance), 플랜 컨텍스트, verifier FAIL 리포트, impl_report
+     - debugger 결과에 따른 처리:
+       - **FIX_APPLIED**: `verifier` 에이전트로 재검증 → PASS면 done, FAIL이면 재시도
+       - **NEEDS_MANUAL**: 사용자에게 에스컬레이션 → "수동 수정" / "건너뛰기" / "배치 중단"
+       - **BLOCKED**: 태스크를 blocked로 변경
+     - 최대 2회 재시도 (debugger 디스패치 → verifier 재검증 사이클)
      - 3번째 실패 시 → 해당 태스크를 blocked로 변경하고 사용자에게 에스컬레이션
-     - 사용자 선택: "수동 수정" / "건너뛰기" / "배치 중단"
 
    #### 실패 시 의존 태스크 스킵
-   - 태스크가 blocked 상태가 되면, 이 태스크에 의존하는 모든 후속 태스크를 자동으로 skipped 처리하세요
+   - 태스크가 blocked 상태가 되면, `depends_on`으로 이 태스크에 의존하는 모든 후속 태스크를 자동으로 skipped 처리하세요
    - 스킵 사유를 각 태스크의 metrics에 기록하세요: `skipped_reason: "dependency T{N} blocked"`
 
    #### 배치 진행 리포트
