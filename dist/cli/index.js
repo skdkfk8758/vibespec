@@ -3447,6 +3447,7 @@ function initSchema(db) {
       sort_order  INTEGER NOT NULL DEFAULT 0,
       spec        TEXT,
       acceptance  TEXT,
+      depends_on  TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -3568,6 +3569,14 @@ function applyMigrations(db) {
       GROUP BY p.id
     `);
     db.pragma("user_version = 1");
+  }
+  if (version < 2) {
+    const columns = db.pragma("table_info(tasks)");
+    const hasColumn = (name) => columns.some((c) => c.name === name);
+    if (!hasColumn("depends_on")) {
+      db.exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT");
+    }
+    db.pragma("user_version = 2");
   }
 }
 
@@ -3819,9 +3828,13 @@ var TaskModel = class {
       depth = parent.depth + 1;
     }
     const sortOrder = opts?.sortOrder ?? 0;
+    const dependsOn = opts?.dependsOn && opts.dependsOn.length > 0 ? JSON.stringify(opts.dependsOn) : null;
+    if (opts?.dependsOn && opts.dependsOn.length > 0) {
+      this.validateDependencies(planId, id, opts.dependsOn);
+    }
     this.db.prepare(
-      `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance)
-         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?)`
+      `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on)
+         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)`
     ).run(
       id,
       planId,
@@ -3830,7 +3843,8 @@ var TaskModel = class {
       depth,
       sortOrder,
       opts?.spec ?? null,
-      opts?.acceptance ?? null
+      opts?.acceptance ?? null,
+      dependsOn
     );
     const task2 = this.getById(id);
     this.events?.record("task", task2.id, "created", null, JSON.stringify({ title, status: "todo" }));
@@ -3851,6 +3865,17 @@ var TaskModel = class {
          SELECT * FROM task_tree ORDER BY depth, sort_order`
     ).all(planId);
     return this.buildTree(rows);
+  }
+  buildTaskMap(tasks) {
+    const map = /* @__PURE__ */ new Map();
+    for (const t of tasks) {
+      map.set(t.id, t);
+    }
+    return map;
+  }
+  parseDeps(task2) {
+    if (!task2.depends_on) return [];
+    return JSON.parse(task2.depends_on);
   }
   buildTree(tasks) {
     const map = /* @__PURE__ */ new Map();
@@ -3893,6 +3918,19 @@ var TaskModel = class {
       setClauses.push("sort_order = ?");
       values.push(fields.sort_order);
     }
+    if (fields.depends_on !== void 0) {
+      if (fields.depends_on !== null) {
+        const depIds = JSON.parse(fields.depends_on);
+        if (depIds.length > 0) {
+          const task2 = this.getById(id);
+          if (task2) {
+            this.validateDependencies(task2.plan_id, id, depIds);
+          }
+        }
+      }
+      setClauses.push("depends_on = ?");
+      values.push(fields.depends_on);
+    }
     if (setClauses.length === 0) {
       return this.getById(id);
     }
@@ -3918,6 +3956,132 @@ var TaskModel = class {
     this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
     this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
     this.events?.record("task", id, "deleted", JSON.stringify({ title: task2.title }), null);
+  }
+  validateDependencies(planId, taskId, dependsOn) {
+    if (!dependsOn || dependsOn.length === 0) {
+      return;
+    }
+    for (const depId of dependsOn) {
+      if (depId === taskId) {
+        throw new Error(`Task cannot depend on itself: ${depId}`);
+      }
+      const depTask = this.getById(depId);
+      if (!depTask) {
+        throw new Error(`Dependency task not found: ${depId}`);
+      }
+      if (depTask.plan_id !== planId) {
+        throw new Error(
+          `Dependency task ${depId} belongs to different plan: ${depTask.plan_id}`
+        );
+      }
+    }
+    const visited = /* @__PURE__ */ new Set();
+    const hasCycle = (currentId) => {
+      if (currentId === taskId) {
+        return true;
+      }
+      if (visited.has(currentId)) {
+        return false;
+      }
+      visited.add(currentId);
+      const current = this.getById(currentId);
+      if (!current || !current.depends_on) {
+        return false;
+      }
+      const deps = JSON.parse(current.depends_on);
+      for (const dep of deps) {
+        if (hasCycle(dep)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    for (const depId of dependsOn) {
+      visited.clear();
+      if (hasCycle(depId)) {
+        throw new Error("Circular dependency detected");
+      }
+    }
+  }
+  getWaves(planId) {
+    const tasks = this.getByPlan(planId);
+    if (tasks.length === 0) return [];
+    const taskMap = this.buildTaskMap(tasks);
+    const poisoned = this.findPoisonedTasks(tasks, taskMap);
+    const includedTasks = tasks.filter(
+      (t) => !poisoned.has(t.id) || t.status === "blocked" || t.status === "skipped"
+    );
+    const waveIndex = /* @__PURE__ */ new Map();
+    const includedSet = new Set(includedTasks.map((t) => t.id));
+    const computeWave = (id, visited) => {
+      if (waveIndex.has(id)) return waveIndex.get(id);
+      if (visited.has(id)) return 0;
+      visited.add(id);
+      const task2 = taskMap.get(id);
+      const deps = this.parseDeps(task2).filter((d) => includedSet.has(d));
+      if (deps.length === 0) {
+        waveIndex.set(id, 0);
+        return 0;
+      }
+      const wave = Math.max(...deps.map((d) => computeWave(d, visited))) + 1;
+      waveIndex.set(id, wave);
+      return wave;
+    };
+    for (const t of includedTasks) {
+      computeWave(t.id, /* @__PURE__ */ new Set());
+    }
+    const waveMap = /* @__PURE__ */ new Map();
+    for (const t of includedTasks) {
+      const idx = waveIndex.get(t.id) ?? 0;
+      if (!waveMap.has(idx)) waveMap.set(idx, []);
+      waveMap.get(idx).push(t);
+    }
+    return Array.from(waveMap.keys()).sort((a, b) => a - b).map((idx) => ({
+      index: idx,
+      task_ids: waveMap.get(idx).sort((a, b) => a.sort_order - b.sort_order).map((t) => t.id)
+    }));
+  }
+  getNextAvailable(planId) {
+    const tasks = this.getByPlan(planId);
+    if (tasks.length === 0) return null;
+    const taskMap = this.buildTaskMap(tasks);
+    const todoTasks = tasks.filter((t) => t.status === "todo").sort((a, b) => a.sort_order - b.sort_order);
+    for (const task2 of todoTasks) {
+      const deps = this.parseDeps(task2);
+      if (deps.length === 0) return task2;
+      const allDone = deps.every((id) => taskMap.get(id)?.status === "done");
+      const anyPoisoned = deps.some((id) => {
+        const s = taskMap.get(id)?.status;
+        return s === "blocked" || s === "skipped";
+      });
+      if (allDone && !anyPoisoned) return task2;
+    }
+    return null;
+  }
+  findPoisonedTasks(tasks, taskMap) {
+    const poisoned = /* @__PURE__ */ new Set();
+    const check = (id, visited) => {
+      if (poisoned.has(id)) return true;
+      if (visited.has(id)) return false;
+      visited.add(id);
+      const task2 = taskMap.get(id);
+      if (!task2) return false;
+      if (task2.status === "blocked" || task2.status === "skipped") {
+        poisoned.add(id);
+        return true;
+      }
+      for (const dep of this.parseDeps(task2)) {
+        if (check(dep, visited)) {
+          poisoned.add(id);
+          return true;
+        }
+      }
+      return false;
+    };
+    for (const t of tasks) {
+      if (t.depends_on) check(t.id, /* @__PURE__ */ new Set());
+    }
+    return poisoned;
   }
   getByPlan(planId, filter) {
     if (filter?.status) {
