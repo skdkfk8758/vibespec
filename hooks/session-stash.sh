@@ -11,11 +11,11 @@ trap 'exit 0' ERR
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$REPO_ROOT" || exit 0
 
-# 워크트리 감지: 워크트리에서는 stash를 생성하지 않음
-# (공유 stash에 브랜치 간 교차 오염 방지)
+# 워크트리 감지: 워크트리 이름을 추출하여 stash 메시지에 포함
 GIT_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+IS_WORKTREE=false
 if [[ "$GIT_DIR" == *"/worktrees/"* ]]; then
-  exit 0
+  IS_WORKTREE=true
 fi
 
 # 변경사항 체크: unstaged + staged 모두 확인
@@ -31,8 +31,13 @@ fi
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || BRANCH="unknown"
 [ -z "$BRANCH" ] && BRANCH="unknown"
 
-# 워크트리 경로 (main repo이면 "main")
-WORKTREE_PATH="main"
+# 워크트리 경로 결정
+if [ "$IS_WORKTREE" = true ]; then
+  # git-dir 경로에서 워크트리 이름 추출: .git/worktrees/{name}
+  WORKTREE_PATH=$(basename "$GIT_DIR")
+else
+  WORKTREE_PATH="main"
+fi
 
 # 활성 plan_id / in_progress task_id 조회
 PLAN_ID="none"

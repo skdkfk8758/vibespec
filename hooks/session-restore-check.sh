@@ -8,10 +8,17 @@ set -euo pipefail
 trap 'exit 0' ERR
 
 # git repo 확인
-git rev-parse --git-dir &>/dev/null || exit 0
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
 
 # 현재 브랜치명 획득
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || CURRENT_BRANCH="unknown"
+
+# 현재 워크트리 경로 판별
+if [[ "$GIT_DIR" == *"/worktrees/"* ]]; then
+  CURRENT_WORKTREE=$(basename "$GIT_DIR")
+else
+  CURRENT_WORKTREE="main"
+fi
 
 # vibespec-session 패턴의 stash 검색
 STASH_LIST=$(git stash list 2>/dev/null | grep 'vibespec-session' || true)
@@ -38,6 +45,7 @@ while IFS= read -r line; do
   if [ "$FIELD_COUNT" -eq 6 ]; then
     # 새 형식: vibespec-session:{branch}:{worktree_path}:{plan_id}:{task_id}:{timestamp}
     STASH_BRANCH=$(echo "$MSG" | cut -d: -f2)
+    STASH_WORKTREE=$(echo "$MSG" | cut -d: -f3)
     PLAN=$(echo "$MSG" | cut -d: -f4)
     TASK=$(echo "$MSG" | cut -d: -f5)
     TS=$(echo "$MSG" | cut -d: -f6)
@@ -53,12 +61,15 @@ while IFS= read -r line; do
     continue
   fi
 
+  # worktree_path 초기화 (구형 포맷은 STASH_WORKTREE가 미설정)
+  STASH_WORKTREE="${STASH_WORKTREE:-main}"
+
   # detached HEAD는 브랜치 식별자가 아니므로 매치하지 않음
   if [ "$CURRENT_BRANCH" = "HEAD" ] || [ "$STASH_BRANCH" = "HEAD" ]; then
     OTHER_COUNT=$((OTHER_COUNT + 1))
-  elif [ "$STASH_BRANCH" = "$CURRENT_BRANCH" ]; then
+  elif [ "$STASH_BRANCH" = "$CURRENT_BRANCH" ] && [ "$STASH_WORKTREE" = "$CURRENT_WORKTREE" ]; then
     MATCHED_COUNT=$((MATCHED_COUNT + 1))
-    MATCHED_DETAILS="${MATCHED_DETAILS}  - ${STASH_REF}: branch=${STASH_BRANCH}, plan=${PLAN}, task=${TASK}, saved=${TS}\n"
+    MATCHED_DETAILS="${MATCHED_DETAILS}  - ${STASH_REF}: branch=${STASH_BRANCH}, worktree=${STASH_WORKTREE}, plan=${PLAN}, task=${TASK}, saved=${TS}\n"
   elif [ "$STASH_BRANCH" = "unknown" ]; then
     # 구형 포맷은 ambiguous — 별도 카운트하되 매치에 포함하지 않음
     OTHER_COUNT=$((OTHER_COUNT + 1))
