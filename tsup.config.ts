@@ -2,7 +2,7 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig([
   {
-    entry: { 'mcp/server': 'src/mcp/server.ts' },
+    entry: { 'cli/index': 'src/cli/index.ts' },
     format: ['esm'],
     target: 'node20',
     outDir: 'dist',
@@ -10,19 +10,8 @@ export default defineConfig([
     splitting: true,
     sourcemap: true,
     dts: false,
-    external: ['better-sqlite3'],
-    noExternal: ['@modelcontextprotocol/sdk', 'nanoid'],
-  },
-  {
-    entry: { 'cli/index': 'src/cli/index.ts' },
-    format: ['esm'],
-    target: 'node20',
-    outDir: 'dist',
-    splitting: true,
-    sourcemap: true,
-    dts: false,
-    external: ['better-sqlite3'],
-    noExternal: ['@modelcontextprotocol/sdk', 'nanoid', 'commander'],
+    external: ['better-sqlite3', 'commander'],
+    noExternal: ['nanoid'],
     banner: {
       js: '#!/usr/bin/env node',
     },

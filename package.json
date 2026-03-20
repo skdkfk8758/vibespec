@@ -1,15 +1,14 @@
 {
   "name": "vibespec",
   "version": "0.16.4",
-  "description": "SDD 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 MCP 플러그인",
+  "description": "SDD 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
   "type": "module",
-  "main": "dist/mcp/server.js",
+  "main": "dist/cli/index.js",
   "bin": {
     "vp": "dist/cli/index.js"
   },
   "keywords": [
     "claude-code",
-    "mcp-server",
     "vibecoding",
     "sdd",
     "plan-management",
@@ -27,7 +26,6 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^11.8.2",
     "commander": "^13.1.0",
     "nanoid": "^5.1.5"
