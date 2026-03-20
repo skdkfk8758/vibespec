@@ -34,10 +34,10 @@ describe('MCP Context + Stats Tools', () => {
     return JSON.parse((result.content as Array<{ text: string }>)[0].text);
   }
 
-  describe('vp_context_save', () => {
+  describe('vs_context_save', () => {
     it('should save and return a context log', async () => {
       const result = await client.callTool({
-        name: 'vp_context_save',
+        name: 'vs_context_save',
         arguments: { summary: 'Implemented feature X' },
       });
       const parsed = parseResult(result) as Record<string, unknown>;
@@ -52,7 +52,7 @@ describe('MCP Context + Stats Tools', () => {
       const plan = planModel.create('Test Plan');
 
       const result = await client.callTool({
-        name: 'vp_context_save',
+        name: 'vs_context_save',
         arguments: { summary: 'Working on plan tasks', plan_id: plan.id },
       });
       const parsed = parseResult(result) as Record<string, unknown>;
@@ -63,7 +63,7 @@ describe('MCP Context + Stats Tools', () => {
 
     it('should save context with session_id', async () => {
       const result = await client.callTool({
-        name: 'vp_context_save',
+        name: 'vs_context_save',
         arguments: { summary: 'Session work', session_id: 'sess-abc' },
       });
       const parsed = parseResult(result) as Record<string, unknown>;
@@ -73,10 +73,10 @@ describe('MCP Context + Stats Tools', () => {
     });
   });
 
-  describe('vp_stats', () => {
+  describe('vs_stats', () => {
     it('should return velocity only when no plan_id provided', async () => {
       const result = await client.callTool({
-        name: 'vp_stats',
+        name: 'vs_stats',
         arguments: {},
       });
       const parsed = parseResult(result) as Record<string, unknown>;
@@ -101,7 +101,7 @@ describe('MCP Context + Stats Tools', () => {
       taskModel.create(plan.id, 'Task 3');
 
       const result = await client.callTool({
-        name: 'vp_stats',
+        name: 'vs_stats',
         arguments: { plan_id: plan.id },
       });
       const parsed = parseResult(result) as Record<string, unknown>;
@@ -119,7 +119,7 @@ describe('MCP Context + Stats Tools', () => {
     });
   });
 
-  describe('vp_history', () => {
+  describe('vs_history', () => {
     it('should return event list for an entity', async () => {
       const eventModel = new EventModel(db);
       const planModel = new PlanModel(db, eventModel);
@@ -132,7 +132,7 @@ describe('MCP Context + Stats Tools', () => {
       taskModel.updateStatus(task.id, 'done');
 
       const result = await client.callTool({
-        name: 'vp_history',
+        name: 'vs_history',
         arguments: { entity_type: 'task', entity_id: task.id },
       });
       const parsed = parseResult(result) as Array<Record<string, unknown>>;
@@ -146,7 +146,7 @@ describe('MCP Context + Stats Tools', () => {
 
     it('should return empty array for non-existent entity', async () => {
       const result = await client.callTool({
-        name: 'vp_history',
+        name: 'vs_history',
         arguments: { entity_type: 'task', entity_id: 'nonexistent' },
       });
       const parsed = parseResult(result) as Array<Record<string, unknown>>;

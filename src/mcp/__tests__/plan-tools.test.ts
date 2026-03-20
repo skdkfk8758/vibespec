@@ -37,10 +37,10 @@ describe('MCP Plan Tools', () => {
     client = client_;
   });
 
-  describe('vp_plan_create', () => {
+  describe('vs_plan_create', () => {
     it('should create a plan with active status', async () => {
       const result = await client.callTool({
-        name: 'vp_plan_create',
+        name: 'vs_plan_create',
         arguments: { title: 'My Plan', spec: 'Some spec', summary: 'A summary' },
       });
       const parsed = parseResult(result);
@@ -53,7 +53,7 @@ describe('MCP Plan Tools', () => {
     });
   });
 
-  describe('vp_plan_get', () => {
+  describe('vs_plan_get', () => {
     it('should return plan with task tree', async () => {
       const plan = planModel.create('Test Plan');
       planModel.activate(plan.id);
@@ -62,7 +62,7 @@ describe('MCP Plan Tools', () => {
       taskModel.create(plan.id, 'Subtask 1', { parentId: t1.id });
 
       const result = await client.callTool({
-        name: 'vp_plan_get',
+        name: 'vs_plan_get',
         arguments: { plan_id: plan.id },
       });
       const parsed = parseResult(result);
@@ -75,7 +75,7 @@ describe('MCP Plan Tools', () => {
 
     it('should return error for non-existent plan', async () => {
       const result = await client.callTool({
-        name: 'vp_plan_get',
+        name: 'vs_plan_get',
         arguments: { plan_id: 'nonexistent' },
       });
       const parsed = parseResult(result);
@@ -85,13 +85,13 @@ describe('MCP Plan Tools', () => {
     });
   });
 
-  describe('vp_plan_list', () => {
+  describe('vs_plan_list', () => {
     it('should return all plans', async () => {
       planModel.create('Plan A');
       planModel.create('Plan B');
 
       const result = await client.callTool({
-        name: 'vp_plan_list',
+        name: 'vs_plan_list',
         arguments: {},
       });
       const parsed = parseResult(result);
@@ -105,7 +105,7 @@ describe('MCP Plan Tools', () => {
       planModel.activate(p2.id);
 
       const result = await client.callTool({
-        name: 'vp_plan_list',
+        name: 'vs_plan_list',
         arguments: { status: 'active' },
       });
       const parsed = parseResult(result);
@@ -116,7 +116,7 @@ describe('MCP Plan Tools', () => {
     });
   });
 
-  describe('vp_plan_complete', () => {
+  describe('vs_plan_complete', () => {
     it('should complete plan when all tasks are done', async () => {
       const plan = planModel.create('Completable Plan');
       planModel.activate(plan.id);
@@ -126,7 +126,7 @@ describe('MCP Plan Tools', () => {
       taskModel.updateStatus(t2.id, 'done');
 
       const result = await client.callTool({
-        name: 'vp_plan_complete',
+        name: 'vs_plan_complete',
         arguments: { plan_id: plan.id },
       });
       const parsed = parseResult(result);
@@ -141,7 +141,7 @@ describe('MCP Plan Tools', () => {
       taskModel.create(plan.id, 'Undone Task');
 
       const result = await client.callTool({
-        name: 'vp_plan_complete',
+        name: 'vs_plan_complete',
         arguments: { plan_id: plan.id },
       });
       const parsed = parseResult(result);
@@ -152,13 +152,13 @@ describe('MCP Plan Tools', () => {
     });
   });
 
-  describe('vp_plan_archive', () => {
+  describe('vs_plan_archive', () => {
     it('should archive a plan', async () => {
       const plan = planModel.create('To Archive');
       planModel.activate(plan.id);
 
       const result = await client.callTool({
-        name: 'vp_plan_archive',
+        name: 'vs_plan_archive',
         arguments: { plan_id: plan.id },
       });
       const parsed = parseResult(result);

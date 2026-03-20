@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type Database from 'better-sqlite3';
 
-describe('vp_insights MCP tool', () => {
+describe('vs_insights MCP tool', () => {
   let db: Database.Database;
   let client: Client;
 
@@ -37,16 +37,16 @@ describe('vp_insights MCP tool', () => {
   it('should appear in ListTools response', async () => {
     const result = await client.listTools();
     const toolNames = result.tools.map((t) => t.name);
-    expect(toolNames).toContain('vp_insights');
+    expect(toolNames).toContain('vs_insights');
 
-    const tool = result.tools.find((t) => t.name === 'vp_insights');
+    const tool = result.tools.find((t) => t.name === 'vs_insights');
     expect(tool?.description).toContain('learning insights');
     expect(tool?.inputSchema.properties).toHaveProperty('scope');
   });
 
   it('should return all sections when scope=all', async () => {
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: { scope: 'all' },
     });
     const parsed = parseResult(result) as Record<string, unknown>;
@@ -60,7 +60,7 @@ describe('vp_insights MCP tool', () => {
 
   it('should return only blocked_patterns when scope=blocked_patterns', async () => {
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: { scope: 'blocked_patterns' },
     });
     const parsed = parseResult(result) as Record<string, unknown>;
@@ -74,7 +74,7 @@ describe('vp_insights MCP tool', () => {
 
   it('should return only duration_stats when scope=duration_stats', async () => {
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: { scope: 'duration_stats' },
     });
     const parsed = parseResult(result) as Record<string, unknown>;
@@ -88,7 +88,7 @@ describe('vp_insights MCP tool', () => {
 
   it('should return only success_rates when scope=success_rates', async () => {
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: { scope: 'success_rates' },
     });
     const parsed = parseResult(result) as Record<string, unknown>;
@@ -102,7 +102,7 @@ describe('vp_insights MCP tool', () => {
 
   it('should default to all when scope is not provided', async () => {
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: {},
     });
     const parsed = parseResult(result) as Record<string, unknown>;
@@ -116,7 +116,7 @@ describe('vp_insights MCP tool', () => {
 
   it('should fallback to all when scope is invalid', async () => {
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: { scope: 'invalid_scope' },
     });
     const parsed = parseResult(result) as Record<string, unknown>;
@@ -149,7 +149,7 @@ describe('vp_insights MCP tool', () => {
     taskMetricsModel.record(task2.id, plan.id, 'blocked');
 
     const result = await client.callTool({
-      name: 'vp_insights',
+      name: 'vs_insights',
       arguments: { scope: 'success_rates' },
     });
     const parsed = parseResult(result) as Record<string, unknown>;

@@ -30,35 +30,35 @@ describe('MCP Server', () => {
   });
 
   describe('tool registration', () => {
-    it('should register vp_dashboard and vp_context_resume tools', async () => {
+    it('should register vs_dashboard and vs_context_resume tools', async () => {
       const result = await client.listTools();
       const toolNames = result.tools.map((t) => t.name);
 
-      expect(toolNames).toContain('vp_dashboard');
-      expect(toolNames).toContain('vp_context_resume');
+      expect(toolNames).toContain('vs_dashboard');
+      expect(toolNames).toContain('vs_context_resume');
       expect(result.tools.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('should define correct schema for vp_dashboard', async () => {
+    it('should define correct schema for vs_dashboard', async () => {
       const result = await client.listTools();
-      const dashboard = result.tools.find((t) => t.name === 'vp_dashboard');
+      const dashboard = result.tools.find((t) => t.name === 'vs_dashboard');
 
       expect(dashboard).toBeDefined();
       expect(dashboard!.inputSchema.type).toBe('object');
     });
 
-    it('should define correct schema for vp_context_resume', async () => {
+    it('should define correct schema for vs_context_resume', async () => {
       const result = await client.listTools();
-      const resume = result.tools.find((t) => t.name === 'vp_context_resume');
+      const resume = result.tools.find((t) => t.name === 'vs_context_resume');
 
       expect(resume).toBeDefined();
       expect(resume!.inputSchema.properties).toHaveProperty('session_id');
     });
   });
 
-  describe('vp_dashboard', () => {
+  describe('vs_dashboard', () => {
     it('should return empty overview when no data exists', async () => {
-      const result = await client.callTool({ name: 'vp_dashboard', arguments: {} });
+      const result = await client.callTool({ name: 'vs_dashboard', arguments: {} });
       const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
       expect(parsed.overview).toBeDefined();
@@ -77,7 +77,7 @@ describe('MCP Server', () => {
       taskModel.updateStatus(t1.id, 'done');
       taskModel.create(plan.id, 'Task 2');
 
-      const result = await client.callTool({ name: 'vp_dashboard', arguments: {} });
+      const result = await client.callTool({ name: 'vs_dashboard', arguments: {} });
       const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
 
       expect(parsed.overview.plans).toHaveLength(1);
@@ -87,10 +87,10 @@ describe('MCP Server', () => {
     });
   });
 
-  describe('vp_context_resume', () => {
+  describe('vs_context_resume', () => {
     it('should return context logs, overview, and alerts', async () => {
       const result = await client.callTool({
-        name: 'vp_context_resume',
+        name: 'vs_context_resume',
         arguments: {},
       });
       const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
@@ -108,7 +108,7 @@ describe('MCP Server', () => {
       contextModel.save('Log 4');
 
       const result = await client.callTool({
-        name: 'vp_context_resume',
+        name: 'vs_context_resume',
         arguments: {},
       });
       const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);
@@ -123,7 +123,7 @@ describe('MCP Server', () => {
       contextModel.save('Other log', { sessionId: 'sess-456' });
 
       const result = await client.callTool({
-        name: 'vp_context_resume',
+        name: 'vs_context_resume',
         arguments: { session_id: 'sess-123' },
       });
       const parsed = JSON.parse((result.content as Array<{ text: string }>)[0].text);

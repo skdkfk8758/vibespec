@@ -84,12 +84,12 @@ export function createServer(db: Database.Database): Server {
     return {
       tools: [
         {
-          name: 'vp_dashboard',
+          name: 'vs_dashboard',
           description: 'Get overview of all active plans with progress and alerts',
           inputSchema: { type: 'object' as const, properties: {}, required: [] },
         },
         {
-          name: 'vp_context_resume',
+          name: 'vs_context_resume',
           description:
             'Resume context from previous sessions with recent context logs, dashboard overview, and alerts',
           inputSchema: {
@@ -104,7 +104,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_create',
+          name: 'vs_plan_create',
           description: 'Create a new plan and activate it',
           inputSchema: {
             type: 'object' as const,
@@ -117,7 +117,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_get',
+          name: 'vs_plan_get',
           description: 'Get a plan by ID with its task tree',
           inputSchema: {
             type: 'object' as const,
@@ -128,7 +128,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_complete',
+          name: 'vs_plan_complete',
           description: 'Complete a plan if all tasks are done',
           inputSchema: {
             type: 'object' as const,
@@ -139,7 +139,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_archive',
+          name: 'vs_plan_archive',
           description: 'Archive a plan',
           inputSchema: {
             type: 'object' as const,
@@ -150,7 +150,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_approve',
+          name: 'vs_plan_approve',
           description: 'Approve a plan after spec review (changes status from active to approved)',
           inputSchema: {
             type: 'object' as const,
@@ -161,7 +161,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_list',
+          name: 'vs_plan_list',
           description: 'List plans, optionally filtered by status and/or branch',
           inputSchema: {
             type: 'object' as const,
@@ -173,7 +173,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_create',
+          name: 'vs_task_create',
           description: 'Create a new task within a plan',
           inputSchema: {
             type: 'object' as const,
@@ -193,7 +193,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_update',
+          name: 'vs_task_update',
           description: 'Update a task status',
           inputSchema: {
             type: 'object' as const,
@@ -215,7 +215,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_get',
+          name: 'vs_task_get',
           description: 'Get a task by ID',
           inputSchema: {
             type: 'object' as const,
@@ -226,7 +226,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_next',
+          name: 'vs_task_next',
           description: 'Get the next pending (todo) task for a plan',
           inputSchema: {
             type: 'object' as const,
@@ -237,7 +237,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_block',
+          name: 'vs_task_block',
           description: 'Mark a task as blocked with an optional reason',
           inputSchema: {
             type: 'object' as const,
@@ -249,7 +249,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_update',
+          name: 'vs_plan_update',
           description: 'Update a plan title, spec, or summary',
           inputSchema: {
             type: 'object' as const,
@@ -263,7 +263,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_plan_delete',
+          name: 'vs_plan_delete',
           description: 'Delete a draft plan and all its tasks',
           inputSchema: {
             type: 'object' as const,
@@ -274,7 +274,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_edit',
+          name: 'vs_task_edit',
           description: 'Edit a task title, spec, or acceptance criteria',
           inputSchema: {
             type: 'object' as const,
@@ -288,7 +288,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_task_delete',
+          name: 'vs_task_delete',
           description: 'Delete a task and its subtasks',
           inputSchema: {
             type: 'object' as const,
@@ -299,7 +299,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_context_save',
+          name: 'vs_context_save',
           description: 'Save a context log entry for the current session',
           inputSchema: {
             type: 'object' as const,
@@ -312,7 +312,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_stats',
+          name: 'vs_stats',
           description: 'Get velocity statistics and optionally estimated completion for a plan',
           inputSchema: {
             type: 'object' as const,
@@ -327,7 +327,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_history',
+          name: 'vs_history',
           description: 'Get event history for a specific entity',
           inputSchema: {
             type: 'object' as const,
@@ -342,7 +342,7 @@ export function createServer(db: Database.Database): Server {
           },
         },
         {
-          name: 'vp_insights',
+          name: 'vs_insights',
           description:
             'Get learning insights from task completion history — blocked patterns, duration stats, success rates, and recommendations',
           inputSchema: {
@@ -365,7 +365,7 @@ export function createServer(db: Database.Database): Server {
   function getPlanOrError(planId: string) {
     const plan = planModel.getById(planId);
     if (!plan) {
-      return { found: false as const, response: err('Plan not found', 'Use vp_plan_list to see available plans') };
+      return { found: false as const, response: err('Plan not found', 'Use vs_plan_list to see available plans') };
     }
     return { found: true as const, plan };
   }
@@ -373,7 +373,7 @@ export function createServer(db: Database.Database): Server {
   function getTaskOrError(taskId: string) {
     const task = taskModel.getById(taskId);
     if (!task) {
-      return { found: false as const, response: err('Task not found', 'Use vp_plan_get with a plan_id to see its tasks') };
+      return { found: false as const, response: err('Task not found', 'Use vs_plan_get with a plan_id to see its tasks') };
     }
     return { found: true as const, task };
   }
@@ -383,13 +383,13 @@ export function createServer(db: Database.Database): Server {
     const { name, arguments: args } = request.params;
 
     switch (name) {
-      case 'vp_dashboard': {
+      case 'vs_dashboard': {
         const overview = dashboardEngine.getOverview();
         const alerts = alertsEngine.getAlerts();
         return ok({ overview, alerts });
       }
 
-      case 'vp_context_resume': {
+      case 'vs_context_resume': {
         const sessionId = (args as { session_id?: string } | undefined)?.session_id;
         const contextLogs = sessionId
           ? [contextModel.getBySession(sessionId)].filter(Boolean)
@@ -399,7 +399,7 @@ export function createServer(db: Database.Database): Server {
         return ok({ context_logs: contextLogs, overview, alerts });
       }
 
-      case 'vp_plan_create': {
+      case 'vs_plan_create': {
         const check = requireArgs<{ title: string; spec?: string; summary?: string }>(
           args as Record<string, unknown>, ['title'],
         );
@@ -410,7 +410,7 @@ export function createServer(db: Database.Database): Server {
         return ok(activePlan);
       }
 
-      case 'vp_plan_get': {
+      case 'vs_plan_get': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
         const result = getPlanOrError(check.parsed.plan_id);
@@ -420,7 +420,7 @@ export function createServer(db: Database.Database): Server {
         return ok({ plan: result.plan, tasks, waves });
       }
 
-      case 'vp_plan_complete': {
+      case 'vs_plan_complete': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
         const result = getPlanOrError(check.parsed.plan_id);
@@ -434,7 +434,7 @@ export function createServer(db: Database.Database): Server {
         }
       }
 
-      case 'vp_plan_archive': {
+      case 'vs_plan_archive': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
         const result = getPlanOrError(check.parsed.plan_id);
@@ -443,7 +443,7 @@ export function createServer(db: Database.Database): Server {
         return ok(archived);
       }
 
-      case 'vp_plan_approve': {
+      case 'vs_plan_approve': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
         const result = getPlanOrError(check.parsed.plan_id);
@@ -457,7 +457,7 @@ export function createServer(db: Database.Database): Server {
         }
       }
 
-      case 'vp_plan_list': {
+      case 'vs_plan_list': {
         const { status, branch } = (args as { status?: string; branch?: string } | undefined) ?? {};
         const filter: { status?: import('../core/types.js').PlanStatus; branch?: string } = {};
         if (status) filter.status = status as import('../core/types.js').PlanStatus;
@@ -466,7 +466,7 @@ export function createServer(db: Database.Database): Server {
         return ok(plans);
       }
 
-      case 'vp_plan_update': {
+      case 'vs_plan_update': {
         const check = requireArgs<{ plan_id: string; title?: string; spec?: string; summary?: string }>(
           args as Record<string, unknown>, ['plan_id'],
         );
@@ -478,7 +478,7 @@ export function createServer(db: Database.Database): Server {
         return ok(updated);
       }
 
-      case 'vp_plan_delete': {
+      case 'vs_plan_delete': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
         const result = getPlanOrError(check.parsed.plan_id);
@@ -492,7 +492,7 @@ export function createServer(db: Database.Database): Server {
         }
       }
 
-      case 'vp_task_create': {
+      case 'vs_task_create': {
         const check = requireArgs<{
           plan_id: string;
           title: string;
@@ -517,7 +517,7 @@ export function createServer(db: Database.Database): Server {
         }
       }
 
-      case 'vp_task_update': {
+      case 'vs_task_update': {
         const check = requireArgs<{
           task_id: string;
           status: string;
@@ -554,7 +554,7 @@ export function createServer(db: Database.Database): Server {
         return ok({ task: updatedTask, completion_check: completionCheck });
       }
 
-      case 'vp_task_get': {
+      case 'vs_task_get': {
         const check = requireArgs<{ task_id: string }>(args as Record<string, unknown>, ['task_id']);
         if (!check.valid) return check.response;
         const taskResult = getTaskOrError(check.parsed.task_id);
@@ -562,17 +562,17 @@ export function createServer(db: Database.Database): Server {
         return ok(taskResult.task);
       }
 
-      case 'vp_task_next': {
+      case 'vs_task_next': {
         const check = requireArgs<{ plan_id: string }>(args as Record<string, unknown>, ['plan_id']);
         if (!check.valid) return check.response;
         const nextTask = taskModel.getNextAvailable(check.parsed.plan_id);
         if (!nextTask) {
-          return ok({ message: 'No pending tasks', hint: 'All tasks are done or blocked by dependencies. Use vp_plan_complete to finish the plan.' });
+          return ok({ message: 'No pending tasks', hint: 'All tasks are done or blocked by dependencies. Use vs_plan_complete to finish the plan.' });
         }
         return ok(nextTask);
       }
 
-      case 'vp_task_block': {
+      case 'vs_task_block': {
         const check = requireArgs<{ task_id: string; reason?: string }>(
           args as Record<string, unknown>, ['task_id'],
         );
@@ -589,7 +589,7 @@ export function createServer(db: Database.Database): Server {
         return ok({ ...blockedTask, block_reason: check.parsed.reason ?? null });
       }
 
-      case 'vp_task_edit': {
+      case 'vs_task_edit': {
         const check = requireArgs<{ task_id: string; title?: string; spec?: string; acceptance?: string }>(
           args as Record<string, unknown>, ['task_id'],
         );
@@ -601,7 +601,7 @@ export function createServer(db: Database.Database): Server {
         return ok(editedTask);
       }
 
-      case 'vp_task_delete': {
+      case 'vs_task_delete': {
         const check = requireArgs<{ task_id: string }>(args as Record<string, unknown>, ['task_id']);
         if (!check.valid) return check.response;
         const taskResult4 = getTaskOrError(check.parsed.task_id);
@@ -615,7 +615,7 @@ export function createServer(db: Database.Database): Server {
         }
       }
 
-      case 'vp_context_save': {
+      case 'vs_context_save': {
         const check = requireArgs<{ summary: string; plan_id?: string; session_id?: string }>(
           args as Record<string, unknown>, ['summary'],
         );
@@ -628,7 +628,7 @@ export function createServer(db: Database.Database): Server {
         return ok(contextLog);
       }
 
-      case 'vp_stats': {
+      case 'vs_stats': {
         const { plan_id } = (args as { plan_id?: string } | undefined) ?? {};
         const velocity = statsEngine.getVelocity(plan_id);
         const result: Record<string, unknown> = { velocity };
@@ -638,7 +638,7 @@ export function createServer(db: Database.Database): Server {
         return ok(result);
       }
 
-      case 'vp_history': {
+      case 'vs_history': {
         const check = requireArgs<{ entity_type: string; entity_id: string }>(
           args as Record<string, unknown>, ['entity_type', 'entity_id'],
         );
@@ -647,7 +647,7 @@ export function createServer(db: Database.Database): Server {
         return ok(events);
       }
 
-      case 'vp_insights': {
+      case 'vs_insights': {
         const { scope } = (args as { scope?: string } | undefined) ?? {};
         const validScopes = ['blocked_patterns', 'duration_stats', 'success_rates', 'all'];
         const selectedScope = scope && validScopes.includes(scope) ? scope : 'all';

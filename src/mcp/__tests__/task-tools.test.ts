@@ -43,10 +43,10 @@ describe('MCP Task Tools', () => {
     client = client_;
   });
 
-  describe('vp_task_create', () => {
+  describe('vs_task_create', () => {
     it('should create a task successfully', async () => {
       const result = await client.callTool({
-        name: 'vp_task_create',
+        name: 'vs_task_create',
         arguments: { plan_id: planId, title: 'My Task', spec: 'Do stuff', acceptance: 'It works' },
       });
 
@@ -60,12 +60,12 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_update', () => {
+  describe('vs_task_update', () => {
     it('should update status to done and return completion check', async () => {
       const task = taskModel.create(planId, 'Task 1');
 
       const result = await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'done' },
       });
 
@@ -81,7 +81,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'Task 1');
 
       const result = await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'invalid_status' },
       });
 
@@ -91,14 +91,14 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_get', () => {
+  describe('vs_task_get', () => {
     it('should return task with acceptance criteria', async () => {
       const task = taskModel.create(planId, 'Get Me', {
         acceptance: 'Must pass tests',
       });
 
       const result = await client.callTool({
-        name: 'vp_task_get',
+        name: 'vs_task_get',
         arguments: { task_id: task.id },
       });
 
@@ -110,7 +110,7 @@ describe('MCP Task Tools', () => {
 
     it('should return error for non-existent task', async () => {
       const result = await client.callTool({
-        name: 'vp_task_get',
+        name: 'vs_task_get',
         arguments: { task_id: 'nonexistent-id' },
       });
 
@@ -120,13 +120,13 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_next', () => {
+  describe('vs_task_next', () => {
     it('should return the first todo task sorted by sort_order', async () => {
       taskModel.create(planId, 'Task A', { sortOrder: 2 });
       taskModel.create(planId, 'Task B', { sortOrder: 1 });
 
       const result = await client.callTool({
-        name: 'vp_task_next',
+        name: 'vs_task_next',
         arguments: { plan_id: planId },
       });
 
@@ -139,7 +139,7 @@ describe('MCP Task Tools', () => {
       taskModel.updateStatus(task.id, 'done');
 
       const result = await client.callTool({
-        name: 'vp_task_next',
+        name: 'vs_task_next',
         arguments: { plan_id: planId },
       });
 
@@ -148,12 +148,12 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_block', () => {
+  describe('vs_task_block', () => {
     it('should set task status to blocked', async () => {
       const task = taskModel.create(planId, 'Blockable Task');
 
       const result = await client.callTool({
-        name: 'vp_task_block',
+        name: 'vs_task_block',
         arguments: { task_id: task.id, reason: 'Waiting on dependency' },
       });
 
@@ -163,7 +163,7 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_update metrics integration', () => {
+  describe('vs_task_update metrics integration', () => {
     let taskMetricsModel: TaskMetricsModel;
 
     beforeEach(() => {
@@ -172,7 +172,7 @@ describe('MCP Task Tools', () => {
 
     it('should have metrics as optional field in inputSchema', async () => {
       const tools = await client.listTools();
-      const taskUpdateTool = tools.tools.find((t) => t.name === 'vp_task_update');
+      const taskUpdateTool = tools.tools.find((t) => t.name === 'vs_task_update');
       expect(taskUpdateTool).toBeDefined();
       const props = taskUpdateTool!.inputSchema.properties as Record<string, unknown>;
       expect(props.metrics).toBeDefined();
@@ -185,7 +185,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'Metrics Task');
 
       await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'done' },
       });
 
@@ -200,7 +200,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'Metrics Detail Task');
 
       await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: {
           task_id: task.id,
           status: 'done',
@@ -225,7 +225,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'No Metrics Param Task');
 
       await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'done' },
       });
 
@@ -240,7 +240,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'Blocked Metrics Task');
 
       await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'blocked' },
       });
 
@@ -253,7 +253,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'Skipped Metrics Task');
 
       await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'skipped' },
       });
 
@@ -266,7 +266,7 @@ describe('MCP Task Tools', () => {
       const task = taskModel.create(planId, 'In Progress Task');
 
       await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'in_progress' },
       });
 
@@ -281,7 +281,7 @@ describe('MCP Task Tools', () => {
       db.exec('DROP TABLE IF EXISTS task_metrics');
 
       const result = await client.callTool({
-        name: 'vp_task_update',
+        name: 'vs_task_update',
         arguments: { task_id: task.id, status: 'done' },
       });
 
@@ -293,12 +293,12 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_create with depends_on', () => {
+  describe('vs_task_create with depends_on', () => {
     it('should save depends_on when valid task IDs are provided', async () => {
       const taskA = taskModel.create(planId, 'Task A');
 
       const result = await client.callTool({
-        name: 'vp_task_create',
+        name: 'vs_task_create',
         arguments: {
           plan_id: planId,
           title: 'Task B',
@@ -315,7 +315,7 @@ describe('MCP Task Tools', () => {
 
     it('should return error when depends_on contains non-existent task ID', async () => {
       const result = await client.callTool({
-        name: 'vp_task_create',
+        name: 'vs_task_create',
         arguments: {
           plan_id: planId,
           title: 'Task with bad dep',
@@ -330,7 +330,7 @@ describe('MCP Task Tools', () => {
 
     it('should work without depends_on (backward compatibility)', async () => {
       const result = await client.callTool({
-        name: 'vp_task_create',
+        name: 'vs_task_create',
         arguments: {
           plan_id: planId,
           title: 'Task without deps',
@@ -345,7 +345,7 @@ describe('MCP Task Tools', () => {
 
     it('should have depends_on in inputSchema', async () => {
       const tools = await client.listTools();
-      const createTool = tools.tools.find((t) => t.name === 'vp_task_create');
+      const createTool = tools.tools.find((t) => t.name === 'vs_task_create');
       expect(createTool).toBeDefined();
       const props = createTool!.inputSchema.properties as Record<string, unknown>;
       expect(props.depends_on).toBeDefined();
@@ -355,7 +355,7 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_task_next with dependencies', () => {
+  describe('vs_task_next with dependencies', () => {
     it('should skip tasks whose dependencies are not done', async () => {
       const taskA = taskModel.create(planId, 'Task A', { sortOrder: 1 });
       taskModel.create(planId, 'Task B', {
@@ -364,7 +364,7 @@ describe('MCP Task Tools', () => {
       });
 
       const result = await client.callTool({
-        name: 'vp_task_next',
+        name: 'vs_task_next',
         arguments: { plan_id: planId },
       });
 
@@ -384,7 +384,7 @@ describe('MCP Task Tools', () => {
       taskModel.updateStatus(taskA.id, 'done');
 
       const result = await client.callTool({
-        name: 'vp_task_next',
+        name: 'vs_task_next',
         arguments: { plan_id: planId },
       });
 
@@ -403,7 +403,7 @@ describe('MCP Task Tools', () => {
       taskModel.updateStatus(taskA.id, 'blocked');
 
       const result = await client.callTool({
-        name: 'vp_task_next',
+        name: 'vs_task_next',
         arguments: { plan_id: planId },
       });
 
@@ -412,7 +412,7 @@ describe('MCP Task Tools', () => {
     });
   });
 
-  describe('vp_plan_get with waves', () => {
+  describe('vs_plan_get with waves', () => {
     it('should include waves array in response', async () => {
       const taskA = taskModel.create(planId, 'Task A', { sortOrder: 1 });
       taskModel.create(planId, 'Task B', {
@@ -421,7 +421,7 @@ describe('MCP Task Tools', () => {
       });
 
       const result = await client.callTool({
-        name: 'vp_plan_get',
+        name: 'vs_plan_get',
         arguments: { plan_id: planId },
       });
 
