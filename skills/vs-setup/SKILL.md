@@ -17,7 +17,7 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
 
    **원인 진단 (vs_dashboard 실패 시):**
 
-   MCP 서버는 플러그인 시스템이 `.claude-plugin/.mcp.json`을 통해 자동 등록합니다.
+   MCP 서버는 `~/.claude/.mcp.json`에 등록되어야 Claude Code가 시작할 때 자동으로 연결합니다.
    프로젝트별 `.mcp.json`을 수동 생성하지 마세요. 실패 원인을 순서대로 확인합니다:
 
    a. **플러그인 설치 확인**:
@@ -27,13 +27,41 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
       - 결과가 없으면 STOP: "VibeSpec 플러그인이 설치되어 있지 않습니다. `claude plugins install vibespec` 후 재시작하세요."
       - `installPath`를 `PLUGIN_DIR`로 기록
 
-   b. **MCP 시작 스크립트 확인**:
+   b. **글로벌 MCP 등록 확인**:
+      ```bash
+      cat ~/.claude/.mcp.json 2>/dev/null | grep vibespec
+      ```
+      - vibespec 항목이 없으면 → **자동 등록 실행:**
+        ```bash
+        python3 -c "
+        import json
+        path = '$HOME/.claude/.mcp.json'
+        try:
+            data = json.load(open(path))
+        except:
+            data = {'mcpServers': {}}
+        if 'mcpServers' not in data:
+            data['mcpServers'] = {}
+        data['mcpServers']['vibespec'] = {
+            'command': 'bash',
+            'args': ['$PLUGIN_DIR/scripts/start-mcp.sh']
+        }
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2)
+            f.write('\n')
+        print('등록 완료')
+        "
+        ```
+      - 등록 후 "Claude Code를 재시작하세요"라고 안내하고 STOP
+      - 이미 등록되어 있으면 → 경로가 현재 `PLUGIN_DIR`과 일치하는지 확인, 불일치 시 갱신
+
+   c. **MCP 시작 스크립트 확인**:
       ```bash
       test -f "$PLUGIN_DIR/scripts/start-mcp.sh" && echo "OK"
       ```
       - 없으면: `/vs-update`를 실행하여 플러그인을 재설치하라고 안내하고 STOP
 
-   c. **native 의존성 확인**:
+   d. **native 의존성 확인**:
       ```bash
       test -d "$PLUGIN_DIR/node_modules/better-sqlite3" && echo "OK"
       ```
@@ -43,7 +71,7 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
         ```
       - 설치 후 "Claude Code를 재시작하세요"라고 안내하고 STOP
 
-   d. **서버 직접 실행 테스트**:
+   e. **서버 직접 실행 테스트**:
       ```bash
       cd "$PLUGIN_DIR" && bash scripts/start-mcp.sh 2>&1 | head -5
       ```

@@ -82,16 +82,33 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
    - 이전 경로와 새 경로가 동일하면 이 단계를 건너뛰세요 (이미 Step 4에서 교체됨).
 
 7. **MCP 설정 경로 갱신**
-   - 프로젝트별 `.mcp.json`에 이전 캐시 경로가 하드코딩되어 있으면 MCP 연결이 깨집니다.
+   - MCP 서버 경로가 하드코딩되어 있으면 버전 변경 시 연결이 깨집니다.
    - 아래 위치의 `.mcp.json` 파일에서 이전 경로를 새 경로로 치환하세요:
-     1. 현재 작업 디렉토리: `./.mcp.json`
-     2. 홈 디렉토리: `~/.mcp.json`
-   - 치환 대상: `{old_installPath}` → `{new_installPath}`
-   - 예시:
+     1. **글로벌 MCP 설정**: `~/.claude/.mcp.json` (필수)
+     2. 현재 작업 디렉토리: `./.mcp.json`
+     3. 홈 디렉토리: `~/.mcp.json`
+   - **글로벌 MCP 등록 확인 및 갱신:**
+     ```bash
+     python3 -c "
+     import json
+     path = '$HOME/.claude/.mcp.json'
+     try:
+         data = json.load(open(path))
+     except:
+         data = {'mcpServers': {}}
+     if 'mcpServers' not in data:
+         data['mcpServers'] = {}
+     data['mcpServers']['vibespec'] = {
+         'command': 'bash',
+         'args': ['$NEW_DIR/scripts/start-mcp.sh']
+     }
+     with open(path, 'w') as f:
+         json.dump(data, f, indent=2)
+         f.write('\n')
+     print('MCP 경로 갱신 완료')
+     "
      ```
-     vibespec-marketplace/vibespec/0.5.0/dist/mcp/server.js
-     → vibespec-marketplace/vibespec/0.6.1/dist/mcp/server.js
-     ```
+   - 나머지 `.mcp.json` 파일에서는 `{old_installPath}` → `{new_installPath}` 치환
    - `.mcp.json` 파일이 없거나 vibespec 경로가 없으면 건너뛰세요.
    - 플러그인의 `.claude-plugin/.mcp.json`은 `${CLAUDE_PLUGIN_ROOT}` 변수를 사용하므로 별도 갱신이 불필요합니다.
 
