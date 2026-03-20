@@ -16,9 +16,9 @@ status: approved
 ### 기능 요구사항
 
 **MUST** — 반드시 구현
-- [ ] 완료 상태 플랜을 아카이브할 수 있다: `vp_plan_archive` 호출 시 status가 archived로 변경
-- [ ] 대시보드에서 아카이브된 플랜이 제외된다: `vp_dashboard` 결과에 archived 플랜 미포함
-- [ ] 아카이브된 플랜을 조회할 수 있다: `vp_plan_list --status=archived`로 필터링
+- [ ] 완료 상태 플랜을 아카이브할 수 있다: `vs_plan_archive` 호출 시 status가 archived로 변경
+- [ ] 대시보드에서 아카이브된 플랜이 제외된다: `vs_dashboard` 결과에 archived 플랜 미포함
+- [ ] 아카이브된 플랜을 조회할 수 있다: `vs_plan_list --status=archived`로 필터링
 
 **SHOULD** — 구현하면 좋음
 - [ ] CLI에서 `vp plan archive <id>` 명령어 지원
@@ -55,7 +55,7 @@ status: approved
 
 ## API / Interface Design
 
-### vp_plan_archive
+### vs_plan_archive
 
 ```typescript
 function archivePlan(planId: string): Plan
@@ -87,7 +87,7 @@ archivePlan("abc123def456")
 Error: "Only completed plans can be archived"
 ```
 
-### vp_dashboard 변경
+### vs_dashboard 변경
 
 ```typescript
 // 기존: plans WHERE status IN ('draft', 'active', 'completed')
@@ -95,7 +95,7 @@ Error: "Only completed plans can be archived"
 // 확인: plan_progress 뷰가 archived를 자연스럽게 제외하는지 검증
 ```
 
-### vp_plan_list 변경
+### vs_plan_list 변경
 
 ```typescript
 // 기존: status 필터 지원
@@ -109,7 +109,7 @@ listPlans({ status: "archived" })  // → archived 플랜만 반환
 |---|--------|------|---------------------|------|
 | 1 | PlanStatus에 archived 추가 | `src/core/types.ts`의 PlanStatus union에 'archived' 추가. schema.ts의 CHECK 제약이 있다면 수정. | `'archived'`가 유효한 PlanStatus 값이다 | S |
 | 2 | archivePlan 엔진 함수 구현 | `src/core/engine/lifecycle.ts`에 `archivePlan(planId)` 추가. completed → archived 전환만 허용. 이벤트 기록. | completed 플랜 아카이브 성공, 비-completed 플랜 시 에러, 이벤트 기록 확인 | M |
-| 3 | MCP 도구 등록 | `src/mcp/server.ts`에 `vp_plan_archive` 도구 추가. archivePlan 호출 및 결과 반환. | MCP 호출로 아카이브 동작 확인 | S |
+| 3 | MCP 도구 등록 | `src/mcp/server.ts`에 `vs_plan_archive` 도구 추가. archivePlan 호출 및 결과 반환. | MCP 호출로 아카이브 동작 확인 | S |
 | 4 | 대시보드 필터 검증 | `src/core/engine/dashboard.ts`의 getOverview가 archived를 제외하는지 확인. 필요시 수정. | 아카이브된 플랜이 대시보드에 나타나지 않음 | S |
 
 - 의존성 순서: 1 → 2 → 3, 4 (3과 4는 병렬 가능)

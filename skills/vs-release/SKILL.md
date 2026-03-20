@@ -37,7 +37,7 @@ git log --oneline v{current}..HEAD
      ```
      README 동기화 필요:
      - 누락된 스킬: /vs-pick, /vs-review
-     - 누락된 MCP 도구: vp_plan_update, vp_insights
+     - 누락된 MCP 도구: vs_plan_update, vs_insights
      자동 수정할까요? (Y / 건너뛰기)
      ```
   5. **Y** → README를 수정하고 릴리즈 커밋에 포함

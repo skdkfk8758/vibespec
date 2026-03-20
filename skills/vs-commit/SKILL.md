@@ -30,7 +30,7 @@ git diff --cached --stat
 
 ### Phase 2: 태스크 컨텍스트 조회
 
-`vp_plan_list` (status=active)로 활성 플랜을 확인하고,
+`vs_plan_list` (status=active)로 활성 플랜을 확인하고,
 활성 플랜이 있으면 해당 플랜에서 in_progress 상태의 태스크를 조회합니다.
 
 - in_progress 태스크가 있으면:

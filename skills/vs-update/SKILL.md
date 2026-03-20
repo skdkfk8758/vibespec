@@ -34,7 +34,7 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      rm -rf "$TMP_DIR"
      mkdir -p "$TMP_DIR"
      cd ~/.claude/plugins/marketplaces/vibespec-marketplace
-     cp -R .claude-plugin agents skills hooks "$TMP_DIR/"
+     cp -R .claude-plugin agents skills hooks scripts "$TMP_DIR/"
      ```
    - 빌드가 필요한 경우 (dist/ 디렉토리):
      ```bash
@@ -52,6 +52,7 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      - `$TMP_DIR/.claude-plugin/plugin.json`
      - `$TMP_DIR/skills/` (1개 이상의 SKILL.md)
      - dist가 필요한 경우: `$TMP_DIR/dist/mcp/server.js`
+     - MCP 시작 스크립트: `$TMP_DIR/scripts/start-mcp.sh`
      - native 의존성: `$TMP_DIR/node_modules/better-sqlite3`
    - 검증 실패 시 임시 디렉토리를 정리하고 STOP:
      ```bash

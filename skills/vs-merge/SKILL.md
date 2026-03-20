@@ -163,7 +163,7 @@ git -C <original-repo> reset --hard HEAD
 
 #### VibeSpec 태스크 컨텍스트 조회
 
-`vp_plan_list`로 활성 플랜을 확인하고, in_progress 태스크가 있으면 커밋 메시지에 포함합니다.
+`vs_plan_list`로 활성 플랜을 확인하고, in_progress 태스크가 있으면 커밋 메시지에 포함합니다.
 
 #### 커밋 메시지 작성
 
