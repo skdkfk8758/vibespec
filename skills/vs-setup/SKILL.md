@@ -10,15 +10,12 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
 
 ## Steps
 
-1. **MCP 서버 연결 확인**
-   - `vs_dashboard`를 호출하여 MCP 서버가 연결되어 있는지 확인하세요
+1. **CLI 연결 확인**
+   - Bash 도구로 `vp dashboard --json` 명령을 실행하여 CLI가 정상 동작하는지 확인하세요
    - 성공하면 → Step 2로 건너뛰세요
    - 실패하면 → 아래 **원인 진단**을 실행하세요
 
-   **원인 진단 (vs_dashboard 실패 시):**
-
-   MCP 서버는 `~/.claude/.mcp.json`에 등록되어야 Claude Code가 시작할 때 자동으로 연결합니다.
-   프로젝트별 `.mcp.json`을 수동 생성하지 마세요. 실패 원인을 순서대로 확인합니다:
+   **원인 진단 (vp dashboard 실패 시):**
 
    a. **플러그인 설치 확인**:
       ```bash
@@ -27,41 +24,13 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
       - 결과가 없으면 STOP: "VibeSpec 플러그인이 설치되어 있지 않습니다. `claude plugins install vibespec` 후 재시작하세요."
       - `installPath`를 `PLUGIN_DIR`로 기록
 
-   b. **글로벌 MCP 등록 확인**:
+   b. **CLI 바이너리 확인**:
       ```bash
-      cat ~/.claude/.mcp.json 2>/dev/null | grep vibespec
-      ```
-      - vibespec 항목이 없으면 → **자동 등록 실행:**
-        ```bash
-        python3 -c "
-        import json
-        path = '$HOME/.claude/.mcp.json'
-        try:
-            data = json.load(open(path))
-        except:
-            data = {'mcpServers': {}}
-        if 'mcpServers' not in data:
-            data['mcpServers'] = {}
-        data['mcpServers']['vibespec'] = {
-            'command': 'bash',
-            'args': ['$PLUGIN_DIR/scripts/start-mcp.sh']
-        }
-        with open(path, 'w') as f:
-            json.dump(data, f, indent=2)
-            f.write('\n')
-        print('등록 완료')
-        "
-        ```
-      - 등록 후 "Claude Code를 재시작하세요"라고 안내하고 STOP
-      - 이미 등록되어 있으면 → 경로가 현재 `PLUGIN_DIR`과 일치하는지 확인, 불일치 시 갱신
-
-   c. **MCP 시작 스크립트 확인**:
-      ```bash
-      test -f "$PLUGIN_DIR/scripts/start-mcp.sh" && echo "OK"
+      test -f "$PLUGIN_DIR/dist/cli/index.js" && echo "OK"
       ```
       - 없으면: `/vs-update`를 실행하여 플러그인을 재설치하라고 안내하고 STOP
 
-   d. **native 의존성 확인**:
+   c. **native 의존성 확인**:
       ```bash
       test -d "$PLUGIN_DIR/node_modules/better-sqlite3" && echo "OK"
       ```
@@ -69,16 +38,13 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
         ```bash
         cd "$PLUGIN_DIR" && npm ci --production
         ```
-      - 설치 후 "Claude Code를 재시작하세요"라고 안내하고 STOP
+      - 설치 후 다시 `vp dashboard --json`을 실행하여 확인하세요
 
-   e. **서버 직접 실행 테스트**:
+   d. **직접 실행 테스트**:
       ```bash
-      cd "$PLUGIN_DIR" && bash scripts/start-mcp.sh 2>&1 | head -5
+      node "$PLUGIN_DIR/dist/cli/index.js" dashboard --json
       ```
       - 에러가 있으면 에러 내용을 사용자에게 보여주고 STOP
-      - `[vibespec] CWD:`, `[vibespec] DB:` 로그가 정상 출력되면:
-        → "MCP 서버는 정상이지만 Claude Code에 연결되지 않았습니다. Claude Code를 재시작하세요."
-        → STOP
 
 2. **기존 데이터 확인**
    - 대시보드 결과에 기존 플랜이 있으면:
@@ -99,4 +65,4 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
    - 원하면 `/vs-plan`을 실행하여 스펙 기반 플랜을 생성하세요
 
 5. **컨텍스트 저장**
-   - `vs_context_save`로 셋업 완료 내용을 요약 저장하세요
+   - Bash 도구로 `vp context save --json --summary "VibeSpec 초기 셋업 완료"` 명령을 실행하여 셋업 완료를 저장하세요

@@ -11,7 +11,7 @@ invocation: user
 ## Steps
 
 1. **컨텍스트 복원**
-   - `vs_context_resume`을 호출하여 이전 세션 로그, 대시보드, 알림을 가져오세요
+   - Bash 도구로 `vp context resume --json` 명령을 실행하세요 (특정 세션을 복원하려면 `--session-id <id>` 옵션 추가). 이전 세션 로그, 대시보드, 알림을 가져오세요
 
 2. **Stash 복원 확인**
    - `git stash list`에서 `vibespec-session` 패턴의 stash를 검색하세요
@@ -56,7 +56,7 @@ invocation: user
    - 알림이 있으면 우선 처리 제안
 
 6. **세션 시작 기록**
-   - `vs_context_save`로 새 세션 시작을 기록하세요
+   - Bash 도구로 `vp context save --json --summary "새 세션 시작"` 명령을 실행하세요. 새 세션 시작을 기록하세요
    - stash 복원을 수행했다면 복원 내역도 포함하세요
 
 ## 다음 단계

@@ -31,13 +31,13 @@ git log --oneline v{current}..HEAD
 - 빌드 실행: `npm run build` — 실패하면 STOP: "빌드가 실패합니다. 수정 후 다시 시도하세요."
 - README 동기화 검증:
   1. `README.md`의 Slash Commands 테이블과 `skills/` 디렉토리의 실제 스킬 목록을 비교
-  2. `README.md`의 MCP Tools 테이블과 `src/`의 실제 MCP 도구 목록을 비교
+  2. `README.md`의 CLI Commands 테이블과 `src/cli/index.ts`의 실제 CLI 명령 목록을 비교
   3. `README.md`의 Plugin Structure 트리와 실제 디렉토리 구조를 비교
   4. 누락/불일치가 있으면 사용자에게 보고하고 자동 수정 제안:
      ```
      README 동기화 필요:
      - 누락된 스킬: /vs-pick, /vs-review
-     - 누락된 MCP 도구: vs_plan_update, vs_insights
+     - 누락된 CLI 명령: vp plan update, vp insights
      자동 수정할까요? (Y / 건너뛰기)
      ```
   5. **Y** → README를 수정하고 릴리즈 커밋에 포함

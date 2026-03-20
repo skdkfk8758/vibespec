@@ -33,7 +33,7 @@ type: domain
 
 1. 데이터 모델 / 스키마
 2. 핵심 비즈니스 로직 (모델, 유틸리티)
-3. API / 인터페이스 (MCP 도구, CLI, 엔드포인트)
+3. API / 인터페이스 (CLI 명령, 엔드포인트)
 4. 통합 / 마무리 (설정, 문서, CI)
 
 ### 의존성 판단 질문
@@ -56,7 +56,7 @@ type: domain
 Given [사전 조건] When [동작] Then [기대 결과]
 
 **나쁜 예**: "에러를 적절히 처리한다"
-**좋은 예**: "plan_id가 존재하지 않을 때 vs_plan_get 호출 시 'Plan not found' 에러를 반환한다"
+**좋은 예**: "plan_id가 존재하지 않을 때 `vp plan show` 호출 시 'Plan not found' 에러를 반환한다"
 
 ## INVEST 원칙
 

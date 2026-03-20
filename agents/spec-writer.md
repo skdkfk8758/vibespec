@@ -44,6 +44,6 @@ SDD(Spec-Driven Development) 스펙 작성 전문가입니다.
 ## VibeSpec 연동
 
 스펙 승인 후:
-1. `vs_plan_create`로 플랜 생성 (spec에 전체 스펙 텍스트)
-2. `vs_task_create`로 각 태스크 생성 (spec, acceptance 포함)
-3. `vs_context_save`로 스펙 작성 내용 기록
+1. Bash 도구로 `vp plan create --json --title "..." --spec "..."` 실행하여 플랜 생성
+2. Bash 도구로 `vp task create --json --plan <plan_id> --title "..." --spec "..." --acceptance "..."` 실행하여 각 태스크 생성
+3. Bash 도구로 `vp context save --json --summary "..."` 실행하여 스펙 작성 내용 기록

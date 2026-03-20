@@ -17,12 +17,12 @@ invocation: user
      → 사용자가 원하면 `/vs-worktree`로 이동, 아니면 그대로 진행하세요
 
 2. **활성 플랜 확인**
-   - `vs_plan_list`를 호출하여 status가 active 또는 approved인 플랜을 필터링하세요
+   - Bash 도구로 `vp plan list --json` 명령을 실행하세요. status가 active 또는 approved인 플랜을 필터링하세요
    - 플랜이 여러 개면 `AskUserQuestion`으로 어느 플랜에서 작업할지 물어보세요
    - 활성 플랜이 없으면 `/vs-plan`으로 새 플랜을 만들도록 안내하세요
 
 3. **태스크 목록 조회 및 표시**
-   - `vs_plan_get`으로 선택된 플랜의 전체 태스크 트리를 가져오세요
+   - Bash 도구로 `vp plan show <plan_id> --json` 명령을 실행하세요. 선택된 플랜의 전체 태스크 트리를 가져오세요
    - 태스크를 상태별로 분류하여 테이블로 표시하세요:
 
    ```
@@ -47,14 +47,14 @@ invocation: user
    - 선택 가능한 태스크가 없으면 플랜 완료를 제안하거나 새 태스크 추가를 안내하세요
 
 5. **선택된 태스크 상세 표시**
-   - `vs_task_get`으로 선택된 태스크의 상세 정보를 가져오세요
+   - Bash 도구로 `vp task show <task_id> --json` 명령을 실행하세요. 선택된 태스크의 상세 정보를 가져오세요
    - 태스크 제목, spec, acceptance criteria를 보여주세요
    - 서브태스크가 있으면 함께 표시하세요
 
    **체크포인트**: "선택한 태스크: {title}. 시작 / 다른 태스크 선택 / 취소 중 선택해주세요."
 
 6. **구현**
-   - `vs_task_update`로 status를 in_progress로 변경하세요
+   - Bash 도구로 `vp task update <id> in_progress --json` 명령을 실행하세요
    - 태스크의 TDD 적합성을 판단하세요:
 
    **TDD 적합** (함수, API, 서비스, 데이터 처리, 비즈니스 로직):
@@ -94,10 +94,10 @@ invocation: user
        [codex-review 리포트 요약 — verdict, 주요 발견사항]
        (SKIP인 경우: "Codex 리뷰를 건너뛰었습니다: {사유}")
        ```
-     → PASS: `vs_task_update`로 status를 done으로 변경하세요
-     → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (metrics에 `has_concerns: true` 기록)
+     → PASS: Bash 도구로 `vp task update <id> done --json` 명령을 실행하세요
+     → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (Bash 도구로 `vp task update <id> done --json --has-concerns` 명령을 실행하세요)
      → FAIL: 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
-   - `vs_context_save`로 완료 내용을 저장하세요
+   - Bash 도구로 `vp context save --json --summary "..."` 명령을 실행하세요. 완료 내용을 저장하세요
 
 
 ## 다음 단계

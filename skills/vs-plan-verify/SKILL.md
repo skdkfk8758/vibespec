@@ -13,7 +13,7 @@ invocation: user
 
 **사용하세요:**
 - 플랜의 모든 태스크가 done/skipped 상태일 때
-- `vs_plan_complete` 호출 전 최종 게이트로
+- `vp plan complete <plan_id> --json` Bash 도구로 실행 전 최종 게이트로
 - `vs-dashboard`에서 "completable" 알림이 뜬 플랜에 대해
 
 **사용하지 마세요:**
@@ -27,9 +27,9 @@ invocation: user
 ## Steps
 
 1. **플랜 상태 조회**
-   - plan_id가 없으면 `vs_plan_list(status=active)` → `vs_plan_list(status=approved)` 순으로 탐색하세요
+   - plan_id가 없으면 `vp plan list --json --status active` → `vp plan list --json --status approved` 순으로 Bash 도구로 실행하여 탐색하세요
    - 복수 플랜이면 사용자에게 선택을 요청하세요
-   - `vs_plan_get(plan_id)`로 플랜 + 태스크 트리를 조회하세요
+   - `vp plan show <plan_id> --json`을 Bash 도구로 실행하여 플랜 + 태스크 트리를 조회하세요
    - 태스크 상태별 집계: done / skipped / blocked / in_progress / todo
 
    **조기 종료 조건:**
@@ -120,7 +120,7 @@ invocation: user
    → **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - "플랜 검증이 통과했습니다. 어떻게 진행할까요?"
    - 선택지:
-     - "플랜 완료" → `vs_plan_complete(plan_id)` 실행
+     - "플랜 완료" → `vp plan complete <plan_id> --json`을 Bash 도구로 실행
      - "머지 진행" → `/vs-merge` 안내
      - "유지" → 아무 작업 안 함
 
@@ -129,7 +129,7 @@ invocation: user
    → **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - "검증에 주의 사항이 있습니다. 어떻게 진행할까요?"
    - 선택지:
-     - "플랜 완료" → `vs_plan_complete(plan_id)` 실행
+     - "플랜 완료" → `vp plan complete <plan_id> --json`을 Bash 도구로 실행
      - "주의 사항 해결 후 재검증" → 해당 태스크/항목 안내
      - "유지" → 아무 작업 안 함
 
@@ -139,7 +139,7 @@ invocation: user
    - "검증 실패 항목이 있습니다. 어떻게 진행할까요?"
    - 선택지:
      - "실패 항목 수정" → 실패 원인별 가이드 제공
-     - "강제 완료" → `vs_plan_complete(plan_id)` 실행 (경고 포함)
+     - "강제 완료" → `vp plan complete <plan_id> --json`을 Bash 도구로 실행 (경고 포함)
      - "유지" → 아무 작업 안 함
 
 ## Rules
@@ -148,7 +148,7 @@ invocation: user
 - Success Criteria 검증에서 확신이 없으면 `PASS`가 아닌 `WARN`으로 판정하세요
 - FAIL 판정이더라도 사용자의 override("강제 완료")를 허용하세요
 - 이 스킬은 `verification`(태스크 단위)과 다릅니다 — 개별 태스크의 acceptance criteria는 재검증하지 않습니다
-- `vs_plan_complete`는 사용자 승인 후에만 호출하세요
+- `vp plan complete <plan_id> --json`은 사용자 승인 후에만 Bash 도구로 실행하세요
 
 ## 다음 단계
 

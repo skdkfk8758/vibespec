@@ -11,7 +11,7 @@ invocation: user
 ## Steps
 
 1. **대시보드 데이터 조회**
-   - `vs_dashboard`를 호출하여 활성 플랜 현황과 알림을 가져오세요
+   - Bash 도구로 `vp dashboard --json` 명령을 실행하세요. 활성 플랜 현황과 알림을 가져오세요
 
 2. **현황 표시**
    각 활성 플랜에 대해:
@@ -26,8 +26,8 @@ invocation: user
    - forgotten: 7일 이상 활동 없는 플랜
 
 3. **속도 통계**
-   - `vs_stats`를 호출하여 일일 완료 속도를 보여주세요
-   - 활성 플랜이 있으면 plan_id를 넘겨 예상 완료일도 보여주세요
+   - Bash 도구로 `vp stats --json` 명령을 실행하세요. 일일 완료 속도를 보여주세요
+   - 활성 플랜이 있으면 Bash 도구로 `vp stats <plan_id> --json` 명령을 실행하세요. 예상 완료일도 보여주세요
 
 4. **다음 액션 제안**
 

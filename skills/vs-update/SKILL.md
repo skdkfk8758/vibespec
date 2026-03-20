@@ -47,12 +47,11 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      ```bash
      cd "$TMP_DIR" && npm ci --production
      ```
-     - 이 단계가 없으면 MCP 서버 시작 시 `better-sqlite3` 모듈을 찾지 못해 연결이 실패합니다.
+     - 이 단계가 없으면 CLI 실행 시 `better-sqlite3` 모듈을 찾지 못해 명령이 실패합니다.
    - **빌드 검증** — 아래 필수 항목이 모두 존재하는지 확인하세요:
      - `$TMP_DIR/.claude-plugin/plugin.json`
      - `$TMP_DIR/skills/` (1개 이상의 SKILL.md)
-     - dist가 필요한 경우: `$TMP_DIR/dist/mcp/server.js`
-     - MCP 시작 스크립트: `$TMP_DIR/scripts/start-mcp.sh`
+     - `$TMP_DIR/dist/cli/index.js`
      - native 의존성: `$TMP_DIR/node_modules/better-sqlite3`
    - 검증 실패 시 임시 디렉토리를 정리하고 STOP:
      ```bash
@@ -81,43 +80,11 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
      ```
    - 이전 경로와 새 경로가 동일하면 이 단계를 건너뛰세요 (이미 Step 4에서 교체됨).
 
-7. **MCP 설정 경로 갱신**
-   - MCP 서버 경로가 하드코딩되어 있으면 버전 변경 시 연결이 깨집니다.
-   - 아래 위치의 `.mcp.json` 파일에서 이전 경로를 새 경로로 치환하세요:
-     1. **글로벌 MCP 설정**: `~/.claude/.mcp.json` (필수)
-     2. 현재 작업 디렉토리: `./.mcp.json`
-     3. 홈 디렉토리: `~/.mcp.json`
-   - **글로벌 MCP 등록 확인 및 갱신:**
-     ```bash
-     python3 -c "
-     import json
-     path = '$HOME/.claude/.mcp.json'
-     try:
-         data = json.load(open(path))
-     except:
-         data = {'mcpServers': {}}
-     if 'mcpServers' not in data:
-         data['mcpServers'] = {}
-     data['mcpServers']['vibespec'] = {
-         'command': 'bash',
-         'args': ['$NEW_DIR/scripts/start-mcp.sh']
-     }
-     with open(path, 'w') as f:
-         json.dump(data, f, indent=2)
-         f.write('\n')
-     print('MCP 경로 갱신 완료')
-     "
-     ```
-   - 나머지 `.mcp.json` 파일에서는 `{old_installPath}` → `{new_installPath}` 치환
-   - `.mcp.json` 파일이 없거나 vibespec 경로가 없으면 건너뛰세요.
-   - 플러그인의 `.claude-plugin/.mcp.json`은 `${CLAUDE_PLUGIN_ROOT}` 변수를 사용하므로 별도 갱신이 불필요합니다.
-
-8. **결과 보고**
+7. **결과 보고**
    ```
    VibeSpec 업데이트 완료!
    - 이전: v{old_version}
    - 최신: v{new_version}
-   - MCP 경로: {갱신됨 / 변경 없음}
 
    변경사항을 적용하려면 Claude Code를 재시작하세요.
    ```
