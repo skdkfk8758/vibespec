@@ -87,11 +87,35 @@ argument-hint: "[target-branch]"
    git -C <original-repo> merge --squash <worktree-branch>
    ```
 
-3. **충돌 처리**: 충돌이 발생하면:
-   - 충돌 파일 목록을 표시
-   - 충돌 마커를 보여줌
-   - **자동 해결을 시도하지 않음** — 사용자에게 보고하고 중단
-   - 원본 레포에서 충돌을 해결한 후 다시 실행하라고 안내
+3. **충돌 처리**: 충돌이 발생하면 **사용자를 인터뷰하며 함께 해결**합니다:
+
+   **절대 자동 해결을 시도하지 마세요.** 모든 충돌은 사용자의 명시적 선택을 받아야 합니다.
+
+   a. **충돌 파일 목록 표시**:
+      ```bash
+      git -C <original-repo> diff --name-only --diff-filter=U
+      ```
+      충돌 파일 수와 목록을 보여줍니다.
+
+   b. **파일별 인터뷰** — 각 충돌 파일에 대해 순서대로:
+      1. 충돌 파일의 전체 내용을 `Read`로 읽어 충돌 마커(`<<<<<<<`, `=======`, `>>>>>>>`)를 찾습니다
+      2. 각 충돌 영역에 대해 **ours** (타겟 브랜치)와 **theirs** (워크트리 브랜치) 내용을 명확히 구분하여 보여줍니다
+      3. `AskUserQuestion`으로 선택지를 제시합니다:
+         - header: "충돌: {파일명}"
+         - 선택지:
+           - label: "ours (타겟)", description: "{타겟 브랜치} 쪽 코드를 유지합니다"
+           - label: "theirs (워크트리)", description: "워크트리에서 작업한 코드를 유지합니다"
+           - label: "수동 편집", description: "직접 내용을 지정합니다"
+      4. 선택에 따라:
+         - **ours/theirs**: `git -C <original-repo> checkout --ours <file>` 또는 `--theirs <file>` 실행
+         - **수동 편집**: 사용자에게 원하는 내용을 물어보고 `Edit`으로 충돌 마커를 제거하며 반영
+      5. 해결된 파일을 staging: `git -C <original-repo> add <file>`
+
+   c. **모든 충돌 해소 확인**:
+      ```bash
+      git -C <original-repo> diff --name-only --diff-filter=U
+      ```
+      남은 충돌이 없으면 Phase 4.5로 진행합니다.
 
 4. 충돌 없이 성공하면 Phase 4.5로 진행합니다.
 
@@ -220,5 +244,7 @@ EOF
 - **pre-commit hook을 건너뛰지 않음** (`--no-verify` 금지)
 - **Integration Gate를 건너뛰지 않음** — 빌드 또는 테스트 실패 시 반드시 롤백하고 커밋하지 않음
 - **롤백은 `git reset --hard HEAD`만 사용** — squash merge는 커밋 전이므로 이 명령으로 안전하게 복원됨
+- **충돌을 절대 자동 해결하지 않음** — 모든 충돌은 파일별로 사용자 인터뷰를 거쳐야 함
+- **충돌 해결 시 사용자의 명시적 선택(ours/theirs/수동편집) 없이 진행하지 않음**
 - 어떤 단계에서든 예상치 못한 상황이 발생하면 **추측하지 말고 중단 후 설명**
 - 커밋 메시지 품질이 최우선 — Phase 2에서 충분히 시간을 들여 변경사항을 이해하세요
