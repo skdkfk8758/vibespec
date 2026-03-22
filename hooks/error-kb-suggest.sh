@@ -36,8 +36,13 @@ fi
 # 에러 감지 시 제안 출력
 if [ -n "$KEYWORD" ]; then
   CLEAN_KEYWORD=$(echo "$KEYWORD" | tr -d '"' | tr -d "'" | xargs)
-  jq -n --arg type "$ERROR_TYPE" --arg kw "$CLEAN_KEYWORD" '{
-    additionalContext: ($type + "가 감지되었습니다. `vs error-kb search \"" + $kw + "\" --json`으로 과거 해결책을 확인해보세요.")
+  # Obsidian vault 설정 여부 확인
+  VAULT_OPT=""
+  if vs config get obsidian.vault >/dev/null 2>&1; then
+    VAULT_OPT=" --with-obsidian"
+  fi
+  jq -n --arg type "$ERROR_TYPE" --arg kw "$CLEAN_KEYWORD" --arg vopt "$VAULT_OPT" '{
+    additionalContext: ($type + "가 감지되었습니다. `vs error-kb search \"" + $kw + "\"" + $vopt + " --json`으로 과거 해결책을 확인해보세요.")
   }'
 fi
 

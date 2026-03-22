@@ -15,10 +15,20 @@ invocation: user
 - 구현 시작 전 관련 에러 패턴 사전 조회
 - Trigger keywords: "에러", "error", "bug", "테스트 실패", "빌드 에러", "런타임 에러", "왜 안돼", "디버그"
 
+## Obsidian 연동
+
+Obsidian vault가 설정되어 있으면 에러 KB와 양방향 동기화됩니다:
+- **에러 추가/수정/삭제** 시 vault에 자동 미러링 (fire-and-forget)
+- **검색** 시 `--with-obsidian` 플래그로 vault 내용도 함께 검색
+- **전체 동기화**: `vs error-kb sync`로 로컬 ↔ vault 일괄 동기화
+
+설정: `vs config set obsidian.vault <vault-name>`
+
 ## Steps
 
 1. **에러 KB 검색**
    - Bash 도구로 `vs error-kb search "<에러 키워드>" --json` 명령을 실행하세요
+   - Obsidian vault가 설정되어 있으면 `--with-obsidian` 플래그를 추가하여 vault도 함께 검색하세요
    - 에러 메시지, 스택 트레이스, 관련 키워드를 검색어로 사용하세요
 
 2. **결과 분석**
@@ -54,9 +64,26 @@ invocation: user
 - **vs-next**: 태스크 시작 시 관련 키워드로 `vs error-kb search` 실행을 권장합니다. 사전에 알려진 에러 패턴을 파악하면 구현 품질이 향상됩니다.
 - **systematic-debugging**: 디버깅 스킬을 사용하여 문제를 해결한 후 `vs error-kb add`로 원인과 해결책을 기록하세요. 향후 동일 에러 발생 시 빠르게 대응할 수 있습니다.
 
+## Obsidian 동기화 명령
+
+```bash
+# vault 설정
+vs config set obsidian.vault <vault-name>
+
+# 전체 동기화 (프리뷰)
+vs error-kb sync --dry-run
+
+# 전체 동기화 (실행)
+vs error-kb sync
+
+# vault-only 에러를 로컬 KB로 가져오기
+vs error-kb sync --import
+```
+
 ## 다음 단계
 
 - 에러 해결 후 → `/vs-next`로 태스크 작업 재개
 - 반복 에러 패턴 발견 시 → `patterns/` 디렉토리에 예방 가이드 작성
 - 디버깅이 필요한 경우 → `systematic-debugging` 스킬 활용
 - 에러 현황 전체 조회 → `vs error-kb search "" --json`으로 전체 목록 확인
+- Obsidian vault 동기화 → `vs error-kb sync`로 양방향 동기화

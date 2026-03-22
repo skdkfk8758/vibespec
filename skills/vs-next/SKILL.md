@@ -33,7 +33,7 @@ invocation: user
 
 5. **에러 KB 사전 조회**
    - 태스크 제목과 spec에서 핵심 키워드(모듈명, 기술명, 에러 유형 등)를 추출하세요
-   - Bash 도구로 `vs error-kb search "<추출된 키워드>" --json` 명령을 실행하세요
+   - Bash 도구로 `vs error-kb search "<추출된 키워드>" --with-obsidian --json` 명령을 실행하세요 (Obsidian vault도 함께 검색)
    - 결과가 있으면:
      → 관련 에러 목록과 해결책을 표시하고 "이전에 유사한 에러가 있었습니다. 참고하여 구현하세요."로 안내하세요
      → occurrences >= 3인 에러가 있으면: "반복 패턴입니다. patterns/ 문서 생성을 고려하세요." 추가 안내하세요
