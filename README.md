@@ -223,9 +223,19 @@ vibespec/
         ├── adapter/
         │   └── obsidian.ts       # Obsidian CLI 어댑터 (obsidian-ts)
         ├── engine/
+        │   ├── alerts.ts         # 알림 엔진
+        │   ├── dashboard.ts      # 대시보드 엔진
         │   ├── error-kb.ts       # 에러 KB 엔진 + Obsidian 미러링
+        │   ├── insights.ts       # 인사이트 분석 엔진
+        │   ├── lifecycle.ts      # 태스크 라이프사이클 관리
+        │   ├── stats.ts          # 통계 엔진
         │   └── sync.ts           # 에러 KB ↔ Obsidian 양방향 동기화
-        ├── models/               # DB 모델 (Plan, Task, Event 등)
+        ├── models/               # DB 모델
+        │   ├── context.ts        # 컨텍스트 모델
+        │   ├── event.ts          # 이벤트 모델
+        │   ├── plan.ts           # 플랜 모델
+        │   ├── task.ts           # 태스크 모델
+        │   └── task-metrics.ts   # 태스크 메트릭 모델
         ├── db/                   # 스키마 및 DB 연결
         └── types.ts              # 공통 타입 정의
 ```
