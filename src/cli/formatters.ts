@@ -1,6 +1,7 @@
 import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats } from '../core/types.js';
 import type { DashboardOverview } from '../core/engine/dashboard.js';
 import type { VelocityResult, EstimatedCompletionResult, TimelineEntry } from '../core/engine/stats.js';
+import type { SyncResult } from '../core/engine/sync.js';
 
 const FILLED = '█';
 const EMPTY = '░';
@@ -263,6 +264,50 @@ export function formatErrorKBStats(stats: ErrorKBStats): string {
     lines.push('Top Recurring:');
     for (const entry of stats.top_recurring) {
       lines.push(`  ${entry.title} (${entry.occurrences}x)`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function formatSyncResult(result: SyncResult, dryRun?: boolean): string {
+  const lines: string[] = [];
+
+  if (dryRun) {
+    lines.push('[DRY RUN] No changes were made.');
+    lines.push('');
+  }
+
+  lines.push('Sync Summary:');
+  lines.push(`  Created in vault: ${result.created_in_vault}`);
+  lines.push(`  Created in local: ${result.created_in_local}`);
+  lines.push(`  Updated in vault: ${result.updated_in_vault}`);
+  lines.push(`  Updated in local: ${result.updated_in_local}`);
+
+  if (result.conflicts.length > 0) {
+    lines.push('');
+    lines.push('Conflicts resolved:');
+    for (const c of result.conflicts) {
+      lines.push(`  ${c.id}: ${c.resolution}`);
+    }
+  }
+
+  if (result.skipped_vault_only.length > 0) {
+    lines.push('');
+    lines.push(`Vault-only entries (use --import to add): ${result.skipped_vault_only.length}`);
+    for (const id of result.skipped_vault_only.slice(0, 10)) {
+      lines.push(`  ${id}`);
+    }
+    if (result.skipped_vault_only.length > 10) {
+      lines.push(`  ... and ${result.skipped_vault_only.length - 10} more`);
+    }
+  }
+
+  if (result.errors.length > 0) {
+    lines.push('');
+    lines.push('Errors:');
+    for (const err of result.errors) {
+      lines.push(`  ${err}`);
     }
   }
 
