@@ -21,7 +21,7 @@ invocation: user
 ## Input
 
 호출 시 다음 정보가 컨텍스트에 존재해야 합니다:
-- **task**: 태스크 제목, spec, acceptance criteria (`vp task show <task_id> --json`으로 조회)
+- **task**: 태스크 제목, spec, acceptance criteria (`vs task show <task_id> --json`으로 조회)
 - **impl_report**: tdd-implementer 리포트 (있는 경우, 없으면 생략)
 
 ## Steps

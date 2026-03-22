@@ -187,7 +187,7 @@ git -C <original-repo> reset --hard HEAD
 
 #### VibeSpec 태스크 컨텍스트 조회
 
-Bash 도구로 `vp plan list --json --status active`를 실행하여 활성 플랜을 확인하고, in_progress 태스크가 있으면 커밋 메시지에 포함합니다.
+Bash 도구로 `vs plan list --json --status active`를 실행하여 활성 플랜을 확인하고, in_progress 태스크가 있으면 커밋 메시지에 포함합니다.
 
 #### 커밋 메시지 작성
 

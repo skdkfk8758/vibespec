@@ -267,7 +267,7 @@ task
     const next = taskModel.getNextAvailable(planId);
     if (!next) {
       output(
-        { message: 'No pending tasks', hint: 'All tasks are done or blocked. Use vp plan complete to finish the plan.' },
+        { message: 'No pending tasks', hint: 'All tasks are done or blocked. Use vs plan complete to finish the plan.' },
         'No pending tasks.',
       );
       return;

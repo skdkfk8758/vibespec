@@ -56,7 +56,7 @@ type: domain
 Given [사전 조건] When [동작] Then [기대 결과]
 
 **나쁜 예**: "에러를 적절히 처리한다"
-**좋은 예**: "plan_id가 존재하지 않을 때 `vp plan show` 호출 시 'Plan not found' 에러를 반환한다"
+**좋은 예**: "plan_id가 존재하지 않을 때 `vs plan show` 호출 시 'Plan not found' 에러를 반환한다"
 
 ## INVEST 원칙
 

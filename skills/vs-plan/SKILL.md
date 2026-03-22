@@ -20,7 +20,7 @@ invocation: user
 - 단일 파일 수정, 버그 픽스, 오타 수정 → 직접 수정
 - 설정 변경, 의존성 업데이트 → 직접 처리
 - 기존 UI의 스타일링만 변경 → 직접 처리
-- 이미 스펙이 명확한 단순 태스크 → Bash 도구로 `vp task create --json` 명령을 실행하여 바로 생성
+- 이미 스펙이 명확한 단순 태스크 → Bash 도구로 `vs task create --json` 명령을 실행하여 바로 생성
 
 ## Steps
 
@@ -81,7 +81,7 @@ invocation: user
      - label: "처음부터 재작성", description: "스펙을 처음부터 다시 작성합니다"
 
 3. **플랜 생성**
-   - 승인된 스펙으로 Bash 도구로 `vp plan create --json --title "기능명" --spec "작성한 스펙 전문"` 명령을 실행하세요
+   - 승인된 스펙으로 Bash 도구로 `vs plan create --json --title "기능명" --spec "작성한 스펙 전문"` 명령을 실행하세요
 
 4. **태스크 분해**
    스펙을 태스크로 분해하세요. 각 태스크는:
@@ -108,14 +108,14 @@ invocation: user
    개선점을 반영했으면 최종 태스크 목록을 다시 보여주고 승인을 받으세요.
 
 6. **태스크 생성**
-   - 승인된 각 태스크를 Bash 도구로 `vp task create --json --plan <id> --title "..." --spec "..." --acceptance "..."` 명령을 실행하여 생성하세요
+   - 승인된 각 태스크를 Bash 도구로 `vs task create --json --plan <id> --title "..." --spec "..." --acceptance "..."` 명령을 실행하여 생성하세요
    - 복합 태스크는 `--parent <id>` 옵션을 사용하여 서브태스크로 구성하세요
    - 의존성이 있는 태스크는 `--depends-on "id1,id2"` 옵션을 추가하세요
    - spec과 acceptance를 반드시 포함하세요
 
 7. **결과 확인**
-   - Bash 도구로 `vp plan show <plan_id> --json` 명령을 실행하여 생성된 플랜과 태스크 트리를 보여주세요
-   - Bash 도구로 `vp context save --json --summary "..."` 명령을 실행하여 플랜 생성 내용을 저장하세요
+   - Bash 도구로 `vs plan show <plan_id> --json` 명령을 실행하여 생성된 플랜과 태스크 트리를 보여주세요
+   - Bash 도구로 `vs context save --json --summary "..."` 명령을 실행하여 플랜 생성 내용을 저장하세요
    - `/vs-next`로 바로 작업을 시작할 수 있다고 안내하세요
 
 ## 다음 단계

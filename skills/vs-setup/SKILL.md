@@ -11,7 +11,7 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
 ## Steps
 
 1. **CLI 연결 확인**
-   - Bash 도구로 `vp dashboard --json` 명령을 실행하여 CLI가 정상 동작하는지 확인하세요
+   - Bash 도구로 `vs dashboard --json` 명령을 실행하여 CLI가 정상 동작하는지 확인하세요
    - 성공하면 → Step 2로 건너뛰세요
    - 실패하면 → 아래 **원인 진단**을 실행하세요
 
@@ -38,7 +38,7 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
         ```bash
         cd "$PLUGIN_DIR" && npm ci --production
         ```
-      - 설치 후 다시 `vp dashboard --json`을 실행하여 확인하세요
+      - 설치 후 다시 `vs dashboard --json`을 실행하여 확인하세요
 
    d. **직접 실행 테스트**:
       ```bash
@@ -65,4 +65,4 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
    - 원하면 `/vs-plan`을 실행하여 스펙 기반 플랜을 생성하세요
 
 5. **컨텍스트 저장**
-   - Bash 도구로 `vp context save --json --summary "VibeSpec 초기 셋업 완료"` 명령을 실행하여 셋업 완료를 저장하세요
+   - Bash 도구로 `vs context save --json --summary "VibeSpec 초기 셋업 완료"` 명령을 실행하여 셋업 완료를 저장하세요

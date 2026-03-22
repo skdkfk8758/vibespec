@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/cli/index.js",
   "bin": {
-    "vp": "dist/cli/index.js"
+    "vs": "dist/cli/index.js"
   },
   "keywords": [
     "claude-code",
