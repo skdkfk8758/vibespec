@@ -1,4 +1,4 @@
-import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event } from '../core/types.js';
+import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats } from '../core/types.js';
 import type { DashboardOverview } from '../core/engine/dashboard.js';
 import type { VelocityResult, EstimatedCompletionResult, TimelineEntry } from '../core/engine/stats.js';
 
@@ -197,6 +197,73 @@ export function formatPlanList(plans: Plan[]): string {
     lines.push(
       `${padRight(plan.id, 14)}${padRight(plan.title, 26)}${padRight(plan.status, 12)}${created}`,
     );
+  }
+
+  return lines.join('\n');
+}
+
+// ── Error KB formatters ─────────────────────────────────────────────────
+
+export function formatErrorSearchResults(entries: ErrorEntry[]): string {
+  if (entries.length === 0) return 'No errors found.';
+
+  const lines: string[] = [];
+  const header = `${padRight('ID', 16)}${padRight('Severity', 12)}${padRight('Status', 12)}${padRight('Occ', 6)}Title`;
+  lines.push(header);
+
+  for (const entry of entries) {
+    lines.push(
+      `${padRight(entry.id, 16)}${padRight(entry.severity, 12)}${padRight(entry.status, 12)}${padRight(String(entry.occurrences), 6)}${entry.title}`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+export function formatErrorDetail(entry: ErrorEntry): string {
+  const tagsStr = entry.tags.length > 0 ? entry.tags.join(', ') : '(none)';
+  const lines: string[] = [
+    `ID:          ${entry.id}`,
+    `Title:       ${entry.title}`,
+    `Severity:    ${entry.severity}`,
+    `Tags:        ${tagsStr}`,
+    `Status:      ${entry.status}`,
+    `Occurrences: ${entry.occurrences}`,
+    `First seen:  ${entry.first_seen}`,
+    `Last seen:   ${entry.last_seen}`,
+  ];
+
+  if (entry.content && entry.content.trim().length > 0) {
+    lines.push('');
+    lines.push(entry.content.trim());
+  }
+
+  return lines.join('\n');
+}
+
+export function formatErrorKBStats(stats: ErrorKBStats): string {
+  const lines: string[] = [];
+
+  lines.push(`Total: ${stats.total}`);
+  lines.push('');
+  lines.push('By Severity:');
+  lines.push(`  critical: ${stats.by_severity.critical}`);
+  lines.push(`  high:     ${stats.by_severity.high}`);
+  lines.push(`  medium:   ${stats.by_severity.medium}`);
+  lines.push(`  low:      ${stats.by_severity.low}`);
+  lines.push('');
+  lines.push('By Status:');
+  lines.push(`  open:      ${stats.by_status.open}`);
+  lines.push(`  resolved:  ${stats.by_status.resolved}`);
+  lines.push(`  recurring: ${stats.by_status.recurring}`);
+  lines.push(`  wontfix:   ${stats.by_status.wontfix}`);
+
+  if (stats.top_recurring.length > 0) {
+    lines.push('');
+    lines.push('Top Recurring:');
+    for (const entry of stats.top_recurring) {
+      lines.push(`  ${entry.title} (${entry.occurrences}x)`);
+    }
   }
 
   return lines.join('\n');

@@ -1,19 +1,20 @@
 import { Command } from 'commander';
 import { createRequire } from 'node:module';
-import { getDb } from '../core/db/connection.js';
+import { getDb, findProjectRoot } from '../core/db/connection.js';
 import { initSchema } from '../core/db/schema.js';
 import { DashboardEngine } from '../core/engine/dashboard.js';
 import { AlertsEngine } from '../core/engine/alerts.js';
 import { StatsEngine } from '../core/engine/stats.js';
 import { InsightsEngine } from '../core/engine/insights.js';
+import { ErrorKBEngine } from '../core/engine/error-kb.js';
 import { TaskModel } from '../core/models/task.js';
 import { EventModel } from '../core/models/event.js';
 import { PlanModel } from '../core/models/plan.js';
 import { ContextModel } from '../core/models/context.js';
 import { TaskMetricsModel } from '../core/models/task-metrics.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
-import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList } from './formatters.js';
-import type { TaskStatus, PlanStatus } from '../core/types.js';
+import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats } from './formatters.js';
+import type { TaskStatus, PlanStatus, ErrorSeverity } from '../core/types.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -437,6 +438,108 @@ program
     }
 
     output(result);
+  });
+
+// ── error-kb ──────────────────────────────────────────────────────────
+
+const errorKb = program.command('error-kb').description('Manage error knowledge base');
+
+function getErrorKBEngine(): ErrorKBEngine {
+  const root = findProjectRoot(process.cwd());
+  return new ErrorKBEngine(root);
+}
+
+errorKb
+  .command('search')
+  .argument('<query>', 'Search query')
+  .option('--tag <tag>', 'Filter by tag')
+  .option('--severity <level>', 'Filter by severity (critical, high, medium, low)')
+  .description('Search error knowledge base')
+  .action((query: string, opts: { tag?: string; severity?: string }) => {
+    const engine = getErrorKBEngine();
+    const searchOpts: { tags?: string[]; severity?: ErrorSeverity } = {};
+    if (opts.tag) searchOpts.tags = [opts.tag];
+    if (opts.severity) searchOpts.severity = opts.severity as ErrorSeverity;
+    const results = engine.search(query, searchOpts);
+    output(results, formatErrorSearchResults(results));
+  });
+
+errorKb
+  .command('add')
+  .requiredOption('--title <title>', 'Error title')
+  .requiredOption('--cause <cause>', 'Error cause')
+  .requiredOption('--solution <solution>', 'Error solution')
+  .option('--tags <tags>', 'Comma-separated tags')
+  .option('--severity <level>', 'Severity level (critical, high, medium, low)', 'medium')
+  .description('Add a new error entry')
+  .action((opts: { title: string; cause: string; solution: string; tags?: string; severity: string }) => {
+    const engine = getErrorKBEngine();
+    const tags = opts.tags ? opts.tags.split(',').map(t => t.trim()) : [];
+    const entry = engine.add({
+      title: opts.title,
+      cause: opts.cause,
+      solution: opts.solution,
+      tags,
+      severity: opts.severity as ErrorSeverity,
+    });
+    output(entry, `Created error: ${entry.id}\nTitle: ${entry.title}\nFile: .claude/error-kb/errors/${entry.id}.md`);
+  });
+
+errorKb
+  .command('show')
+  .argument('<id>', 'Error ID')
+  .description('Show error entry details')
+  .action((id: string) => {
+    const engine = getErrorKBEngine();
+    const entry = engine.show(id);
+    if (!entry) return outputError(`Error not found: ${id}`);
+    output(entry, formatErrorDetail(entry));
+  });
+
+errorKb
+  .command('update')
+  .argument('<id>', 'Error ID')
+  .option('--occurrence <context>', 'Record a new occurrence with context')
+  .option('--status <status>', 'Update status (open, resolved, recurring, wontfix)')
+  .option('--severity <level>', 'Update severity (critical, high, medium, low)')
+  .description('Update an error entry or record occurrence')
+  .action((id: string, opts: { occurrence?: string; status?: string; severity?: string }) => {
+    const engine = getErrorKBEngine();
+    const existing = engine.show(id);
+    if (!existing) return outputError(`Error not found: ${id}`);
+
+    if (opts.occurrence) {
+      engine.recordOccurrence(id, opts.occurrence);
+      const updated = engine.show(id);
+      output(updated, `Recorded occurrence for ${id}: ${opts.occurrence}`);
+    } else {
+      const patch: Record<string, unknown> = {};
+      if (opts.status) patch.status = opts.status;
+      if (opts.severity) patch.severity = opts.severity;
+      engine.update(id, patch as any);
+      const updated = engine.show(id);
+      output(updated, `Updated error: ${id}`);
+    }
+  });
+
+errorKb
+  .command('stats')
+  .description('Show error knowledge base statistics')
+  .action(() => {
+    const engine = getErrorKBEngine();
+    const stats = engine.getStats();
+    output(stats, formatErrorKBStats(stats));
+  });
+
+errorKb
+  .command('delete')
+  .argument('<id>', 'Error ID')
+  .description('Delete an error entry')
+  .action((id: string) => {
+    const engine = getErrorKBEngine();
+    const deleted = engine.delete(id);
+    if (!deleted) return outputError(`Error not found: ${id}`);
+    output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
   });
 
 program.parse();

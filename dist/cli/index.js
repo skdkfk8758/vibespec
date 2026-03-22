@@ -68,8 +68,8 @@ function resolveDbPath() {
 }
 function getDb(dbPath) {
   if (_db) return _db;
-  const path = dbPath ?? resolveDbPath();
-  _db = new Database(path);
+  const path2 = dbPath ?? resolveDbPath();
+  _db = new Database(path2);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   return _db;
@@ -559,6 +559,10 @@ var InsightsEngine = class {
   }
 };
 
+// src/core/engine/error-kb.ts
+import * as fs from "fs";
+import * as path from "path";
+
 // node_modules/nanoid/index.js
 import { webcrypto as crypto } from "crypto";
 
@@ -588,6 +592,261 @@ function nanoid(size = 21) {
   }
   return id;
 }
+
+// src/core/engine/error-kb.ts
+var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
+var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
+var VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+function parseFrontmatter(raw) {
+  const defaultMeta = {
+    title: "",
+    severity: "medium",
+    tags: [],
+    status: "open",
+    occurrences: 0,
+    first_seen: "",
+    last_seen: ""
+  };
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    return { meta: defaultMeta, body: raw };
+  }
+  const yamlBlock = match[1];
+  const body = match[2];
+  const meta = { ...defaultMeta };
+  for (const line of yamlBlock.split("\n")) {
+    const colonIdx = line.indexOf(":");
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    if (key === "title") {
+      meta.title = value;
+    } else if (key === "severity") {
+      if (VALID_SEVERITIES.has(value)) meta.severity = value;
+    } else if (key === "status") {
+      if (VALID_STATUSES.has(value)) meta.status = value;
+    } else if (key === "occurrences") {
+      meta.occurrences = parseInt(value, 10) || 0;
+    } else if (key === "first_seen") {
+      meta.first_seen = value;
+    } else if (key === "last_seen") {
+      meta.last_seen = value;
+    } else if (key === "tags") {
+      const bracketMatch = value.match(/^\[(.*)\]$/);
+      if (bracketMatch) {
+        meta.tags = bracketMatch[1].split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+      } else if (value === "" || value === "[]") {
+        meta.tags = [];
+      }
+    }
+  }
+  return { meta, body };
+}
+function serializeFrontmatter(meta) {
+  const tagsStr = meta.tags.length > 0 ? `[${meta.tags.join(", ")}]` : "[]";
+  const lines = [
+    "---",
+    `title: ${meta.title}`,
+    `severity: ${meta.severity}`,
+    `tags: ${tagsStr}`,
+    `status: ${meta.status}`,
+    `occurrences: ${meta.occurrences}`,
+    `first_seen: ${meta.first_seen}`,
+    `last_seen: ${meta.last_seen}`,
+    "---"
+  ];
+  return lines.join("\n");
+}
+var ErrorKBEngine = class {
+  kbRoot;
+  errorsDir;
+  constructor(projectRoot) {
+    this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
+    this.errorsDir = path.join(this.kbRoot, "errors");
+    fs.mkdirSync(this.errorsDir, { recursive: true });
+  }
+  resolveFilePath(id) {
+    if (!VALID_ID_PATTERN.test(id)) return null;
+    return path.join(this.errorsDir, `${id}.md`);
+  }
+  add(newEntry) {
+    const id = nanoid(12);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const meta = {
+      title: newEntry.title,
+      severity: newEntry.severity,
+      tags: newEntry.tags,
+      status: "open",
+      occurrences: 1,
+      first_seen: now,
+      last_seen: now
+    };
+    let body = "\n";
+    if (newEntry.cause) {
+      body += `## Cause
+
+${newEntry.cause}
+
+`;
+    }
+    if (newEntry.solution) {
+      body += `## Solution
+
+${newEntry.solution}
+
+`;
+    }
+    const content = serializeFrontmatter(meta) + "\n" + body;
+    const filePath = path.join(this.errorsDir, `${id}.md`);
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+    return this.toErrorEntry(id, meta, body);
+  }
+  show(id) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null;
+    }
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    return this.toErrorEntry(id, meta, body);
+  }
+  search(query, opts) {
+    const files = this.listErrorFiles();
+    const results = [];
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      const entry = this.show(id);
+      if (!entry) continue;
+      if (opts?.tags && opts.tags.length > 0) {
+        const hasMatchingTag = opts.tags.some((t) => entry.tags.includes(t));
+        if (!hasMatchingTag) continue;
+      }
+      if (opts?.severity && entry.severity !== opts.severity) {
+        continue;
+      }
+      if (query && query.length > 0) {
+        const searchable = `${entry.title} ${entry.content}`.toLowerCase();
+        if (!searchable.includes(query.toLowerCase())) {
+          continue;
+        }
+      }
+      results.push(entry);
+    }
+    return results;
+  }
+  delete(id) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return false;
+    fs.unlinkSync(filePath);
+    this.updateIndex();
+    return true;
+  }
+  update(id, patch) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    if (patch.severity !== void 0) meta.severity = patch.severity;
+    if (patch.status !== void 0) meta.status = patch.status;
+    if (patch.occurrences !== void 0) meta.occurrences = patch.occurrences;
+    if (patch.last_seen !== void 0) meta.last_seen = patch.last_seen;
+    if (patch.tags !== void 0) meta.tags = patch.tags;
+    const content = serializeFrontmatter(meta) + "\n" + body;
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+  }
+  recordOccurrence(id, context2) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    meta.occurrences += 1;
+    meta.last_seen = (/* @__PURE__ */ new Date()).toISOString();
+    let updatedBody = body;
+    const historyEntry = `- ${meta.last_seen}: ${context2}`;
+    const historyIdx = updatedBody.lastIndexOf("## History");
+    if (historyIdx !== -1) {
+      const headerEnd = updatedBody.indexOf("\n", historyIdx);
+      if (headerEnd !== -1) {
+        updatedBody = updatedBody.slice(0, headerEnd + 1) + historyEntry + "\n" + updatedBody.slice(headerEnd + 1);
+      }
+    } else {
+      updatedBody = updatedBody.trimEnd() + "\n\n## History\n" + historyEntry + "\n";
+    }
+    const content = serializeFrontmatter(meta) + "\n" + updatedBody;
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+  }
+  getStats() {
+    const files = this.listErrorFiles();
+    const stats = {
+      total: 0,
+      by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
+      by_status: { open: 0, resolved: 0, recurring: 0, wontfix: 0 },
+      top_recurring: []
+    };
+    const entries = [];
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      const entry = this.show(id);
+      if (!entry) continue;
+      stats.total++;
+      stats.by_severity[entry.severity]++;
+      stats.by_status[entry.status]++;
+      entries.push(entry);
+    }
+    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10).map((e) => ({ id: e.id, title: e.title, occurrences: e.occurrences }));
+    return stats;
+  }
+  toErrorEntry(id, meta, body) {
+    return {
+      id,
+      title: meta.title,
+      severity: meta.severity,
+      tags: meta.tags,
+      status: meta.status,
+      occurrences: meta.occurrences,
+      first_seen: meta.first_seen,
+      last_seen: meta.last_seen,
+      content: body
+    };
+  }
+  listErrorFiles() {
+    if (!fs.existsSync(this.errorsDir)) return [];
+    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).map((f) => path.join(this.errorsDir, f));
+  }
+  updateIndex() {
+    const stats = this.getStats();
+    const lines = [
+      "# Error Knowledge Base Index",
+      "",
+      `Total: ${stats.total}`,
+      "",
+      "## By Severity",
+      `- Critical: ${stats.by_severity.critical}`,
+      `- High: ${stats.by_severity.high}`,
+      `- Medium: ${stats.by_severity.medium}`,
+      `- Low: ${stats.by_severity.low}`,
+      "",
+      "## By Status",
+      `- Open: ${stats.by_status.open}`,
+      `- Resolved: ${stats.by_status.resolved}`,
+      `- Recurring: ${stats.by_status.recurring}`,
+      `- Won't Fix: ${stats.by_status.wontfix}`,
+      ""
+    ];
+    if (stats.top_recurring.length > 0) {
+      lines.push("## Top Recurring");
+      for (const entry of stats.top_recurring.slice(0, 10)) {
+        lines.push(`- ${entry.title} (${entry.occurrences}x)`);
+      }
+      lines.push("");
+    }
+    const indexPath = path.join(this.kbRoot, "_index.md");
+    fs.writeFileSync(indexPath, lines.join("\n"), "utf-8");
+  }
+};
 
 // src/core/models/task.ts
 var TaskModel = class {
@@ -1366,6 +1625,60 @@ function formatPlanList(plans) {
   }
   return lines.join("\n");
 }
+function formatErrorSearchResults(entries) {
+  if (entries.length === 0) return "No errors found.";
+  const lines = [];
+  const header = `${padRight("ID", 16)}${padRight("Severity", 12)}${padRight("Status", 12)}${padRight("Occ", 6)}Title`;
+  lines.push(header);
+  for (const entry of entries) {
+    lines.push(
+      `${padRight(entry.id, 16)}${padRight(entry.severity, 12)}${padRight(entry.status, 12)}${padRight(String(entry.occurrences), 6)}${entry.title}`
+    );
+  }
+  return lines.join("\n");
+}
+function formatErrorDetail(entry) {
+  const tagsStr = entry.tags.length > 0 ? entry.tags.join(", ") : "(none)";
+  const lines = [
+    `ID:          ${entry.id}`,
+    `Title:       ${entry.title}`,
+    `Severity:    ${entry.severity}`,
+    `Tags:        ${tagsStr}`,
+    `Status:      ${entry.status}`,
+    `Occurrences: ${entry.occurrences}`,
+    `First seen:  ${entry.first_seen}`,
+    `Last seen:   ${entry.last_seen}`
+  ];
+  if (entry.content && entry.content.trim().length > 0) {
+    lines.push("");
+    lines.push(entry.content.trim());
+  }
+  return lines.join("\n");
+}
+function formatErrorKBStats(stats) {
+  const lines = [];
+  lines.push(`Total: ${stats.total}`);
+  lines.push("");
+  lines.push("By Severity:");
+  lines.push(`  critical: ${stats.by_severity.critical}`);
+  lines.push(`  high:     ${stats.by_severity.high}`);
+  lines.push(`  medium:   ${stats.by_severity.medium}`);
+  lines.push(`  low:      ${stats.by_severity.low}`);
+  lines.push("");
+  lines.push("By Status:");
+  lines.push(`  open:      ${stats.by_status.open}`);
+  lines.push(`  resolved:  ${stats.by_status.resolved}`);
+  lines.push(`  recurring: ${stats.by_status.recurring}`);
+  lines.push(`  wontfix:   ${stats.by_status.wontfix}`);
+  if (stats.top_recurring.length > 0) {
+    lines.push("");
+    lines.push("Top Recurring:");
+    for (const entry of stats.top_recurring) {
+      lines.push(`  ${entry.title} (${entry.occurrences}x)`);
+    }
+  }
+  return lines.join("\n");
+}
 
 // src/cli/index.ts
 var require2 = createRequire(import.meta.url);
@@ -1628,6 +1941,67 @@ program.command("insights").option("--scope <scope>", "Scope: blocked_patterns, 
     result.confidence = insights.getConfidenceLevel();
   }
   output(result);
+});
+var errorKb = program.command("error-kb").description("Manage error knowledge base");
+function getErrorKBEngine() {
+  const root = findProjectRoot(process.cwd());
+  return new ErrorKBEngine(root);
+}
+errorKb.command("search").argument("<query>", "Search query").option("--tag <tag>", "Filter by tag").option("--severity <level>", "Filter by severity (critical, high, medium, low)").description("Search error knowledge base").action((query, opts) => {
+  const engine = getErrorKBEngine();
+  const searchOpts = {};
+  if (opts.tag) searchOpts.tags = [opts.tag];
+  if (opts.severity) searchOpts.severity = opts.severity;
+  const results = engine.search(query, searchOpts);
+  output(results, formatErrorSearchResults(results));
+});
+errorKb.command("add").requiredOption("--title <title>", "Error title").requiredOption("--cause <cause>", "Error cause").requiredOption("--solution <solution>", "Error solution").option("--tags <tags>", "Comma-separated tags").option("--severity <level>", "Severity level (critical, high, medium, low)", "medium").description("Add a new error entry").action((opts) => {
+  const engine = getErrorKBEngine();
+  const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : [];
+  const entry = engine.add({
+    title: opts.title,
+    cause: opts.cause,
+    solution: opts.solution,
+    tags,
+    severity: opts.severity
+  });
+  output(entry, `Created error: ${entry.id}
+Title: ${entry.title}
+File: .claude/error-kb/errors/${entry.id}.md`);
+});
+errorKb.command("show").argument("<id>", "Error ID").description("Show error entry details").action((id) => {
+  const engine = getErrorKBEngine();
+  const entry = engine.show(id);
+  if (!entry) return outputError(`Error not found: ${id}`);
+  output(entry, formatErrorDetail(entry));
+});
+errorKb.command("update").argument("<id>", "Error ID").option("--occurrence <context>", "Record a new occurrence with context").option("--status <status>", "Update status (open, resolved, recurring, wontfix)").option("--severity <level>", "Update severity (critical, high, medium, low)").description("Update an error entry or record occurrence").action((id, opts) => {
+  const engine = getErrorKBEngine();
+  const existing = engine.show(id);
+  if (!existing) return outputError(`Error not found: ${id}`);
+  if (opts.occurrence) {
+    engine.recordOccurrence(id, opts.occurrence);
+    const updated = engine.show(id);
+    output(updated, `Recorded occurrence for ${id}: ${opts.occurrence}`);
+  } else {
+    const patch = {};
+    if (opts.status) patch.status = opts.status;
+    if (opts.severity) patch.severity = opts.severity;
+    engine.update(id, patch);
+    const updated = engine.show(id);
+    output(updated, `Updated error: ${id}`);
+  }
+});
+errorKb.command("stats").description("Show error knowledge base statistics").action(() => {
+  const engine = getErrorKBEngine();
+  const stats = engine.getStats();
+  output(stats, formatErrorKBStats(stats));
+});
+errorKb.command("delete").argument("<id>", "Error ID").description("Delete an error entry").action((id) => {
+  const engine = getErrorKBEngine();
+  const deleted = engine.delete(id);
+  if (!deleted) return outputError(`Error not found: ${id}`);
+  output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
 });
 program.parse();
 //# sourceMappingURL=index.js.map
