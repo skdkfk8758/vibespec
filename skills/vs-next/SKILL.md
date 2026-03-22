@@ -17,12 +17,12 @@ invocation: user
      → 사용자가 원하면 `/vs-worktree`로 이동, 아니면 그대로 진행하세요
 
 2. **활성 플랜 확인**
-   - Bash 도구로 `vp plan list --json` 명령을 실행하세요. 플랜 목록을 가져오고 status가 active 또는 approved인 플랜을 필터링하세요
+   - Bash 도구로 `vs plan list --json` 명령을 실행하세요. 플랜 목록을 가져오고 status가 active 또는 approved인 플랜을 필터링하세요
    - 플랜이 여러 개면 사용자에게 어느 플랜에서 작업할지 물어보세요
    - 활성 플랜이 없으면 `/vs-plan`으로 새 플랜을 만들도록 안내하세요
 
 3. **다음 태스크 조회**
-   - Bash 도구로 `vp task next <plan_id> --json` 명령을 실행하여 다음 todo 태스크를 가져오세요
+   - Bash 도구로 `vs task next <plan_id> --json` 명령을 실행하여 다음 todo 태스크를 가져오세요
    - 남은 태스크가 없으면:
      - 플랜 완료 가능 여부를 확인하고 완료를 제안하세요
      - 또는 새 태스크 추가를 제안하세요
@@ -31,8 +31,16 @@ invocation: user
    - 태스크 제목, spec, acceptance criteria를 보여주세요
    - 서브태스크가 있으면 함께 표시하세요
 
-5. **구현**
-   - Bash 도구로 `vp task update <id> in_progress --json` 명령을 실행하여 status를 in_progress로 변경하세요
+5. **에러 KB 사전 조회**
+   - 태스크 제목과 spec에서 핵심 키워드(모듈명, 기술명, 에러 유형 등)를 추출하세요
+   - Bash 도구로 `vs error-kb search "<추출된 키워드>" --json` 명령을 실행하세요
+   - 결과가 있으면:
+     → 관련 에러 목록과 해결책을 표시하고 "이전에 유사한 에러가 있었습니다. 참고하여 구현하세요."로 안내하세요
+     → occurrences >= 3인 에러가 있으면: "반복 패턴입니다. patterns/ 문서 생성을 고려하세요." 추가 안내하세요
+   - 결과가 없으면: 조용히 다음 단계로 진행하세요
+
+6. **구현**
+   - Bash 도구로 `vs task update <id> in_progress --json` 명령을 실행하여 status를 in_progress로 변경하세요
 
    **체크포인트**: "이 태스크를 시작합니다. TDD 에이전트 디스패치 / 직접 구현 / 건너뛰기 중 선택해주세요."
    - 태스크의 TDD 적합성을 판단하세요:
@@ -47,7 +55,7 @@ invocation: user
      → 태스크 spec을 기반으로 직접 구현하세요
      → 완료 후 변경 사항을 사용자에게 요약 보고하세요
 
-6. **완료 처리**
+7. **완료 처리**
    구현이 끝나면 (에이전트 리포트 수신 또는 직접 구현 완료):
    - 에이전트 status가 BLOCKED인 경우:
      → 차단 사유를 사용자에게 보여주고 대응 방법을 논의하세요
@@ -75,11 +83,11 @@ invocation: user
        [codex-review 리포트 요약 — verdict, 주요 발견사항]
        (SKIP인 경우: "Codex 리뷰를 건너뛰었습니다: {사유}")
        ```
-     → PASS: Bash 도구로 `vp task update <id> done --json` 명령을 실행하여 status를 done으로 변경하세요
-     → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (Bash 도구로 `vp task update <id> done --json --has-concerns` 명령을 실행하세요)
+     → PASS: Bash 도구로 `vs task update <id> done --json` 명령을 실행하여 status를 done으로 변경하세요
+     → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (Bash 도구로 `vs task update <id> done --json --has-concerns` 명령을 실행하세요)
      → FAIL (단일 태스크 모드): 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
-     → FAIL (배치 모드): `debugger` 에이전트를 자동 디스패치하세요 (Step 7의 자동 재시도 정책 참조)
-   - Bash 도구로 `vp context save --json --summary "..."` 명령을 실행하여 완료 내용을 저장하세요
+     → FAIL (배치 모드): `debugger` 에이전트를 자동 디스패치하세요 (Step 8의 자동 재시도 정책 참조)
+   - Bash 도구로 `vs context save --json --summary "..."` 명령을 실행하여 완료 내용을 저장하세요
    **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - header: "다음 작업"
    - 선택지:
@@ -89,24 +97,24 @@ invocation: user
      - label: "대시보드", description: "진행률을 확인합니다"
 
    - "다음 태스크" → Step 3부터 반복
-   - "배치 실행" → Step 7로 진행
+   - "배치 실행" → Step 8로 진행
    - "커밋 정리" → `/vs-commit`
    - "대시보드" → `/vs-dashboard`
 
-7. **배치 실행 모드**
+8. **배치 실행 모드**
 
    남은 todo 태스크를 자동으로 연속 실행합니다. 각 태스크는 fresh 서브에이전트에서 구현하여 컨텍스트 오염을 방지합니다.
 
    #### Wave 수집 및 의존성 분석
-   - Bash 도구로 `vp plan show <plan_id> --json` 명령을 실행하여 전체 태스크 트리와 **waves** 정보를 가져오세요
+   - Bash 도구로 `vs plan show <plan_id> --json` 명령을 실행하여 전체 태스크 트리와 **waves** 정보를 가져오세요
    - `waves` 배열이 Wave 단위로 병렬 실행 가능한 태스크 그룹을 제공합니다
    - todo 상태인 태스크만 필터링하세요
 
    #### Wave 기반 실행 전략
    - **Wave 단위로 실행**: Wave 0의 모든 태스크를 먼저 처리한 후 Wave 1로 진행
    - **같은 Wave 내 태스크**: 최대 3개까지 병렬 디스패치 (`run_in_background: true`)
-   - **의존성 자동 관리**: `vp task next <plan_id> --json`가 `depends_on` 기반으로 실행 가능한 태스크만 반환하므로, Wave 정보와 함께 사용하면 최적 병렬화 달성
-   - 각 태스크마다 Step 5(구현) + Step 6(완료 처리)를 동일하게 적용하세요
+   - **의존성 자동 관리**: `vs task next <plan_id> --json`가 `depends_on` 기반으로 실행 가능한 태스크만 반환하므로, Wave 정보와 함께 사용하면 최적 병렬화 달성
+   - 각 태스크마다 Step 6(구현) + Step 7(완료 처리)를 동일하게 적용하세요
      - tdd-implementer 디스패치 또는 직접 구현 판단
      - verifier 에이전트 + codex-review 병렬 리뷰
      - 종합 판정 (PASS/WARN/FAIL)
@@ -117,7 +125,7 @@ invocation: user
    - **FAIL**: `debugger` 에이전트를 자동 디스패치
      - 전달 정보: 태스크(title, spec, acceptance), 플랜 컨텍스트, verifier FAIL 리포트, impl_report
      - debugger 결과에 따른 처리:
-       - **FIX_APPLIED**: `verifier` 에이전트로 재검증 → PASS면 done, FAIL이면 재시도
+       - **FIX_APPLIED**: `verifier` 에이전트로 재검증 → PASS면 done, FAIL이면 재시도. 수정 성공 시 `vs error-kb add`로 에러와 해결책을 KB에 자동 기록하세요
        - **NEEDS_MANUAL**: 사용자에게 에스컬레이션 → "수동 수정" / "건너뛰기" / "배치 중단"
        - **BLOCKED**: 태스크를 blocked로 변경
      - 최대 2회 재시도 (debugger 디스패치 → verifier 재검증 사이클)
