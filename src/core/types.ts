@@ -116,3 +116,44 @@ export interface TaskMetrics {
   has_concerns: boolean;
   created_at: string;
 }
+
+export type ErrorSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type ErrorStatus = 'open' | 'resolved' | 'recurring' | 'wontfix';
+
+export interface ErrorEntry {
+  id: string;
+  title: string;
+  severity: ErrorSeverity;
+  tags: string[];
+  status: ErrorStatus;
+  occurrences: number;
+  first_seen: string;
+  last_seen: string;
+  content: string;
+}
+
+export interface NewErrorEntry {
+  title: string;
+  severity: ErrorSeverity;
+  tags: string[];
+  cause?: string;
+  solution?: string;
+}
+
+export interface ErrorKBStats {
+  total: number;
+  by_severity: Record<ErrorSeverity, number>;
+  by_status: Record<ErrorStatus, number>;
+  top_recurring: Array<{ id: string; title: string; occurrences: number }>;
+}
+
+export interface ObsidianSearchResult {
+  file: string;
+  matches: string[];
+  score: number;
+}
+
+export interface TagInfo {
+  tag: string;
+  count: number;
+}
