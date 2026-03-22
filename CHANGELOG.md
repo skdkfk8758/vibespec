@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.19.0] - 2026-03-23
+
+### 새 기능
+- **obsidian**: Obsidian 양방향 동기화 엔진 및 어댑터 구현 (136a0cf)
+  - `obsidian-ts` 패키지 기반 async API로 ObsidianAdapter 재작성
+  - ErrorKBEngine에 fire-and-forget 미러링 및 양방향 검색 통합
+  - SyncEngine으로 LWW 충돌 해결 기반 전체 동기화 지원
+  - `vs_config` 테이블 및 설정 시스템 추가
+- **cli**: Obsidian 연동 CLI 커맨드 추가 (0790b47)
+  - `vs config` (set/get/list/delete) 커맨드
+  - `vs error-kb sync [--import] [--dry-run]` 서브커맨드
+  - `--vault`, `--with-obsidian` 옵션
+- **skills**: 훅 및 스킬에 Obsidian 연동 안내 추가 (f6f90ea)
+  - error-kb-suggest 훅에 vault 감지 시 `--with-obsidian` 자동 추가
+  - error-kb 스킬에 Obsidian 연동 섹션 및 동기화 명령어 추가
+  - vs-next 스킬의 에러 KB 검색에 `--with-obsidian` 기본 포함
+
 ## [0.18.0] - 2026-03-22
 
 ### 새 기능
