@@ -1,209 +1,231 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ObsidianAdapter, resetAvailabilityCache } from '../obsidian.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ObsidianAdapter } from '../obsidian.js';
 
-vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+// Mock obsidian-ts module
+const mockFile = {
+  create: vi.fn(),
+  read: vi.fn(),
+  delete: vi.fn(),
+  list: vi.fn(),
+};
+const mockSearch = {
+  context: vi.fn(),
+};
+const mockProperty = {
+  set: vi.fn(),
+};
+const mockTag = {
+  list: vi.fn(),
+};
+
+vi.mock('obsidian-ts', () => ({
+  isCompatible: vi.fn().mockResolvedValue(true),
+  file: mockFile,
+  search: mockSearch,
+  property: mockProperty,
+  tag: mockTag,
 }));
 
-import { execSync } from 'node:child_process';
-
-const mockExecSync = vi.mocked(execSync);
-
 describe('ObsidianAdapter', () => {
+  let adapter: ObsidianAdapter;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    resetAvailabilityCache();
+    adapter = new ObsidianAdapter('MyVault', 'VibeSpec/Errors');
   });
 
   describe('isAvailable', () => {
-    it('should return true when obsidian CLI is installed', () => {
-      mockExecSync.mockReturnValueOnce(Buffer.from('obsidian 1.0.0'));
-
-      expect(ObsidianAdapter.isAvailable()).toBe(true);
+    it('should return true when obsidian CLI is compatible', async () => {
+      expect(await ObsidianAdapter.isAvailable('MyVault')).toBe(true);
     });
 
-    it('should return false when obsidian CLI is not installed', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('command not found: obsidian');
+    it('should return false when import fails', async () => {
+      const { isCompatible } = await import('obsidian-ts');
+      vi.mocked(isCompatible).mockRejectedValueOnce(new Error('not found'));
+
+      expect(await ObsidianAdapter.isAvailable('MyVault')).toBe(false);
+    });
+  });
+
+  describe('createNote', () => {
+    it('should create a note with correct path', async () => {
+      mockFile.create.mockResolvedValueOnce(undefined);
+
+      await adapter.createNote('abc123', '# Test');
+
+      expect(mockFile.create).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        path: 'VibeSpec/Errors/abc123.md',
+        content: '# Test',
+        overwrite: false,
       });
-
-      expect(ObsidianAdapter.isAvailable()).toBe(false);
     });
 
-    it('should cache the result after first call', () => {
-      mockExecSync.mockReturnValueOnce(Buffer.from('obsidian 1.0.0'));
+    it('should silently ignore errors', async () => {
+      mockFile.create.mockRejectedValueOnce(new Error('fail'));
 
-      expect(ObsidianAdapter.isAvailable()).toBe(true);
-      expect(ObsidianAdapter.isAvailable()).toBe(true);
-      expect(ObsidianAdapter.isAvailable()).toBe(true);
-
-      // execSync should only be called once due to caching
-      expect(mockExecSync).toHaveBeenCalledTimes(1);
+      await expect(adapter.createNote('abc123', '# Test')).resolves.toBeUndefined();
     });
+  });
 
-    it('should cache false result as well', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('command not found');
+  describe('readNote', () => {
+    it('should read a note content', async () => {
+      mockFile.read.mockResolvedValueOnce('# Test Content');
+
+      const result = await adapter.readNote('abc123');
+
+      expect(result).toBe('# Test Content');
+      expect(mockFile.read).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        path: 'VibeSpec/Errors/abc123.md',
       });
-
-      expect(ObsidianAdapter.isAvailable()).toBe(false);
-      expect(ObsidianAdapter.isAvailable()).toBe(false);
-
-      expect(mockExecSync).toHaveBeenCalledTimes(1);
     });
 
-    it('should not propagate exceptions', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('unexpected error');
-      });
+    it('should return null on failure', async () => {
+      mockFile.read.mockRejectedValueOnce(new Error('not found'));
 
-      expect(() => ObsidianAdapter.isAvailable()).not.toThrow();
+      const result = await adapter.readNote('abc123');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('updateNote', () => {
+    it('should overwrite existing note', async () => {
+      mockFile.create.mockResolvedValueOnce(undefined);
+
+      await adapter.updateNote('abc123', '# Updated');
+
+      expect(mockFile.create).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        path: 'VibeSpec/Errors/abc123.md',
+        content: '# Updated',
+        overwrite: true,
+      });
+    });
+
+    it('should silently ignore errors', async () => {
+      mockFile.create.mockRejectedValueOnce(new Error('fail'));
+      await expect(adapter.updateNote('abc123', '# X')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('deleteNote', () => {
+    it('should delete a note', async () => {
+      mockFile.delete.mockResolvedValueOnce(undefined);
+
+      await adapter.deleteNote('abc123');
+
+      expect(mockFile.delete).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        path: 'VibeSpec/Errors/abc123.md',
+      });
+    });
+
+    it('should silently ignore errors', async () => {
+      mockFile.delete.mockRejectedValueOnce(new Error('fail'));
+      await expect(adapter.deleteNote('abc123')).resolves.toBeUndefined();
     });
   });
 
   describe('search', () => {
-    let adapter: ObsidianAdapter;
+    it('should transform obsidian-ts search results', async () => {
+      mockSearch.context.mockResolvedValueOnce([
+        { file: 'note1.md', matches: [{ line: 1, text: 'match1' }, { line: 2, text: 'match2' }] },
+        { file: 'note2.md', matches: [{ line: 1, text: 'match3' }] },
+      ]);
 
-    beforeEach(() => {
-      adapter = new ObsidianAdapter();
-    });
+      const results = await adapter.search('test query');
 
-    it('should parse JSON results from obsidian search', () => {
-      const mockResults = [
-        { file: 'note1.md', matches: ['match1'], score: 0.9 },
-        { file: 'note2.md', matches: ['match2'], score: 0.7 },
-      ];
-      mockExecSync.mockReturnValueOnce(Buffer.from(JSON.stringify(mockResults)));
-
-      const results = adapter.search('test query');
-
-      expect(results).toEqual(mockResults);
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'obsidian search query="test query" format=json',
-        expect.any(Object),
-      );
-    });
-
-    it('should return empty array when obsidian is not available or fails', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('obsidian not found');
+      expect(results).toEqual([
+        { file: 'note1.md', matches: ['match1', 'match2'], score: 2 },
+        { file: 'note2.md', matches: ['match3'], score: 1 },
+      ]);
+      expect(mockSearch.context).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        query: 'test query',
+        path: 'VibeSpec/Errors',
       });
-
-      const results = adapter.search('test query');
-
-      expect(results).toEqual([]);
     });
 
-    it('should return empty array on invalid JSON', () => {
-      mockExecSync.mockReturnValueOnce(Buffer.from('not valid json'));
-
-      const results = adapter.search('test query');
-
+    it('should return empty array on failure', async () => {
+      mockSearch.context.mockRejectedValueOnce(new Error('fail'));
+      const results = await adapter.search('test');
       expect(results).toEqual([]);
-    });
-
-    it('should not propagate exceptions', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('crash');
-      });
-
-      expect(() => adapter.search('test')).not.toThrow();
     });
   });
 
   describe('setProperty', () => {
-    let adapter: ObsidianAdapter;
+    it('should set a property on a file', async () => {
+      mockProperty.set.mockResolvedValueOnce(undefined);
 
-    beforeEach(() => {
-      adapter = new ObsidianAdapter();
-    });
+      await adapter.setProperty('note.md', 'status', 'done');
 
-    it('should execute property set command', () => {
-      mockExecSync.mockReturnValueOnce(Buffer.from(''));
-
-      adapter.setProperty('note.md', 'status', 'done');
-
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'obsidian property:set file="note.md" name="status" value="done"',
-        expect.any(Object),
-      );
-    });
-
-    it('should silently ignore failures', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('obsidian error');
+      expect(mockProperty.set).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        path: 'note.md',
+        name: 'status',
+        value: 'done',
       });
-
-      expect(() => adapter.setProperty('note.md', 'status', 'done')).not.toThrow();
-    });
-  });
-
-  describe('append', () => {
-    let adapter: ObsidianAdapter;
-
-    beforeEach(() => {
-      adapter = new ObsidianAdapter();
     });
 
-    it('should execute append command', () => {
-      mockExecSync.mockReturnValueOnce(Buffer.from(''));
-
-      adapter.append('note.md', 'new content');
-
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'obsidian append file="note.md" content="new content"',
-        expect.any(Object),
-      );
-    });
-
-    it('should silently ignore failures', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('obsidian error');
-      });
-
-      expect(() => adapter.append('note.md', 'content')).not.toThrow();
+    it('should silently ignore errors', async () => {
+      mockProperty.set.mockRejectedValueOnce(new Error('fail'));
+      await expect(adapter.setProperty('note.md', 'status', 'done')).resolves.toBeUndefined();
     });
   });
 
   describe('getTags', () => {
-    let adapter: ObsidianAdapter;
-
-    beforeEach(() => {
-      adapter = new ObsidianAdapter();
-    });
-
-    it('should parse JSON results from obsidian tags command', () => {
-      const mockTags = [
+    it('should return transformed tag list', async () => {
+      mockTag.list.mockResolvedValueOnce([
         { tag: 'typescript', count: 5 },
         { tag: 'error', count: 3 },
-      ];
-      mockExecSync.mockReturnValueOnce(Buffer.from(JSON.stringify(mockTags)));
+      ]);
 
-      const tags = adapter.getTags();
+      const tags = await adapter.getTags();
 
-      expect(tags).toEqual(mockTags);
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'obsidian tags format=json',
-        expect.any(Object),
-      );
+      expect(tags).toEqual([
+        { tag: 'typescript', count: 5 },
+        { tag: 'error', count: 3 },
+      ]);
     });
 
-    it('should return empty array on failure', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('obsidian error');
-      });
+    it('should handle missing count', async () => {
+      mockTag.list.mockResolvedValueOnce([
+        { tag: 'test' },
+      ]);
 
-      const tags = adapter.getTags();
+      const tags = await adapter.getTags();
+      expect(tags).toEqual([{ tag: 'test', count: 0 }]);
+    });
 
+    it('should return empty array on failure', async () => {
+      mockTag.list.mockRejectedValueOnce(new Error('fail'));
+      const tags = await adapter.getTags();
       expect(tags).toEqual([]);
     });
+  });
 
-    it('should not propagate exceptions', () => {
-      mockExecSync.mockImplementationOnce(() => {
-        throw new Error('crash');
+  describe('listNotes', () => {
+    it('should list note paths', async () => {
+      mockFile.list.mockResolvedValueOnce([
+        'VibeSpec/Errors/abc.md',
+        'VibeSpec/Errors/def.md',
+      ]);
+
+      const paths = await adapter.listNotes();
+
+      expect(paths).toEqual(['VibeSpec/Errors/abc.md', 'VibeSpec/Errors/def.md']);
+      expect(mockFile.list).toHaveBeenCalledWith({
+        vault: 'MyVault',
+        folder: 'VibeSpec/Errors',
+        ext: 'md',
       });
+    });
 
-      expect(() => adapter.getTags()).not.toThrow();
+    it('should return empty array on failure', async () => {
+      mockFile.list.mockRejectedValueOnce(new Error('fail'));
+      const paths = await adapter.listNotes();
+      expect(paths).toEqual([]);
     });
   });
 });

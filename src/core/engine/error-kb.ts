@@ -8,6 +8,7 @@ import type {
   ErrorStatus,
   NewErrorEntry,
 } from '../types.js';
+import { ObsidianAdapter } from '../adapter/obsidian.js';
 
 export interface SearchOptions {
   tags?: string[];
@@ -37,7 +38,7 @@ const VALID_SEVERITIES = new Set<string>(['critical', 'high', 'medium', 'low']);
 const VALID_STATUSES = new Set<string>(['open', 'resolved', 'recurring', 'wontfix']);
 const VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
-function parseFrontmatter(raw: string): { meta: FrontmatterData; body: string } {
+export function parseFrontmatter(raw: string): { meta: FrontmatterData; body: string } {
   const defaultMeta: FrontmatterData = {
     title: '',
     severity: 'medium',
@@ -76,7 +77,6 @@ function parseFrontmatter(raw: string): { meta: FrontmatterData; body: string } 
     } else if (key === 'last_seen') {
       meta.last_seen = value;
     } else if (key === 'tags') {
-      // tags can be inline [a, b] or empty
       const bracketMatch = value.match(/^\[(.*)\]$/);
       if (bracketMatch) {
         meta.tags = bracketMatch[1]
@@ -92,7 +92,7 @@ function parseFrontmatter(raw: string): { meta: FrontmatterData; body: string } 
   return { meta, body };
 }
 
-function serializeFrontmatter(meta: FrontmatterData): string {
+export function serializeFrontmatter(meta: FrontmatterData): string {
   const tagsStr = meta.tags.length > 0 ? `[${meta.tags.join(', ')}]` : '[]';
   const lines = [
     '---',
@@ -111,11 +111,20 @@ function serializeFrontmatter(meta: FrontmatterData): string {
 export class ErrorKBEngine {
   private kbRoot: string;
   private errorsDir: string;
+  private obsidian: ObsidianAdapter | null;
 
-  constructor(projectRoot: string) {
+  constructor(projectRoot: string, obsidianVault?: string, obsidianFolder?: string) {
     this.kbRoot = path.join(projectRoot, '.claude', 'error-kb');
     this.errorsDir = path.join(this.kbRoot, 'errors');
     fs.mkdirSync(this.errorsDir, { recursive: true });
+
+    this.obsidian = obsidianVault
+      ? new ObsidianAdapter(obsidianVault, obsidianFolder)
+      : null;
+  }
+
+  getObsidian(): ObsidianAdapter | null {
+    return this.obsidian;
   }
 
   private resolveFilePath(id: string): string | null {
@@ -150,6 +159,7 @@ export class ErrorKBEngine {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     this.updateIndex();
+    this.mirrorToObsidian('create', id, content);
 
     return this.toErrorEntry(id, meta, body);
   }
@@ -175,18 +185,15 @@ export class ErrorKBEngine {
       const entry = this.show(id);
       if (!entry) continue;
 
-      // Apply tag filter
       if (opts?.tags && opts.tags.length > 0) {
         const hasMatchingTag = opts.tags.some((t) => entry.tags.includes(t));
         if (!hasMatchingTag) continue;
       }
 
-      // Apply severity filter
       if (opts?.severity && entry.severity !== opts.severity) {
         continue;
       }
 
-      // Apply text search
       if (query && query.length > 0) {
         const searchable = `${entry.title} ${entry.content}`.toLowerCase();
         if (!searchable.includes(query.toLowerCase())) {
@@ -200,11 +207,42 @@ export class ErrorKBEngine {
     return results;
   }
 
+  async searchWithObsidian(query: string, opts?: SearchOptions): Promise<ErrorEntry[]> {
+    const localResults = this.search(query, opts);
+    if (!this.obsidian) return localResults;
+
+    try {
+      const available = await ObsidianAdapter.isAvailable();
+      if (!available) return localResults;
+
+      const vaultResults = await this.obsidian.search(query);
+      const localIds = new Set(localResults.map(e => e.id));
+
+      for (const vr of vaultResults) {
+        const basename = path.basename(vr.file, '.md');
+        if (localIds.has(basename)) continue;
+
+        const content = await this.obsidian.readNote(basename);
+        if (content) {
+          const { meta, body } = parseFrontmatter(content);
+          const entry = this.toErrorEntry(basename, meta, body);
+          (entry as ErrorEntry & { _source?: string })._source = 'obsidian';
+          localResults.push(entry);
+        }
+      }
+    } catch {
+      // Obsidian search failure doesn't affect local results
+    }
+
+    return localResults;
+  }
+
   delete(id: string): boolean {
     const filePath = this.resolveFilePath(id);
     if (!filePath || !fs.existsSync(filePath)) return false;
     fs.unlinkSync(filePath);
     this.updateIndex();
+    this.mirrorToObsidian('delete', id);
     return true;
   }
 
@@ -225,6 +263,7 @@ export class ErrorKBEngine {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     this.updateIndex();
+    this.mirrorToObsidian('update', id, content);
   }
 
   recordOccurrence(id: string, context: string): void {
@@ -237,13 +276,11 @@ export class ErrorKBEngine {
     meta.occurrences += 1;
     meta.last_seen = new Date().toISOString();
 
-    // Append to history section
     let updatedBody = body;
     const historyEntry = `- ${meta.last_seen}: ${context}`;
     const historyIdx = updatedBody.lastIndexOf('## History');
 
     if (historyIdx !== -1) {
-      // Find the end of the "## History" line
       const headerEnd = updatedBody.indexOf('\n', historyIdx);
       if (headerEnd !== -1) {
         updatedBody =
@@ -252,7 +289,6 @@ export class ErrorKBEngine {
           updatedBody.slice(headerEnd + 1);
       }
     } else {
-      // Add new history section
       updatedBody = updatedBody.trimEnd() + '\n\n## History\n' + historyEntry + '\n';
     }
 
@@ -260,6 +296,7 @@ export class ErrorKBEngine {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     this.updateIndex();
+    this.mirrorToObsidian('update', id, content);
   }
 
   getStats(): ErrorKBStats {
@@ -283,7 +320,6 @@ export class ErrorKBEngine {
       entries.push(entry);
     }
 
-    // Sort by occurrences descending, limit to top 10
     stats.top_recurring = entries
       .sort((a, b) => b.occurrences - a.occurrences)
       .slice(0, 10)
@@ -292,7 +328,7 @@ export class ErrorKBEngine {
     return stats;
   }
 
-  private toErrorEntry(id: string, meta: FrontmatterData, body: string): ErrorEntry {
+  toErrorEntry(id: string, meta: FrontmatterData, body: string): ErrorEntry {
     return {
       id,
       title: meta.title,
@@ -306,7 +342,7 @@ export class ErrorKBEngine {
     };
   }
 
-  private listErrorFiles(): string[] {
+  listErrorFiles(): string[] {
     if (!fs.existsSync(this.errorsDir)) return [];
     return fs
       .readdirSync(this.errorsDir)
@@ -345,5 +381,30 @@ export class ErrorKBEngine {
 
     const indexPath = path.join(this.kbRoot, '_index.md');
     fs.writeFileSync(indexPath, lines.join('\n'), 'utf-8');
+  }
+
+  private mirrorToObsidian(action: 'create' | 'update' | 'delete', id: string, content?: string): void {
+    if (!this.obsidian) return;
+    const obs = this.obsidian;
+    // Fire-and-forget async operation
+    (async () => {
+      try {
+        const available = await ObsidianAdapter.isAvailable();
+        if (!available) return;
+        switch (action) {
+          case 'create':
+            await obs.createNote(id, content!);
+            break;
+          case 'update':
+            await obs.updateNote(id, content!);
+            break;
+          case 'delete':
+            await obs.deleteNote(id);
+            break;
+        }
+      } catch {
+        // Obsidian failure does not affect local KB
+      }
+    })();
   }
 }

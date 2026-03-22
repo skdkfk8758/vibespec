@@ -109,6 +109,11 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_context_log_plan ON context_log(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_metrics_plan_id ON task_metrics(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_metrics_task_id ON task_metrics(task_id);
+
+    CREATE TABLE IF NOT EXISTS vs_config (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 
   applyMigrations(db);

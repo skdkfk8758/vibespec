@@ -10,7 +10,7 @@ export default defineConfig([
     splitting: true,
     sourcemap: true,
     dts: false,
-    external: ['better-sqlite3', 'commander'],
+    external: ['better-sqlite3', 'commander', 'obsidian-ts'],
     noExternal: ['nanoid'],
     banner: {
       js: '#!/usr/bin/env node',

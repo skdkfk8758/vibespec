@@ -1,67 +1,148 @@
-import { execSync } from 'node:child_process';
 import type { ObsidianSearchResult, TagInfo } from '../types.js';
 
-let cachedAvailability: boolean | null = null;
+let obsidianTs: typeof import('obsidian-ts') | null = null;
 
-export function resetAvailabilityCache(): void {
-  cachedAvailability = null;
+async function getObsidianTs() {
+  if (!obsidianTs) {
+    try {
+      obsidianTs = await import('obsidian-ts');
+    } catch {
+      return null;
+    }
+  }
+  return obsidianTs;
 }
 
 export class ObsidianAdapter {
-  static isAvailable(): boolean {
-    if (cachedAvailability !== null) {
-      return cachedAvailability;
-    }
+  private vault: string;
+  private folder: string;
 
-    try {
-      execSync('obsidian --version', { stdio: 'pipe' });
-      cachedAvailability = true;
-    } catch {
-      cachedAvailability = false;
-    }
-
-    return cachedAvailability;
+  constructor(vault: string, folder = 'VibeSpec/Errors') {
+    this.vault = vault;
+    this.folder = folder;
   }
 
-  search(query: string, _format = 'json'): ObsidianSearchResult[] {
+  static async isAvailable(_vault?: string): Promise<boolean> {
+    const obs = await getObsidianTs();
+    if (!obs) return false;
     try {
-      const output = execSync(`obsidian search query="${query}" format=json`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
+      return await obs.isCompatible();
+    } catch {
+      return false;
+    }
+  }
+
+  private notePath(id: string): string {
+    return `${this.folder}/${id}.md`;
+  }
+
+  async createNote(id: string, content: string): Promise<void> {
+    const obs = await getObsidianTs();
+    if (!obs) return;
+    try {
+      await obs.file.create({
+        vault: this.vault,
+        path: this.notePath(id),
+        content,
+        overwrite: false,
       });
-      return JSON.parse(output) as ObsidianSearchResult[];
+    } catch {
+      // silently ignore
+    }
+  }
+
+  async readNote(id: string): Promise<string | null> {
+    const obs = await getObsidianTs();
+    if (!obs) return null;
+    try {
+      return await obs.file.read({ vault: this.vault, path: this.notePath(id) });
+    } catch {
+      return null;
+    }
+  }
+
+  async updateNote(id: string, content: string): Promise<void> {
+    const obs = await getObsidianTs();
+    if (!obs) return;
+    try {
+      await obs.file.create({
+        vault: this.vault,
+        path: this.notePath(id),
+        content,
+        overwrite: true,
+      });
+    } catch {
+      // silently ignore
+    }
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    const obs = await getObsidianTs();
+    if (!obs) return;
+    try {
+      await obs.file.delete({ vault: this.vault, path: this.notePath(id) });
+    } catch {
+      // silently ignore
+    }
+  }
+
+  async search(query: string): Promise<ObsidianSearchResult[]> {
+    const obs = await getObsidianTs();
+    if (!obs) return [];
+    try {
+      const results = await obs.search.context({
+        vault: this.vault,
+        query,
+        path: this.folder,
+      });
+      return results.map(r => ({
+        file: r.file,
+        matches: r.matches.map(m => m.text),
+        score: r.matches.length,
+      }));
     } catch {
       return [];
     }
   }
 
-  setProperty(file: string, name: string, value: string): void {
+  async setProperty(file: string, name: string, value: string): Promise<void> {
+    const obs = await getObsidianTs();
+    if (!obs) return;
     try {
-      execSync(`obsidian property:set file="${file}" name="${name}" value="${value}"`, {
-        stdio: 'pipe',
+      await obs.property.set({
+        vault: this.vault,
+        path: file,
+        name,
+        value,
       });
     } catch {
       // silently ignore
     }
   }
 
-  append(file: string, content: string): void {
+  async getTags(): Promise<TagInfo[]> {
+    const obs = await getObsidianTs();
+    if (!obs) return [];
     try {
-      execSync(`obsidian append file="${file}" content="${content}"`, {
-        stdio: 'pipe',
-      });
+      const tags = await obs.tag.list({ vault: this.vault });
+      return tags.map(t => ({
+        tag: t.tag,
+        count: t.count ?? 0,
+      }));
     } catch {
-      // silently ignore
+      return [];
     }
   }
 
-  getTags(): TagInfo[] {
+  async listNotes(): Promise<string[]> {
+    const obs = await getObsidianTs();
+    if (!obs) return [];
     try {
-      const output = execSync('obsidian tags format=json', {
-        encoding: 'utf-8',
-        stdio: 'pipe',
+      return await obs.file.list({
+        vault: this.vault,
+        folder: this.folder,
+        ext: 'md',
       });
-      return JSON.parse(output) as TagInfo[];
     } catch {
       return [];
     }
