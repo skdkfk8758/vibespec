@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.20.1] - 2026-03-23
+
+### 리팩토링
+- **obsidian**: Obsidian 연동 코드 전체 제거 (3e928ca)
+  - ObsidianAdapter, SyncEngine, 관련 테스트 삭제
+  - ErrorKBEngine에서 mirrorToObsidian, searchWithObsidian 제거
+  - CLI에서 --vault, --with-obsidian, sync 커맨드 제거
+  - skills(vs-setup, vs-review, error-kb), hooks에서 Obsidian 안내 제거
+  - obsidian-ts 의존성 제거
+  - error-kb는 순수 파일 기반(.claude/error-kb/)으로 동작
+
 ## [0.20.0] - 2026-03-23
 
 ### 새 기능
