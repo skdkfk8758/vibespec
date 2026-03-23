@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0] - 2026-03-24
+
+### 새 기능
+- **scope-control**: 에이전트 범위 통제(Scope Control) 레이어 추가 (3262041)
+  - tasks 테이블에 `allowed_files`/`forbidden_patterns`, task_metrics에 `changed_files_detail`/`scope_violations` 필드 추가 (migration v4-5)
+  - CLI에 `--allowed-files`, `--forbidden-patterns`, `--changed-files-detail`, `--scope-violations` 옵션 추가
+  - tdd-implementer: Phase 0.5 Modification Plan 삽입, REFACTOR 단계 제약 강화
+  - verifier: Phase 2.5 Scope Verification, 레거시 보호 체크, 변경 파일 요약 섹션
+  - debugger: scope 규칙 수신 및 준수 검증
+  - vs-next/vs-exec: scope 정보 에이전트 전달, 종합 리포트에 scope 포함
+  - vs-plan: 태스크 분해 시 scope 가이드 및 CLI 옵션 안내
+
 ## [0.21.1] - 2026-03-23
 
 ### 버그 수정
