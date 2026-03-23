@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
-import type { PlanProgress } from '../types.js';
+import type { PlanProgress, SkillStats } from '../types.js';
+import type { SkillUsageModel } from '../models/skill-usage.js';
 
 export interface DashboardOverview {
   plans: PlanProgress[];
@@ -10,9 +11,16 @@ export interface DashboardOverview {
 
 export class DashboardEngine {
   private db: Database.Database;
+  private skillUsageModel?: SkillUsageModel;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database.Database, skillUsageModel?: SkillUsageModel) {
     this.db = db;
+    this.skillUsageModel = skillUsageModel;
+  }
+
+  getSkillUsageSummary(days: number = 7): SkillStats[] {
+    if (!this.skillUsageModel) return [];
+    return this.skillUsageModel.getStats(days).slice(0, 5);
   }
 
   getOverview(): DashboardOverview {

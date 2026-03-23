@@ -1,4 +1,4 @@
-import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats } from '../core/types.js';
+import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats, SkillStats } from '../core/types.js';
 import type { DashboardOverview } from '../core/engine/dashboard.js';
 import type { VelocityResult, EstimatedCompletionResult, TimelineEntry } from '../core/engine/stats.js';
 
@@ -265,6 +265,20 @@ export function formatErrorKBStats(stats: ErrorKBStats): string {
     for (const entry of stats.top_recurring) {
       lines.push(`  ${entry.title} (${entry.occurrences}x)`);
     }
+  }
+
+  return lines.join('\n');
+}
+
+export function formatSkillUsage(skillStats: SkillStats[]): string {
+  if (skillStats.length === 0) return '';
+
+  const lines: string[] = [];
+  lines.push('Recent Skill Usage:');
+  for (let i = 0; i < skillStats.length; i++) {
+    const s = skillStats[i];
+    const label = s.count === 1 ? '1 time' : `${s.count} times`;
+    lines.push(`  ${numCircle(i + 1)} ${s.skill_name} (${label})`);
   }
 
   return lines.join('\n');

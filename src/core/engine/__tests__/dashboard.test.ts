@@ -3,6 +3,7 @@ import { createMemoryDb } from '../../db/connection.js';
 import { initSchema } from '../../db/schema.js';
 import { PlanModel } from '../../models/plan.js';
 import { TaskModel } from '../../models/task.js';
+import { SkillUsageModel } from '../../models/skill-usage.js';
 import { DashboardEngine } from '../dashboard.js';
 import type Database from 'better-sqlite3';
 
@@ -10,6 +11,7 @@ describe('DashboardEngine', () => {
   let db: Database.Database;
   let planModel: PlanModel;
   let taskModel: TaskModel;
+  let skillUsageModel: SkillUsageModel;
   let dashboard: DashboardEngine;
 
   beforeEach(() => {
@@ -17,7 +19,8 @@ describe('DashboardEngine', () => {
     initSchema(db);
     planModel = new PlanModel(db);
     taskModel = new TaskModel(db);
-    dashboard = new DashboardEngine(db);
+    skillUsageModel = new SkillUsageModel(db);
+    dashboard = new DashboardEngine(db, skillUsageModel);
   });
 
   describe('getOverview', () => {
@@ -82,6 +85,50 @@ describe('DashboardEngine', () => {
     it('should return null for a non-existent plan', () => {
       const summary = dashboard.getPlanSummary('nonexistent-id');
       expect(summary).toBeNull();
+    });
+  });
+
+  describe('getSkillUsageSummary', () => {
+    it('should return top 5 skill usage stats when records exist', () => {
+      // Arrange: record usage for 6 different skills with varying counts
+      skillUsageModel.record('commit');
+      skillUsageModel.record('commit');
+      skillUsageModel.record('commit');
+      skillUsageModel.record('review-pr');
+      skillUsageModel.record('review-pr');
+      skillUsageModel.record('plan');
+      skillUsageModel.record('plan');
+      skillUsageModel.record('plan');
+      skillUsageModel.record('plan');
+      skillUsageModel.record('task');
+      skillUsageModel.record('insights');
+      skillUsageModel.record('insights');
+      skillUsageModel.record('insights');
+      skillUsageModel.record('insights');
+      skillUsageModel.record('insights');
+      skillUsageModel.record('error-kb');
+      skillUsageModel.record('dashboard');
+      skillUsageModel.record('dashboard');
+
+      // Act
+      const result = dashboard.getSkillUsageSummary(7);
+
+      // Assert: top 5 sorted by count desc, limited to 5 results
+      expect(result).toHaveLength(5);
+      expect(result[0].skill_name).toBe('insights');
+      expect(result[0].count).toBe(5);
+      expect(result[1].skill_name).toBe('plan');
+      expect(result[1].count).toBe(4);
+      expect(result[2].skill_name).toBe('commit');
+      expect(result[2].count).toBe(3);
+      // 7 skills total, only top 5 returned
+      const skillNames = result.map((s: { skill_name: string }) => s.skill_name);
+      expect(skillNames).not.toContain('error-kb');
+    });
+
+    it('should return empty array when no skill usage records exist', () => {
+      const result = dashboard.getSkillUsageSummary(7);
+      expect(result).toEqual([]);
     });
   });
 });
