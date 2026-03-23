@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.21.0] - 2026-03-23
+
+### 새 기능
+- **validate**: 스킬 정적 검증 강화 및 일관성 검증 추가 (62db4c9)
+  - 프론트매터 스키마 검증(name, description 필수), invocation enum 체크
+  - body 필수 섹션 경고, hooks.json 참조 파일 존재 검증, 에이전트 프론트매터 검증
+  - `npm run validate`로 전체 검증 실행 가능
+- **skill-usage**: 스킬 사용량 로깅 시스템 추가 (25dc909)
+  - skill_usage 테이블(v3 마이그레이션), SkillUsageModel(record/getStats/getRecentUsage)
+  - `vs skill-log` / `vs skill-stats` CLI 명령으로 스킬 호출 패턴 추적
+- **dashboard**: 대시보드에 스킬 사용량 Top 5 통합 (4306504)
+  - DashboardEngine에 getSkillUsageSummary 메서드 추가
+  - `vs dashboard` 출력에 최근 7일 스킬 사용 빈도 섹션 표시
+
+### 버그 수정
+- **skill-usage**: getStats SQL 파라미터 바인딩 복원 (05809a7)
+
+### 리팩토링
+- 코드 리뷰 피드백 반영 — 불필요한 쿼리·주석 제거 및 포매터 통합 (6f6192d)
+
 ## [0.20.1] - 2026-03-23
 
 ### 리팩토링
