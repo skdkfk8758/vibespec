@@ -132,6 +132,20 @@ export interface ErrorEntry {
   content: string;
 }
 
+export interface SkillUsage {
+  id: string;
+  skill_name: string;
+  plan_id: string | null;
+  session_id: string | null;
+  created_at: string;
+}
+
+export interface SkillStats {
+  skill_name: string;
+  count: number;
+  last_used: string;
+}
+
 export interface NewErrorEntry {
   title: string;
   severity: ErrorSeverity;

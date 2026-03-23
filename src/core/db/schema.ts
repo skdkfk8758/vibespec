@@ -110,6 +110,17 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_task_metrics_plan_id ON task_metrics(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_metrics_task_id ON task_metrics(task_id);
 
+    CREATE TABLE IF NOT EXISTS skill_usage (
+      id          TEXT PRIMARY KEY,
+      skill_name  TEXT NOT NULL,
+      plan_id     TEXT REFERENCES plans(id),
+      session_id  TEXT,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_name ON skill_usage(skill_name);
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
+
     CREATE TABLE IF NOT EXISTS vs_config (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -168,5 +179,22 @@ export function applyMigrations(db: Database.Database): void {
     }
 
     db.pragma('user_version = 2');
+  }
+
+  if (version < 3) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS skill_usage (
+        id          TEXT PRIMARY KEY,
+        skill_name  TEXT NOT NULL,
+        plan_id     TEXT REFERENCES plans(id),
+        session_id  TEXT,
+        created_at  TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_skill_usage_name ON skill_usage(skill_name);
+      CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
+    `);
+
+    db.pragma('user_version = 3');
   }
 }

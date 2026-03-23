@@ -13,8 +13,9 @@ import { EventModel } from '../core/models/event.js';
 import { PlanModel } from '../core/models/plan.js';
 import { ContextModel } from '../core/models/context.js';
 import { TaskMetricsModel } from '../core/models/task-metrics.js';
+import { SkillUsageModel } from '../core/models/skill-usage.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
-import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats } from './formatters.js';
+import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage } from './formatters.js';
 import type { TaskStatus, PlanStatus, ErrorSeverity } from '../core/types.js';
 
 const require = createRequire(import.meta.url);
@@ -47,12 +48,13 @@ function initModels() {
   const taskModel = new TaskModel(db, events);
   const contextModel = new ContextModel(db);
   const taskMetricsModel = new TaskMetricsModel(db);
+  const skillUsageModel = new SkillUsageModel(db);
   const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
-  const dashboard = new DashboardEngine(db);
+  const dashboard = new DashboardEngine(db, skillUsageModel);
   const alerts = new AlertsEngine(db);
   const stats = new StatsEngine(db);
   const insights = new InsightsEngine(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, lifecycle, dashboard, alerts, stats, insights };
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights };
 }
 
 const program = new Command();
@@ -74,7 +76,11 @@ program
     const { dashboard, alerts } = initModels();
     const overview = dashboard.getOverview();
     const alertList = alerts.getAlerts();
-    output({ overview, alerts: alertList }, formatDashboard(overview, alertList));
+    const skillUsage = dashboard.getSkillUsageSummary(7);
+    const dashboardText = formatDashboard(overview, alertList);
+    const skillText = formatSkillUsage(skillUsage);
+    const combined = skillText ? `${dashboardText}\n\n${skillText}` : dashboardText;
+    output({ overview, alerts: alertList, skill_usage: skillUsage }, combined);
   });
 
 // ── plan ───────────────────────────────────────────────────────────────
@@ -596,6 +602,45 @@ errorKb
     const deleted = engine.delete(id);
     if (!deleted) return outputError(`Error not found: ${id}`);
     output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
+  });
+
+// ── skill-log ─────────────────────────────────────────────────────────
+
+program
+  .command('skill-log')
+  .argument('<name>', 'Skill name to record')
+  .option('--plan-id <id>', 'Plan ID to associate')
+  .option('--session-id <id>', 'Session ID to associate')
+  .description('Record a skill usage')
+  .action((name: string, opts: { planId?: string; sessionId?: string }) => {
+    const { skillUsageModel } = initModels();
+    const record = skillUsageModel.record(name, {
+      planId: opts.planId,
+      sessionId: opts.sessionId,
+    });
+    output(record, `Recorded skill: ${record.skill_name} (${record.id})`);
+  });
+
+// ── skill-stats ───────────────────────────────────────────────────────
+
+program
+  .command('skill-stats')
+  .option('--days <days>', 'Filter by recent N days')
+  .description('Show skill usage statistics')
+  .action((opts: { days?: string }) => {
+    const { skillUsageModel } = initModels();
+    const days = opts.days ? parseInt(opts.days, 10) : undefined;
+    const stats = skillUsageModel.getStats(days);
+
+    if (stats.length === 0) {
+      output(stats, 'No skill usage data.');
+      return;
+    }
+
+    const formatted = stats
+      .map((s) => `${s.skill_name}: count=${s.count}, last_used=${s.last_used}`)
+      .join('\n');
+    output(stats, formatted);
   });
 
 program.parse();
