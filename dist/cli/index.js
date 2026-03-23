@@ -186,6 +186,17 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_task_metrics_plan_id ON task_metrics(plan_id);
     CREATE INDEX IF NOT EXISTS idx_task_metrics_task_id ON task_metrics(task_id);
 
+    CREATE TABLE IF NOT EXISTS skill_usage (
+      id          TEXT PRIMARY KEY,
+      skill_name  TEXT NOT NULL,
+      plan_id     TEXT REFERENCES plans(id),
+      session_id  TEXT,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_name ON skill_usage(skill_name);
+    CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
+
     CREATE TABLE IF NOT EXISTS vs_config (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -236,13 +247,34 @@ function applyMigrations(db) {
     }
     db.pragma("user_version = 2");
   }
+  if (version < 3) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS skill_usage (
+        id          TEXT PRIMARY KEY,
+        skill_name  TEXT NOT NULL,
+        plan_id     TEXT REFERENCES plans(id),
+        session_id  TEXT,
+        created_at  TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_skill_usage_name ON skill_usage(skill_name);
+      CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
+    `);
+    db.pragma("user_version = 3");
+  }
 }
 
 // src/core/engine/dashboard.ts
 var DashboardEngine = class {
   db;
-  constructor(db) {
+  skillUsageModel;
+  constructor(db, skillUsageModel) {
     this.db = db;
+    this.skillUsageModel = skillUsageModel;
+  }
+  getSkillUsageSummary(days = 7) {
+    if (!this.skillUsageModel) return [];
+    return this.skillUsageModel.getStats(days).slice(0, 5);
   }
   getOverview() {
     const plans = this.db.prepare("SELECT * FROM plan_progress").all();
@@ -1430,6 +1462,40 @@ var TaskMetricsModel = class {
   }
 };
 
+// src/core/models/skill-usage.ts
+var SkillUsageModel = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  record(skillName, opts) {
+    const id = nanoid(12);
+    const planId = opts?.planId ?? null;
+    const sessionId = opts?.sessionId ?? null;
+    const createdAt = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 19);
+    this.db.prepare(
+      `INSERT INTO skill_usage (id, skill_name, plan_id, session_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`
+    ).run(id, skillName, planId, sessionId, createdAt);
+    return { id, skill_name: skillName, plan_id: planId, session_id: sessionId, created_at: createdAt };
+  }
+  getStats(days) {
+    const base = `SELECT skill_name, COUNT(*) as count, MAX(created_at) as last_used FROM skill_usage`;
+    const suffix = `GROUP BY skill_name ORDER BY count DESC`;
+    if (days !== void 0) {
+      return this.db.prepare(`${base} WHERE created_at >= datetime('now', '-' || ? || ' days') ${suffix}`).all(days);
+    }
+    return this.db.prepare(`${base} ${suffix}`).all();
+  }
+  getRecentUsage(limit) {
+    return this.db.prepare(
+      `SELECT * FROM skill_usage
+         ORDER BY created_at DESC
+         LIMIT ?`
+    ).all(limit ?? 20);
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -1699,6 +1765,17 @@ function formatErrorKBStats(stats) {
   }
   return lines.join("\n");
 }
+function formatSkillUsage(skillStats) {
+  if (skillStats.length === 0) return "";
+  const lines = [];
+  lines.push("Recent Skill Usage:");
+  for (let i = 0; i < skillStats.length; i++) {
+    const s = skillStats[i];
+    const label = s.count === 1 ? "1 time" : `${s.count} times`;
+    lines.push(`  ${numCircle(i + 1)} ${s.skill_name} (${label})`);
+  }
+  return lines.join("\n");
+}
 
 // src/cli/index.ts
 var require2 = createRequire(import.meta.url);
@@ -1727,12 +1804,13 @@ function initModels() {
   const taskModel = new TaskModel(db, events);
   const contextModel = new ContextModel(db);
   const taskMetricsModel = new TaskMetricsModel(db);
+  const skillUsageModel = new SkillUsageModel(db);
   const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
-  const dashboard = new DashboardEngine(db);
+  const dashboard = new DashboardEngine(db, skillUsageModel);
   const alerts = new AlertsEngine(db);
   const stats = new StatsEngine(db);
   const insights = new InsightsEngine(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, lifecycle, dashboard, alerts, stats, insights };
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights };
 }
 var program = new Command();
 program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
@@ -1742,7 +1820,13 @@ program.command("dashboard").description("Show all active plans overview").actio
   const { dashboard, alerts } = initModels();
   const overview = dashboard.getOverview();
   const alertList = alerts.getAlerts();
-  output({ overview, alerts: alertList }, formatDashboard(overview, alertList));
+  const skillUsage = dashboard.getSkillUsageSummary(7);
+  const dashboardText = formatDashboard(overview, alertList);
+  const skillText = formatSkillUsage(skillUsage);
+  const combined = skillText ? `${dashboardText}
+
+${skillText}` : dashboardText;
+  output({ overview, alerts: alertList, skill_usage: skillUsage }, combined);
 });
 var plan = program.command("plan").description("Manage plans");
 plan.command("list").option("--status <status>", "Filter by status (draft, active, approved, completed, archived)").option("--branch <branch>", "Filter by branch").description("List plans").action((opts) => {
@@ -2053,6 +2137,24 @@ errorKb.command("delete").argument("<id>", "Error ID").description("Delete an er
   const deleted = engine.delete(id);
   if (!deleted) return outputError(`Error not found: ${id}`);
   output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
+});
+program.command("skill-log").argument("<name>", "Skill name to record").option("--plan-id <id>", "Plan ID to associate").option("--session-id <id>", "Session ID to associate").description("Record a skill usage").action((name, opts) => {
+  const { skillUsageModel } = initModels();
+  const record = skillUsageModel.record(name, {
+    planId: opts.planId,
+    sessionId: opts.sessionId
+  });
+  output(record, `Recorded skill: ${record.skill_name} (${record.id})`);
+});
+program.command("skill-stats").option("--days <days>", "Filter by recent N days").description("Show skill usage statistics").action((opts) => {
+  const { skillUsageModel } = initModels();
+  const days = opts.days ? parseInt(opts.days, 10) : void 0;
+  const stats = skillUsageModel.getStats(days);
+  if (stats.length === 0) {
+    output(stats, "No skill usage data.");
+    return;
+  }
+  output(stats, formatSkillUsage(stats));
 });
 program.parse();
 //# sourceMappingURL=index.js.map
