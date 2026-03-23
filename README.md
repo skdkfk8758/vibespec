@@ -161,6 +161,10 @@ vs context save --summary "..."
 vs stats [plan_id]
 vs history <entity_type> <entity_id>
 vs insights [--scope all|blocked_patterns|duration_stats|success_rates]
+
+# 스킬 사용량
+vs skill-log <name> [--plan-id <id>] [--session-id <id>]
+vs skill-stats [--days <days>]
 ```
 
 모든 명령에 `--json` 플래그를 추가하면 JSON 형식으로 출력됩니다.
