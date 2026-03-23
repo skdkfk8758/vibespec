@@ -7,16 +7,14 @@ import { AlertsEngine } from '../core/engine/alerts.js';
 import { StatsEngine } from '../core/engine/stats.js';
 import { InsightsEngine } from '../core/engine/insights.js';
 import { ErrorKBEngine } from '../core/engine/error-kb.js';
-import { getConfig, setConfig, deleteConfig, listConfig, resolveVaultPath, resolveObsidianFolder } from '../core/config.js';
+import { getConfig, setConfig, deleteConfig, listConfig } from '../core/config.js';
 import { TaskModel } from '../core/models/task.js';
 import { EventModel } from '../core/models/event.js';
 import { PlanModel } from '../core/models/plan.js';
 import { ContextModel } from '../core/models/context.js';
 import { TaskMetricsModel } from '../core/models/task-metrics.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
-import { SyncEngine } from '../core/engine/sync.js';
-import { ObsidianAdapter } from '../core/adapter/obsidian.js';
-import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSyncResult } from './formatters.js';
+import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats } from './formatters.js';
 import type { TaskStatus, PlanStatus, ErrorSeverity } from '../core/types.js';
 
 const require = createRequire(import.meta.url);
@@ -500,15 +498,10 @@ config
 // ── error-kb ──────────────────────────────────────────────────────────
 
 const errorKb = program.command('error-kb').description('Manage error knowledge base');
-errorKb.option('--vault <path>', 'Obsidian vault name');
 
-function getErrorKBEngine(parentOpts?: { vault?: string }): ErrorKBEngine {
+function getErrorKBEngine(): ErrorKBEngine {
   const root = findProjectRoot(process.cwd());
-  const db = getDb();
-  initSchema(db);
-  const vaultPath = resolveVaultPath(db, parentOpts?.vault);
-  const folder = resolveObsidianFolder(db);
-  return new ErrorKBEngine(root, vaultPath ?? undefined, folder);
+  return new ErrorKBEngine(root);
 }
 
 errorKb
@@ -516,21 +509,15 @@ errorKb
   .argument('<query>', 'Search query')
   .option('--tag <tag>', 'Filter by tag')
   .option('--severity <level>', 'Filter by severity (critical, high, medium, low)')
-  .option('--with-obsidian', 'Include Obsidian vault search results')
   .description('Search error knowledge base')
-  .action(async (query: string, opts: { tag?: string; severity?: string; withObsidian?: boolean }) => {
-    const engine = getErrorKBEngine(errorKb.opts());
+  .action((query: string, opts: { tag?: string; severity?: string }) => {
+    const engine = getErrorKBEngine();
     const searchOpts: { tags?: string[]; severity?: ErrorSeverity } = {};
     if (opts.tag) searchOpts.tags = [opts.tag];
     if (opts.severity) searchOpts.severity = opts.severity as ErrorSeverity;
 
-    if (opts.withObsidian) {
-      const results = await engine.searchWithObsidian(query, searchOpts);
-      output(results, formatErrorSearchResults(results));
-    } else {
-      const results = engine.search(query, searchOpts);
-      output(results, formatErrorSearchResults(results));
-    }
+    const results = engine.search(query, searchOpts);
+    output(results, formatErrorSearchResults(results));
   });
 
 errorKb
@@ -542,7 +529,7 @@ errorKb
   .option('--severity <level>', 'Severity level (critical, high, medium, low)', 'medium')
   .description('Add a new error entry')
   .action((opts: { title: string; cause: string; solution: string; tags?: string; severity: string }) => {
-    const engine = getErrorKBEngine(errorKb.opts());
+    const engine = getErrorKBEngine();
     const tags = opts.tags ? opts.tags.split(',').map(t => t.trim()) : [];
     const entry = engine.add({
       title: opts.title,
@@ -559,7 +546,7 @@ errorKb
   .argument('<id>', 'Error ID')
   .description('Show error entry details')
   .action((id: string) => {
-    const engine = getErrorKBEngine(errorKb.opts());
+    const engine = getErrorKBEngine();
     const entry = engine.show(id);
     if (!entry) return outputError(`Error not found: ${id}`);
     output(entry, formatErrorDetail(entry));
@@ -573,7 +560,7 @@ errorKb
   .option('--severity <level>', 'Update severity (critical, high, medium, low)')
   .description('Update an error entry or record occurrence')
   .action((id: string, opts: { occurrence?: string; status?: string; severity?: string }) => {
-    const engine = getErrorKBEngine(errorKb.opts());
+    const engine = getErrorKBEngine();
     const existing = engine.show(id);
     if (!existing) return outputError(`Error not found: ${id}`);
 
@@ -595,7 +582,7 @@ errorKb
   .command('stats')
   .description('Show error knowledge base statistics')
   .action(() => {
-    const engine = getErrorKBEngine(errorKb.opts());
+    const engine = getErrorKBEngine();
     const stats = engine.getStats();
     output(stats, formatErrorKBStats(stats));
   });
@@ -605,36 +592,10 @@ errorKb
   .argument('<id>', 'Error ID')
   .description('Delete an error entry')
   .action((id: string) => {
-    const engine = getErrorKBEngine(errorKb.opts());
+    const engine = getErrorKBEngine();
     const deleted = engine.delete(id);
     if (!deleted) return outputError(`Error not found: ${id}`);
     output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
-  });
-
-errorKb
-  .command('sync')
-  .option('--import', 'Import vault-only entries to local KB')
-  .option('--dry-run', 'Show what would be synced without making changes')
-  .description('Sync error KB with Obsidian vault')
-  .action(async (opts: { import?: boolean; dryRun?: boolean }) => {
-    const engine = getErrorKBEngine(errorKb.opts());
-    const obsidian = engine.getObsidian();
-    if (!obsidian) {
-      return outputError('Obsidian vault not configured. Use: vs config set obsidian.vault <vault-name>');
-    }
-
-    const available = await ObsidianAdapter.isAvailable();
-    if (!available) {
-      return outputError('Obsidian CLI is not available. Make sure Obsidian is installed and running.');
-    }
-
-    const syncEngine = new SyncEngine(engine, obsidian);
-    const result = await syncEngine.fullSync({
-      import: opts.import,
-      dryRun: opts.dryRun,
-    });
-
-    output(result, formatSyncResult(result, opts.dryRun));
   });
 
 program.parse();

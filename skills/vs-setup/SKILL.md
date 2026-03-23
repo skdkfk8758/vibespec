@@ -60,23 +60,9 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
    - `/vs-commit`으로 변경사항을 태스크와 연동하여 커밋합니다
    - `/vs-dashboard`로 전체 진행 현황을 봅니다
 
-4. **Obsidian 연동 (선택)**
-   - Bash 도구로 `vs obsidian status --json` 명령을 실행하여 현재 Obsidian 연동 상태를 확인하세요
-   - 이미 설정되어 있으면 → "Obsidian 볼트가 연동되어 있습니다." 안내 후 Step 5로 진행
-   - 설정되어 있지 않으면:
-     a. 사용자에게 Obsidian 연동 여부를 물어보세요:
-        - "Obsidian 볼트를 연동하면 에러 지식 베이스가 Obsidian에 자동 동기화됩니다. 연동하시겠습니까?"
-     b. 연동을 원하면:
-        - 볼트 이름을 물어보세요
-        - Bash 도구로 `vs config set obsidian.vault <볼트이름>` 실행
-        - 설정 확인: `vs config get obsidian.vault`
-        - "Obsidian 연동이 완료되었습니다. 에러 KB가 자동으로 볼트에 동기화됩니다." 안내
-     c. 연동을 원하지 않으면:
-        - "나중에 `vs config set obsidian.vault <볼트이름>`으로 설정할 수 있습니다." 안내 후 다음 단계로 진행
-
-5. **첫 플랜 생성 (선택)**
+4. **첫 플랜 생성 (선택)**
    - 사용자에게 첫 플랜을 만들지 물어보세요
    - 원하면 `/vs-plan`을 실행하여 스펙 기반 플랜을 생성하세요
 
-6. **컨텍스트 저장**
+5. **컨텍스트 저장**
    - Bash 도구로 `vs context save --json --summary "VibeSpec 초기 셋업 완료"` 명령을 실행하여 셋업 완료를 저장하세요

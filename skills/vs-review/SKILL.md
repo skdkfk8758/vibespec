@@ -51,9 +51,7 @@ node <vibespec-plugin-cache-path>/dist/cli/index.js
 4. **선택에 따른 상세 조회 및 파일 생성**
 
    **파일 경로 결정 (공통):**
-   - `vs config get obsidian.vault`로 Obsidian 볼트 설정을 확인하세요
-   - **볼트가 설정되어 있으면**: 볼트 폴더 내 `VibeSpec/Review/vs-review-{plan_id}.md`에 생성
-   - **볼트가 없으면**: 프로젝트 내부 `.moai/tmp/vs-review-{plan_id}.md`에 생성 (디렉토리 없으면 생성)
+   - 프로젝트 내부 `.moai/tmp/vs-review-{plan_id}.md`에 생성 (디렉토리 없으면 생성)
 
    **A) 플랜 스펙 수정 선택 시:**
    - 플랜의 title과 spec만 포함하는 짧은 마크다운 파일 생성
@@ -99,12 +97,6 @@ node <vibespec-plugin-cache-path>/dist/cli/index.js
 
 5. **에디터 열기**
 
-   **Obsidian 모드** (볼트가 설정되어 있고 파일을 볼트에 생성한 경우):
-   → 사용자에게 안내: "Obsidian에서 `VibeSpec/Review/vs-review-{plan_id}.md` 파일이 열립니다. 수정 후 여기서 Enter를 눌러주세요."
-   → `obsidian://open?vault={vault}&file=VibeSpec/Review/vs-review-{plan_id}` URI를 `open` 명령으로 실행하여 Obsidian에서 파일 열기
-   → AskUserQuestion으로 수정 완료 확인을 받으세요 (예: "수정을 완료했으면 Enter를 눌러주세요")
-
-   **일반 에디터 모드** (볼트가 없는 경우):
    - `$EDITOR` 환경변수를 확인하세요 (없으면 `vi` 사용)
 
    **터미널 에디터** (`vim`, `nvim`, `vi`, `nano`, `emacs -nw`):
@@ -132,6 +124,5 @@ node <vibespec-plugin-cache-path>/dist/cli/index.js
      - 태스크: `UPDATE tasks SET title=?, spec=?, acceptance=? WHERE id=?`
 
 8. **정리**
-   - **Obsidian 모드**: 볼트 내 리뷰 파일을 삭제하세요 (`ObsidianAdapter.deleteNote` 또는 직접 파일 삭제)
-   - **일반 모드**: 임시 파일을 삭제하세요
+   - 임시 파일을 삭제하세요
    - `/vs-next`로 작업을 시작할 수 있다고 안내하세요

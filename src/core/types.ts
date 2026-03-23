@@ -147,13 +147,3 @@ export interface ErrorKBStats {
   top_recurring: Array<{ id: string; title: string; occurrences: number }>;
 }
 
-export interface ObsidianSearchResult {
-  file: string;
-  matches: string[];
-  score: number;
-}
-
-export interface TagInfo {
-  tag: string;
-  count: number;
-}

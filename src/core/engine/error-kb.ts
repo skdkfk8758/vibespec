@@ -8,7 +8,6 @@ import type {
   ErrorStatus,
   NewErrorEntry,
 } from '../types.js';
-import { ObsidianAdapter } from '../adapter/obsidian.js';
 
 export interface SearchOptions {
   tags?: string[];
@@ -111,20 +110,11 @@ export function serializeFrontmatter(meta: FrontmatterData): string {
 export class ErrorKBEngine {
   private kbRoot: string;
   private errorsDir: string;
-  private obsidian: ObsidianAdapter | null;
 
-  constructor(projectRoot: string, obsidianVault?: string, obsidianFolder?: string) {
+  constructor(projectRoot: string) {
     this.kbRoot = path.join(projectRoot, '.claude', 'error-kb');
     this.errorsDir = path.join(this.kbRoot, 'errors');
     fs.mkdirSync(this.errorsDir, { recursive: true });
-
-    this.obsidian = obsidianVault
-      ? new ObsidianAdapter(obsidianVault, obsidianFolder)
-      : null;
-  }
-
-  getObsidian(): ObsidianAdapter | null {
-    return this.obsidian;
   }
 
   private resolveFilePath(id: string): string | null {
@@ -159,7 +149,6 @@ export class ErrorKBEngine {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     this.updateIndex();
-    this.mirrorToObsidian('create', id, content);
 
     return this.toErrorEntry(id, meta, body);
   }
@@ -207,42 +196,11 @@ export class ErrorKBEngine {
     return results;
   }
 
-  async searchWithObsidian(query: string, opts?: SearchOptions): Promise<ErrorEntry[]> {
-    const localResults = this.search(query, opts);
-    if (!this.obsidian) return localResults;
-
-    try {
-      const available = await ObsidianAdapter.isAvailable();
-      if (!available) return localResults;
-
-      const vaultResults = await this.obsidian.search(query);
-      const localIds = new Set(localResults.map(e => e.id));
-
-      for (const vr of vaultResults) {
-        const basename = path.basename(vr.file, '.md');
-        if (localIds.has(basename)) continue;
-
-        const content = await this.obsidian.readNote(basename);
-        if (content) {
-          const { meta, body } = parseFrontmatter(content);
-          const entry = this.toErrorEntry(basename, meta, body);
-          (entry as ErrorEntry & { _source?: string })._source = 'obsidian';
-          localResults.push(entry);
-        }
-      }
-    } catch {
-      // Obsidian search failure doesn't affect local results
-    }
-
-    return localResults;
-  }
-
   delete(id: string): boolean {
     const filePath = this.resolveFilePath(id);
     if (!filePath || !fs.existsSync(filePath)) return false;
     fs.unlinkSync(filePath);
     this.updateIndex();
-    this.mirrorToObsidian('delete', id);
     return true;
   }
 
@@ -263,7 +221,6 @@ export class ErrorKBEngine {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     this.updateIndex();
-    this.mirrorToObsidian('update', id, content);
   }
 
   recordOccurrence(id: string, context: string): void {
@@ -296,7 +253,6 @@ export class ErrorKBEngine {
     fs.writeFileSync(filePath, content, 'utf-8');
 
     this.updateIndex();
-    this.mirrorToObsidian('update', id, content);
   }
 
   getStats(): ErrorKBStats {
@@ -383,28 +339,4 @@ export class ErrorKBEngine {
     fs.writeFileSync(indexPath, lines.join('\n'), 'utf-8');
   }
 
-  private mirrorToObsidian(action: 'create' | 'update' | 'delete', id: string, content?: string): void {
-    if (!this.obsidian) return;
-    const obs = this.obsidian;
-    // Fire-and-forget async operation
-    (async () => {
-      try {
-        const available = await ObsidianAdapter.isAvailable();
-        if (!available) return;
-        switch (action) {
-          case 'create':
-            await obs.createNote(id, content!);
-            break;
-          case 'update':
-            await obs.updateNote(id, content!);
-            break;
-          case 'delete':
-            await obs.deleteNote(id);
-            break;
-        }
-      } catch {
-        // Obsidian failure does not affect local KB
-      }
-    })();
-  }
 }

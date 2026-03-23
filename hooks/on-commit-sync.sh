@@ -35,7 +35,7 @@ if [ -n "$COMMIT_MSG" ]; then
   if [ -n "$FIX_TITLE" ]; then
     CLEAN_TITLE=$(echo "$FIX_TITLE" | tr -d '"' | tr -d "'" | cut -c1-80)
     jq -n --arg title "$CLEAN_TITLE" '{
-      additionalContext: ("이 수정사항을 에러 KB에 기록하면 향후 동일 에러 발생 시 빠르게 해결할 수 있습니다.\n`vs error-kb add --title \"" + $title + "\" --severity medium --json`\nObsidian vault 설정 시 자동 동기화됩니다. 미설정이면: `vs config set obsidian.vault <vault-name>`")
+      additionalContext: ("이 수정사항을 에러 KB에 기록하면 향후 동일 에러 발생 시 빠르게 해결할 수 있습니다.\n`vs error-kb add --title \"" + $title + "\" --severity medium --json`")
     }'
   fi
 fi

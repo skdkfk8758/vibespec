@@ -68,8 +68,8 @@ function resolveDbPath() {
 }
 function getDb(dbPath) {
   if (_db) return _db;
-  const path3 = dbPath ?? resolveDbPath();
-  _db = new Database(path3);
+  const path2 = dbPath ?? resolveDbPath();
+  _db = new Database(path2);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   return _db;
@@ -598,139 +598,6 @@ function nanoid(size = 21) {
   return id;
 }
 
-// src/core/adapter/obsidian.ts
-var obsidianTs = null;
-async function getObsidianTs() {
-  if (!obsidianTs) {
-    try {
-      obsidianTs = await import("obsidian-ts");
-    } catch {
-      return null;
-    }
-  }
-  return obsidianTs;
-}
-var ObsidianAdapter = class {
-  vault;
-  folder;
-  constructor(vault, folder = "VibeSpec/Errors") {
-    this.vault = vault;
-    this.folder = folder;
-  }
-  static async isAvailable(_vault) {
-    const obs = await getObsidianTs();
-    if (!obs) return false;
-    try {
-      return await obs.isCompatible();
-    } catch {
-      return false;
-    }
-  }
-  notePath(id) {
-    return `${this.folder}/${id}.md`;
-  }
-  async createNote(id, content) {
-    const obs = await getObsidianTs();
-    if (!obs) return;
-    try {
-      await obs.file.create({
-        vault: this.vault,
-        path: this.notePath(id),
-        content,
-        overwrite: false
-      });
-    } catch {
-    }
-  }
-  async readNote(id) {
-    const obs = await getObsidianTs();
-    if (!obs) return null;
-    try {
-      return await obs.file.read({ vault: this.vault, path: this.notePath(id) });
-    } catch {
-      return null;
-    }
-  }
-  async updateNote(id, content) {
-    const obs = await getObsidianTs();
-    if (!obs) return;
-    try {
-      await obs.file.create({
-        vault: this.vault,
-        path: this.notePath(id),
-        content,
-        overwrite: true
-      });
-    } catch {
-    }
-  }
-  async deleteNote(id) {
-    const obs = await getObsidianTs();
-    if (!obs) return;
-    try {
-      await obs.file.delete({ vault: this.vault, path: this.notePath(id) });
-    } catch {
-    }
-  }
-  async search(query) {
-    const obs = await getObsidianTs();
-    if (!obs) return [];
-    try {
-      const results = await obs.search.context({
-        vault: this.vault,
-        query,
-        path: this.folder
-      });
-      return results.map((r) => ({
-        file: r.file,
-        matches: r.matches.map((m) => m.text),
-        score: r.matches.length
-      }));
-    } catch {
-      return [];
-    }
-  }
-  async setProperty(file, name, value) {
-    const obs = await getObsidianTs();
-    if (!obs) return;
-    try {
-      await obs.property.set({
-        vault: this.vault,
-        path: file,
-        name,
-        value
-      });
-    } catch {
-    }
-  }
-  async getTags() {
-    const obs = await getObsidianTs();
-    if (!obs) return [];
-    try {
-      const tags = await obs.tag.list({ vault: this.vault });
-      return tags.map((t) => ({
-        tag: t.tag,
-        count: t.count ?? 0
-      }));
-    } catch {
-      return [];
-    }
-  }
-  async listNotes() {
-    const obs = await getObsidianTs();
-    if (!obs) return [];
-    try {
-      return await obs.file.list({
-        vault: this.vault,
-        folder: this.folder,
-        ext: "md"
-      });
-    } catch {
-      return [];
-    }
-  }
-};
-
 // src/core/engine/error-kb.ts
 var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
 var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
@@ -798,15 +665,10 @@ function serializeFrontmatter(meta) {
 var ErrorKBEngine = class {
   kbRoot;
   errorsDir;
-  obsidian;
-  constructor(projectRoot, obsidianVault, obsidianFolder) {
+  constructor(projectRoot) {
     this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
     this.errorsDir = path.join(this.kbRoot, "errors");
     fs.mkdirSync(this.errorsDir, { recursive: true });
-    this.obsidian = obsidianVault ? new ObsidianAdapter(obsidianVault, obsidianFolder) : null;
-  }
-  getObsidian() {
-    return this.obsidian;
   }
   resolveFilePath(id) {
     if (!VALID_ID_PATTERN.test(id)) return null;
@@ -843,7 +705,6 @@ ${newEntry.solution}
     const filePath = path.join(this.errorsDir, `${id}.md`);
     fs.writeFileSync(filePath, content, "utf-8");
     this.updateIndex();
-    this.mirrorToObsidian("create", id, content);
     return this.toErrorEntry(id, meta, body);
   }
   show(id) {
@@ -879,35 +740,11 @@ ${newEntry.solution}
     }
     return results;
   }
-  async searchWithObsidian(query, opts) {
-    const localResults = this.search(query, opts);
-    if (!this.obsidian) return localResults;
-    try {
-      const available = await ObsidianAdapter.isAvailable();
-      if (!available) return localResults;
-      const vaultResults = await this.obsidian.search(query);
-      const localIds = new Set(localResults.map((e) => e.id));
-      for (const vr of vaultResults) {
-        const basename3 = path.basename(vr.file, ".md");
-        if (localIds.has(basename3)) continue;
-        const content = await this.obsidian.readNote(basename3);
-        if (content) {
-          const { meta, body } = parseFrontmatter(content);
-          const entry = this.toErrorEntry(basename3, meta, body);
-          entry._source = "obsidian";
-          localResults.push(entry);
-        }
-      }
-    } catch {
-    }
-    return localResults;
-  }
   delete(id) {
     const filePath = this.resolveFilePath(id);
     if (!filePath || !fs.existsSync(filePath)) return false;
     fs.unlinkSync(filePath);
     this.updateIndex();
-    this.mirrorToObsidian("delete", id);
     return true;
   }
   update(id, patch) {
@@ -923,7 +760,6 @@ ${newEntry.solution}
     const content = serializeFrontmatter(meta) + "\n" + body;
     fs.writeFileSync(filePath, content, "utf-8");
     this.updateIndex();
-    this.mirrorToObsidian("update", id, content);
   }
   recordOccurrence(id, context2) {
     const filePath = this.resolveFilePath(id);
@@ -946,7 +782,6 @@ ${newEntry.solution}
     const content = serializeFrontmatter(meta) + "\n" + updatedBody;
     fs.writeFileSync(filePath, content, "utf-8");
     this.updateIndex();
-    this.mirrorToObsidian("update", id, content);
   }
   getStats() {
     const files = this.listErrorFiles();
@@ -1016,28 +851,6 @@ ${newEntry.solution}
     const indexPath = path.join(this.kbRoot, "_index.md");
     fs.writeFileSync(indexPath, lines.join("\n"), "utf-8");
   }
-  mirrorToObsidian(action, id, content) {
-    if (!this.obsidian) return;
-    const obs = this.obsidian;
-    (async () => {
-      try {
-        const available = await ObsidianAdapter.isAvailable();
-        if (!available) return;
-        switch (action) {
-          case "create":
-            await obs.createNote(id, content);
-            break;
-          case "update":
-            await obs.updateNote(id, content);
-            break;
-          case "delete":
-            await obs.deleteNote(id);
-            break;
-        }
-      } catch {
-      }
-    })();
-  }
 };
 
 // src/core/config.ts
@@ -1053,16 +866,6 @@ function deleteConfig(db, key) {
 }
 function listConfig(db) {
   return db.prepare("SELECT key, value FROM vs_config ORDER BY key").all();
-}
-function resolveVaultPath(db, cliOpt) {
-  if (cliOpt) return cliOpt;
-  if (process.env.VS_OBSIDIAN_VAULT) return process.env.VS_OBSIDIAN_VAULT;
-  return getConfig(db, "obsidian.vault");
-}
-function resolveObsidianFolder(db, cliOpt) {
-  if (cliOpt) return cliOpt;
-  if (process.env.VS_OBSIDIAN_FOLDER) return process.env.VS_OBSIDIAN_FOLDER;
-  return getConfig(db, "obsidian.folder") ?? "VibeSpec/Errors";
 }
 
 // src/core/models/task.ts
@@ -1686,137 +1489,6 @@ var LifecycleEngine = class {
   }
 };
 
-// src/core/engine/sync.ts
-import * as path2 from "path";
-var SyncEngine = class {
-  constructor(kb, obsidian) {
-    this.kb = kb;
-    this.obsidian = obsidian;
-  }
-  async fullSync(opts) {
-    const result = {
-      created_in_vault: 0,
-      created_in_local: 0,
-      updated_in_vault: 0,
-      updated_in_local: 0,
-      conflicts: [],
-      skipped_vault_only: [],
-      errors: []
-    };
-    try {
-      const localFiles = this.kb.listErrorFiles();
-      const localEntries = /* @__PURE__ */ new Map();
-      for (const file of localFiles) {
-        const id = path2.basename(file, ".md");
-        const entry = this.kb.show(id);
-        if (entry) localEntries.set(id, entry);
-      }
-      const vaultPaths = await this.obsidian.listNotes();
-      const vaultIds = /* @__PURE__ */ new Set();
-      for (const vp of vaultPaths) {
-        const id = path2.basename(vp, ".md");
-        vaultIds.add(id);
-      }
-      for (const [id, entry] of localEntries) {
-        if (!vaultIds.has(id)) {
-          if (!opts?.dryRun) {
-            try {
-              const content = this.entryToContent(entry);
-              await this.obsidian.createNote(id, content);
-            } catch (e) {
-              result.errors.push(`Failed to create vault note ${id}: ${e}`);
-              continue;
-            }
-          }
-          result.created_in_vault++;
-        }
-      }
-      for (const vid of vaultIds) {
-        if (!localEntries.has(vid)) {
-          if (opts?.import) {
-            if (!opts?.dryRun) {
-              try {
-                const content = await this.obsidian.readNote(vid);
-                if (content) {
-                  const { meta, body } = parseFrontmatter(content);
-                  const entry = this.kb.toErrorEntry(vid, meta, body);
-                  this.kb.add({
-                    title: entry.title,
-                    severity: entry.severity,
-                    tags: entry.tags,
-                    cause: this.extractSection(body, "Cause"),
-                    solution: this.extractSection(body, "Solution")
-                  });
-                }
-              } catch (e) {
-                result.errors.push(`Failed to import vault note ${vid}: ${e}`);
-                continue;
-              }
-            }
-            result.created_in_local++;
-          } else {
-            result.skipped_vault_only.push(vid);
-          }
-        }
-      }
-      for (const [id, localEntry] of localEntries) {
-        if (!vaultIds.has(id)) continue;
-        try {
-          const vaultContent = await this.obsidian.readNote(id);
-          if (!vaultContent) continue;
-          const { meta: vaultMeta } = parseFrontmatter(vaultContent);
-          const localTime = new Date(localEntry.last_seen).getTime();
-          const vaultTime = new Date(vaultMeta.last_seen).getTime();
-          if (isNaN(localTime) || isNaN(vaultTime)) continue;
-          if (localTime > vaultTime) {
-            if (!opts?.dryRun) {
-              const content = this.entryToContent(localEntry);
-              await this.obsidian.updateNote(id, content);
-            }
-            result.updated_in_vault++;
-            result.conflicts.push({ id, resolution: "local_wins" });
-          } else if (vaultTime > localTime) {
-            if (!opts?.dryRun) {
-              const { meta: vm } = parseFrontmatter(vaultContent);
-              this.kb.update(id, {
-                severity: vm.severity,
-                status: vm.status,
-                occurrences: vm.occurrences,
-                last_seen: vm.last_seen,
-                tags: vm.tags
-              });
-            }
-            result.updated_in_local++;
-            result.conflicts.push({ id, resolution: "vault_wins" });
-          }
-        } catch (e) {
-          result.errors.push(`Failed to sync ${id}: ${e}`);
-        }
-      }
-    } catch (e) {
-      result.errors.push(`Sync failed: ${e}`);
-    }
-    return result;
-  }
-  entryToContent(entry) {
-    const meta = {
-      title: entry.title,
-      severity: entry.severity,
-      tags: entry.tags,
-      status: entry.status,
-      occurrences: entry.occurrences,
-      first_seen: entry.first_seen,
-      last_seen: entry.last_seen
-    };
-    return serializeFrontmatter(meta) + "\n" + entry.content;
-  }
-  extractSection(body, section) {
-    const regex = new RegExp(`## ${section}\\s*\\n\\n([\\s\\S]*?)(?=\\n## |$)`);
-    const match = body.match(regex);
-    return match?.[1]?.trim() || void 0;
-  }
-};
-
 // src/cli/formatters.ts
 var FILLED = "\u2588";
 var EMPTY = "\u2591";
@@ -2023,43 +1695,6 @@ function formatErrorKBStats(stats) {
     lines.push("Top Recurring:");
     for (const entry of stats.top_recurring) {
       lines.push(`  ${entry.title} (${entry.occurrences}x)`);
-    }
-  }
-  return lines.join("\n");
-}
-function formatSyncResult(result, dryRun) {
-  const lines = [];
-  if (dryRun) {
-    lines.push("[DRY RUN] No changes were made.");
-    lines.push("");
-  }
-  lines.push("Sync Summary:");
-  lines.push(`  Created in vault: ${result.created_in_vault}`);
-  lines.push(`  Created in local: ${result.created_in_local}`);
-  lines.push(`  Updated in vault: ${result.updated_in_vault}`);
-  lines.push(`  Updated in local: ${result.updated_in_local}`);
-  if (result.conflicts.length > 0) {
-    lines.push("");
-    lines.push("Conflicts resolved:");
-    for (const c of result.conflicts) {
-      lines.push(`  ${c.id}: ${c.resolution}`);
-    }
-  }
-  if (result.skipped_vault_only.length > 0) {
-    lines.push("");
-    lines.push(`Vault-only entries (use --import to add): ${result.skipped_vault_only.length}`);
-    for (const id of result.skipped_vault_only.slice(0, 10)) {
-      lines.push(`  ${id}`);
-    }
-    if (result.skipped_vault_only.length > 10) {
-      lines.push(`  ... and ${result.skipped_vault_only.length - 10} more`);
-    }
-  }
-  if (result.errors.length > 0) {
-    lines.push("");
-    lines.push("Errors:");
-    for (const err of result.errors) {
-      lines.push(`  ${err}`);
     }
   }
   return lines.join("\n");
@@ -2359,30 +1994,20 @@ config.command("delete").argument("<key>", "Config key").description("Delete a c
   output({ deleted: true, key }, `Deleted: ${key}`);
 });
 var errorKb = program.command("error-kb").description("Manage error knowledge base");
-errorKb.option("--vault <path>", "Obsidian vault name");
-function getErrorKBEngine(parentOpts) {
+function getErrorKBEngine() {
   const root = findProjectRoot(process.cwd());
-  const db = getDb();
-  initSchema(db);
-  const vaultPath = resolveVaultPath(db, parentOpts?.vault);
-  const folder = resolveObsidianFolder(db);
-  return new ErrorKBEngine(root, vaultPath ?? void 0, folder);
+  return new ErrorKBEngine(root);
 }
-errorKb.command("search").argument("<query>", "Search query").option("--tag <tag>", "Filter by tag").option("--severity <level>", "Filter by severity (critical, high, medium, low)").option("--with-obsidian", "Include Obsidian vault search results").description("Search error knowledge base").action(async (query, opts) => {
-  const engine = getErrorKBEngine(errorKb.opts());
+errorKb.command("search").argument("<query>", "Search query").option("--tag <tag>", "Filter by tag").option("--severity <level>", "Filter by severity (critical, high, medium, low)").description("Search error knowledge base").action((query, opts) => {
+  const engine = getErrorKBEngine();
   const searchOpts = {};
   if (opts.tag) searchOpts.tags = [opts.tag];
   if (opts.severity) searchOpts.severity = opts.severity;
-  if (opts.withObsidian) {
-    const results = await engine.searchWithObsidian(query, searchOpts);
-    output(results, formatErrorSearchResults(results));
-  } else {
-    const results = engine.search(query, searchOpts);
-    output(results, formatErrorSearchResults(results));
-  }
+  const results = engine.search(query, searchOpts);
+  output(results, formatErrorSearchResults(results));
 });
 errorKb.command("add").requiredOption("--title <title>", "Error title").requiredOption("--cause <cause>", "Error cause").requiredOption("--solution <solution>", "Error solution").option("--tags <tags>", "Comma-separated tags").option("--severity <level>", "Severity level (critical, high, medium, low)", "medium").description("Add a new error entry").action((opts) => {
-  const engine = getErrorKBEngine(errorKb.opts());
+  const engine = getErrorKBEngine();
   const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : [];
   const entry = engine.add({
     title: opts.title,
@@ -2396,13 +2021,13 @@ Title: ${entry.title}
 File: .claude/error-kb/errors/${entry.id}.md`);
 });
 errorKb.command("show").argument("<id>", "Error ID").description("Show error entry details").action((id) => {
-  const engine = getErrorKBEngine(errorKb.opts());
+  const engine = getErrorKBEngine();
   const entry = engine.show(id);
   if (!entry) return outputError(`Error not found: ${id}`);
   output(entry, formatErrorDetail(entry));
 });
 errorKb.command("update").argument("<id>", "Error ID").option("--occurrence <context>", "Record a new occurrence with context").option("--status <status>", "Update status (open, resolved, recurring, wontfix)").option("--severity <level>", "Update severity (critical, high, medium, low)").description("Update an error entry or record occurrence").action((id, opts) => {
-  const engine = getErrorKBEngine(errorKb.opts());
+  const engine = getErrorKBEngine();
   const existing = engine.show(id);
   if (!existing) return outputError(`Error not found: ${id}`);
   if (opts.occurrence) {
@@ -2419,32 +2044,15 @@ errorKb.command("update").argument("<id>", "Error ID").option("--occurrence <con
   }
 });
 errorKb.command("stats").description("Show error knowledge base statistics").action(() => {
-  const engine = getErrorKBEngine(errorKb.opts());
+  const engine = getErrorKBEngine();
   const stats = engine.getStats();
   output(stats, formatErrorKBStats(stats));
 });
 errorKb.command("delete").argument("<id>", "Error ID").description("Delete an error entry").action((id) => {
-  const engine = getErrorKBEngine(errorKb.opts());
+  const engine = getErrorKBEngine();
   const deleted = engine.delete(id);
   if (!deleted) return outputError(`Error not found: ${id}`);
   output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
-});
-errorKb.command("sync").option("--import", "Import vault-only entries to local KB").option("--dry-run", "Show what would be synced without making changes").description("Sync error KB with Obsidian vault").action(async (opts) => {
-  const engine = getErrorKBEngine(errorKb.opts());
-  const obsidian = engine.getObsidian();
-  if (!obsidian) {
-    return outputError("Obsidian vault not configured. Use: vs config set obsidian.vault <vault-name>");
-  }
-  const available = await ObsidianAdapter.isAvailable();
-  if (!available) {
-    return outputError("Obsidian CLI is not available. Make sure Obsidian is installed and running.");
-  }
-  const syncEngine = new SyncEngine(engine, obsidian);
-  const result = await syncEngine.fullSync({
-    import: opts.import,
-    dryRun: opts.dryRun
-  });
-  output(result, formatSyncResult(result, opts.dryRun));
 });
 program.parse();
 //# sourceMappingURL=index.js.map
