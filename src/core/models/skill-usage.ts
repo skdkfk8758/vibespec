@@ -25,15 +25,12 @@ export class SkillUsageModel {
   }
 
   getStats(days?: number): SkillStats[] {
-    const where = days !== undefined ? `WHERE created_at >= datetime('now', '-${days} days')` : '';
-    return this.db
-      .prepare(
-        `SELECT skill_name, COUNT(*) as count, MAX(created_at) as last_used
-         FROM skill_usage ${where}
-         GROUP BY skill_name
-         ORDER BY count DESC`,
-      )
-      .all() as SkillStats[];
+    const base = `SELECT skill_name, COUNT(*) as count, MAX(created_at) as last_used FROM skill_usage`;
+    const suffix = `GROUP BY skill_name ORDER BY count DESC`;
+    if (days !== undefined) {
+      return this.db.prepare(`${base} WHERE created_at >= datetime('now', '-' || ? || ' days') ${suffix}`).all(days) as SkillStats[];
+    }
+    return this.db.prepare(`${base} ${suffix}`).all() as SkillStats[];
   }
 
   getRecentUsage(limit?: number): SkillUsage[] {
