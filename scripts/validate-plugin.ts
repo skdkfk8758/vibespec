@@ -26,30 +26,21 @@ export function validateSkillContent(content: string, dirName: string): VR {
   const fm = parseFrontmatter(content);
   if (!fm) { r.errors.push("Missing YAML frontmatter (must start with ---)"); return r; }
 
-  // Required fields
   for (const f of ["name", "description"]) {
     if (!fm[f]) r.errors.push(`Missing required field: ${f}`);
   }
-
-  // Name must match directory
   if (fm.name && fm.name !== dirName) r.errors.push(`Name mismatch: '${fm.name}' vs dir '${dirName}'`);
-
-  // Description length warning
   if (fm.description && fm.description.length < 20) r.warnings.push(`Description very short (${fm.description.length} chars)`);
-
-  // Invocation enum check
   if (fm.invocation && !VALID_INVOCATIONS.includes(fm.invocation)) {
     r.warnings.push(`Invalid invocation '${fm.invocation}' (expected: ${VALID_INVOCATIONS.join("|")})`);
   }
 
-  // Body section check: ## Steps or ## When to Use
   const body = content.slice(content.indexOf("---", 3) + 3);
   if (!body.includes("## Steps") && !body.includes("## When to Use")) {
     r.warnings.push("Missing recommended section: ## Steps or ## When to Use");
   }
 
-  // Info
-  r.info.push(`${content.split(/\s+/).length} words`);
+  r.info.push(`${(content.match(/\S+/g) ?? []).length} words`);
   if (fm.type) r.info.push(`type: ${fm.type}`);
   return r;
 }
@@ -59,7 +50,7 @@ function vr(): VR { return { errors: [], warnings: [], info: [] } }
 function validateSkills(skillsDir: string): { results: Record<string, VR>; count: number } {
   const results: Record<string, VR> = {};
   if (!fs.existsSync(skillsDir)) return { results, count: 0 };
-  const dirs = fs.readdirSync(skillsDir).filter(d => fs.statSync(path.join(skillsDir, d)).isDirectory());
+  const dirs = fs.readdirSync(skillsDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
   for (const dir of dirs) {
     const p = path.join(skillsDir, dir, "SKILL.md");
     if (!fs.existsSync(p)) { const r = vr(); r.errors.push("Missing SKILL.md"); results[dir] = r; continue; }
@@ -100,11 +91,9 @@ export function validateHooks(hooksJson: string, root: string): VR {
     if (!Array.isArray(list)) continue;
     for (const entry of list) {
       const e = entry as Record<string, unknown>;
-      // Flat format: { command: "..." }
       if (typeof e.command === "string") {
         checkCommand(e.command, evt);
       }
-      // Nested format: { matcher: "...", hooks: [{ command: "..." }] }
       if (Array.isArray(e.hooks)) {
         for (const h of e.hooks) {
           const hh = h as Record<string, unknown>;
@@ -121,13 +110,11 @@ export function validateConsistency(root: string): VR {
   const hooksJson = path.join(root, "hooks", "hooks.json");
   const agentsDir = path.join(root, "agents");
 
-  // Validate hooks script references
   const hookR = validateHooks(hooksJson, root);
   r.errors.push(...hookR.errors);
   r.warnings.push(...hookR.warnings);
   r.info.push(...hookR.info);
 
-  // Validate agent frontmatter
   const { results: agentR } = validateAgents(agentsDir);
   for (const [file, result] of Object.entries(agentR)) {
     for (const e of result.errors) r.errors.push(`agents/${file}: ${e}`);
@@ -143,9 +130,9 @@ function validatePluginJson(pluginJson: string): VR {
   let data: Record<string, unknown>;
   try { data = JSON.parse(fs.readFileSync(pluginJson, "utf-8")); } catch { r.errors.push("Invalid JSON"); return r; }
   for (const f of ["name", "version", "description"]) if (!data[f]) r.errors.push(`Missing: ${f}`);
-  const v = data.version as string;
+  const v = typeof data.version === "string" ? data.version : undefined;
   if (v && !/^\d+\.\d+\.\d+$/.test(v)) r.warnings.push(`Version '${v}' not semver`);
-  r.info.push(`v${v || "unknown"}`); return r;
+  r.info.push(`v${v ?? "unknown"}`); return r;
 }
 
 function print(r: VR, indent = 4) {
@@ -155,8 +142,8 @@ function print(r: VR, indent = 4) {
   for (const i of r.info) console.log(`${p}${C.DIM}ℹ ${i}${C.RESET}`);
 }
 
-// CLI entry point — only runs when executed directly
-const isMain = typeof import.meta.dirname !== "undefined" && process.argv[1]?.endsWith("validate-plugin.ts");
+const isMain = import.meta.url === `file://${process.argv[1]}`
+  || process.argv[1]?.endsWith("validate-plugin.ts");
 
 if (isMain) {
   const ROOT = path.resolve(import.meta.dirname, "..");

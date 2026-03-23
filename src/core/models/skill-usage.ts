@@ -11,35 +11,25 @@ export class SkillUsageModel {
 
   record(skillName: string, opts?: { planId?: string; sessionId?: string }): SkillUsage {
     const id = nanoid(12);
+    const planId = opts?.planId ?? null;
+    const sessionId = opts?.sessionId ?? null;
+    const createdAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
     this.db
       .prepare(
-        `INSERT INTO skill_usage (id, skill_name, plan_id, session_id)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO skill_usage (id, skill_name, plan_id, session_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(id, skillName, opts?.planId ?? null, opts?.sessionId ?? null);
+      .run(id, skillName, planId, sessionId, createdAt);
 
-    return this.db
-      .prepare('SELECT * FROM skill_usage WHERE id = ?')
-      .get(id) as SkillUsage;
+    return { id, skill_name: skillName, plan_id: planId, session_id: sessionId, created_at: createdAt };
   }
 
   getStats(days?: number): SkillStats[] {
-    if (days !== undefined) {
-      return this.db
-        .prepare(
-          `SELECT skill_name, COUNT(*) as count, MAX(created_at) as last_used
-           FROM skill_usage
-           WHERE created_at >= datetime('now', '-' || ? || ' days')
-           GROUP BY skill_name
-           ORDER BY count DESC`,
-        )
-        .all(days) as SkillStats[];
-    }
-
+    const where = days !== undefined ? `WHERE created_at >= datetime('now', '-${days} days')` : '';
     return this.db
       .prepare(
         `SELECT skill_name, COUNT(*) as count, MAX(created_at) as last_used
-         FROM skill_usage
+         FROM skill_usage ${where}
          GROUP BY skill_name
          ORDER BY count DESC`,
       )

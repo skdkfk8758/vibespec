@@ -637,10 +637,7 @@ program
       return;
     }
 
-    const formatted = stats
-      .map((s) => `${s.skill_name}: count=${s.count}, last_used=${s.last_used}`)
-      .join('\n');
-    output(stats, formatted);
+    output(stats, formatSkillUsage(stats));
   });
 
 program.parse();
