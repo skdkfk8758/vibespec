@@ -47,7 +47,7 @@ invocation: user
 
    **TDD 적합** (함수, API, 서비스, 데이터 처리, 비즈니스 로직):
      → `tdd-implementer` 에이전트를 디스패치하세요
-     → 전달 정보: 태스크(제목, spec, acceptance), 플랜 컨텍스트(제목, 스펙 요약)
+     → 전달 정보: 태스크(제목, spec, acceptance), 플랜 컨텍스트(제목, 스펙 요약), **scope**(allowed_files, forbidden_patterns — 태스크에 설정되어 있으면)
      → 에이전트가 자율적으로 RED-GREEN-REFACTOR를 실행합니다
      → 에이전트 리포트를 사용자에게 그대로 표시하세요
 
@@ -62,7 +62,7 @@ invocation: user
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
      → `verifier` 에이전트와 `codex-review` 스킬을 **병렬로** 실행하세요
-       - `verifier` 에이전트 전달 정보: 태스크(title, spec, acceptance), 플랜 컨텍스트, impl_report(있는 경우)
+       - `verifier` 에이전트 전달 정보: 태스크(title, spec, acceptance), 플랜 컨텍스트, impl_report(있는 경우), **scope**(allowed_files, forbidden_patterns — 태스크에 설정되어 있으면)
        - `codex-review` 스킬 전달 정보: 현재 태스크 정보, tdd-implementer 리포트(있는 경우)
        - 각각 독립적으로 PASS/WARN/FAIL/SKIP 판정과 리포트를 반환합니다
      → **종합 판정 규칙:**
@@ -79,10 +79,15 @@ invocation: user
        ### Verification (기술 검증)
        [verification 리포트 요약 — verdict, 테스트/빌드/lint 결과, acceptance 충족률]
 
+       ### Scope Verification (범위 검증)
+       [scope 리포트 요약 — verdict, 범위 내/외 파일 수, 위반 상세]
+       (scope 미지정인 경우: "Scope 규칙 미지정 — SKIP")
+
        ### Codex Review (코드 리뷰)
        [codex-review 리포트 요약 — verdict, 주요 발견사항]
        (SKIP인 경우: "Codex 리뷰를 건너뛰었습니다: {사유}")
        ```
+     → done 처리 시 `--changed-files-detail '<json>' --scope-violations '<json>'` 옵션으로 메트릭을 기록하세요
      → PASS: Bash 도구로 `vs task update <id> done --json` 명령을 실행하여 status를 done으로 변경하세요
      → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (Bash 도구로 `vs task update <id> done --json --has-concerns` 명령을 실행하세요)
      → FAIL (단일 태스크 모드): 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요

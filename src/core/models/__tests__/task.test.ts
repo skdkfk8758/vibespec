@@ -73,6 +73,34 @@ describe('TaskModel', () => {
       ).toThrow('Parent task not found');
     });
 
+    it('should store allowed_files as JSON string', () => {
+      const task = taskModel.create('test-plan', 'Scoped Task', {
+        allowedFiles: ['src/a.ts', 'src/b.ts'],
+      });
+
+      expect(task.allowed_files).toBe(JSON.stringify(['src/a.ts', 'src/b.ts']));
+    });
+
+    it('should store forbidden_patterns as JSON string', () => {
+      const task = taskModel.create('test-plan', 'Scoped Task', {
+        forbiddenPatterns: ['src/core/db/**', 'agents/*'],
+      });
+
+      expect(task.forbidden_patterns).toBe(JSON.stringify(['src/core/db/**', 'agents/*']));
+    });
+
+    it('should store null for allowed_files when not provided', () => {
+      const task = taskModel.create('test-plan', 'No Scope');
+
+      expect(task.allowed_files).toBeNull();
+    });
+
+    it('should store null for forbidden_patterns when not provided', () => {
+      const task = taskModel.create('test-plan', 'No Scope');
+
+      expect(task.forbidden_patterns).toBeNull();
+    });
+
     it('should store dependsOn array as JSON string', () => {
       const t1 = taskModel.create('test-plan', 'Task 1');
       const t2 = taskModel.create('test-plan', 'Task 2');
@@ -382,6 +410,37 @@ describe('TaskModel', () => {
       });
 
       expect(updated.depends_on).toBe(JSON.stringify([t1.id]));
+    });
+  });
+
+  describe('update with scope fields', () => {
+    it('should update allowed_files field', () => {
+      const task = taskModel.create('test-plan', 'Task');
+      const updated = taskModel.update(task.id, {
+        allowed_files: JSON.stringify(['src/a.ts']),
+      });
+
+      expect(updated.allowed_files).toBe(JSON.stringify(['src/a.ts']));
+    });
+
+    it('should update forbidden_patterns field', () => {
+      const task = taskModel.create('test-plan', 'Task');
+      const updated = taskModel.update(task.id, {
+        forbidden_patterns: JSON.stringify(['agents/*']),
+      });
+
+      expect(updated.forbidden_patterns).toBe(JSON.stringify(['agents/*']));
+    });
+
+    it('should not change scope fields when not specified in update', () => {
+      const task = taskModel.create('test-plan', 'Scoped', {
+        allowedFiles: ['src/a.ts'],
+        forbiddenPatterns: ['agents/*'],
+      });
+      const updated = taskModel.update(task.id, { title: 'New Title' });
+
+      expect(updated.allowed_files).toBe(JSON.stringify(['src/a.ts']));
+      expect(updated.forbidden_patterns).toBe(JSON.stringify(['agents/*']));
     });
   });
 });

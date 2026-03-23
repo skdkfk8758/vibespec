@@ -154,6 +154,31 @@ describe('TaskMetricsModel', () => {
       expect(result.files_changed).toBeNull();
       expect(result.has_concerns).toBe(0);
     });
+
+    it('should store changed_files_detail as JSON string', () => {
+      const detail = JSON.stringify([{ file: 'src/a.ts', status: 'modified' }]);
+      const result = metrics.record('task1', 'plan1', 'done', {
+        changed_files_detail: detail,
+      });
+
+      expect(result.changed_files_detail).toBe(detail);
+    });
+
+    it('should store scope_violations as JSON string', () => {
+      const violations = JSON.stringify([{ file: 'agents/foo.ts', reason: 'forbidden' }]);
+      const result = metrics.record('task1', 'plan1', 'done', {
+        scope_violations: violations,
+      });
+
+      expect(result.scope_violations).toBe(violations);
+    });
+
+    it('should store null for changed_files_detail and scope_violations when not provided', () => {
+      const result = metrics.record('task1', 'plan1', 'done');
+
+      expect(result.changed_files_detail).toBeNull();
+      expect(result.scope_violations).toBeNull();
+    });
   });
 
   describe('getByTask()', () => {

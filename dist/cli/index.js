@@ -101,6 +101,8 @@ function initSchema(db) {
       spec        TEXT,
       acceptance  TEXT,
       depends_on  TEXT,
+      allowed_files TEXT,
+      forbidden_patterns TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -156,6 +158,8 @@ function initSchema(db) {
       test_count      INTEGER,
       files_changed   INTEGER,
       has_concerns    BOOLEAN DEFAULT 0,
+      changed_files_detail TEXT,
+      scope_violations TEXT,
       created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -261,6 +265,31 @@ function applyMigrations(db) {
       CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
     `);
     db.pragma("user_version = 3");
+  }
+  if (version < 4) {
+    const columns = db.pragma("table_info(tasks)");
+    const hasColumn = (name) => columns.some((c) => c.name === name);
+    if (!hasColumn("allowed_files")) {
+      db.exec("ALTER TABLE tasks ADD COLUMN allowed_files TEXT");
+    }
+    if (!hasColumn("forbidden_patterns")) {
+      db.exec("ALTER TABLE tasks ADD COLUMN forbidden_patterns TEXT");
+    }
+    db.pragma("user_version = 4");
+  }
+  if (version < 5) {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_metrics'").all();
+    if (tables.length > 0) {
+      const columns = db.pragma("table_info(task_metrics)");
+      const hasColumn = (name) => columns.some((c) => c.name === name);
+      if (!hasColumn("changed_files_detail")) {
+        db.exec("ALTER TABLE task_metrics ADD COLUMN changed_files_detail TEXT");
+      }
+      if (!hasColumn("scope_violations")) {
+        db.exec("ALTER TABLE task_metrics ADD COLUMN scope_violations TEXT");
+      }
+    }
+    db.pragma("user_version = 5");
   }
 }
 
@@ -919,12 +948,14 @@ var TaskModel = class {
     }
     const sortOrder = opts?.sortOrder ?? 0;
     const dependsOn = opts?.dependsOn && opts.dependsOn.length > 0 ? JSON.stringify(opts.dependsOn) : null;
+    const allowedFiles = opts?.allowedFiles && opts.allowedFiles.length > 0 ? JSON.stringify(opts.allowedFiles) : null;
+    const forbiddenPatterns = opts?.forbiddenPatterns && opts.forbiddenPatterns.length > 0 ? JSON.stringify(opts.forbiddenPatterns) : null;
     if (opts?.dependsOn && opts.dependsOn.length > 0) {
       this.validateDependencies(planId, id, opts.dependsOn);
     }
     this.db.prepare(
-      `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on)
-         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)`
+      `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on, allowed_files, forbidden_patterns)
+         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       planId,
@@ -934,7 +965,9 @@ var TaskModel = class {
       sortOrder,
       opts?.spec ?? null,
       opts?.acceptance ?? null,
-      dependsOn
+      dependsOn,
+      allowedFiles,
+      forbiddenPatterns
     );
     const task2 = this.getById(id);
     this.events?.record("task", task2.id, "created", null, JSON.stringify({ title, status: "todo" }));
@@ -1020,6 +1053,14 @@ var TaskModel = class {
       }
       setClauses.push("depends_on = ?");
       values.push(fields.depends_on);
+    }
+    if (fields.allowed_files !== void 0) {
+      setClauses.push("allowed_files = ?");
+      values.push(fields.allowed_files);
+    }
+    if (fields.forbidden_patterns !== void 0) {
+      setClauses.push("forbidden_patterns = ?");
+      values.push(fields.forbidden_patterns);
     }
     if (setClauses.length === 0) {
       return this.getById(id);
@@ -1403,8 +1444,8 @@ var TaskMetricsModel = class {
     const blockReason = this.extractBlockReason(taskId, finalStatus);
     this.db.prepare(
       `INSERT OR REPLACE INTO task_metrics
-         (task_id, plan_id, duration_min, final_status, block_reason, impl_status, test_count, files_changed, has_concerns)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (task_id, plan_id, duration_min, final_status, block_reason, impl_status, test_count, files_changed, has_concerns, changed_files_detail, scope_violations)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       taskId,
       planId,
@@ -1414,7 +1455,9 @@ var TaskMetricsModel = class {
       metrics?.impl_status ?? null,
       metrics?.test_count ?? null,
       metrics?.files_changed ?? null,
-      metrics?.has_concerns ? 1 : 0
+      metrics?.has_concerns ? 1 : 0,
+      metrics?.changed_files_detail ?? null,
+      metrics?.scope_violations ?? null
     );
     return this.getByTask(taskId);
   }
@@ -1893,22 +1936,26 @@ plan.command("delete").argument("<id>", "Plan ID").description("Delete a draft p
   }
 });
 var task = program.command("task").description("Manage tasks");
-task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").description("Create a new task").action((opts) => {
+task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").description("Create a new task").action((opts) => {
   const { taskModel } = initModels();
   try {
     const dependsOn = opts.dependsOn ? opts.dependsOn.split(",").map((s) => s.trim()) : void 0;
+    const allowedFiles = opts.allowedFiles ? opts.allowedFiles.split(",").map((s) => s.trim()) : void 0;
+    const forbiddenPatterns = opts.forbiddenPatterns ? opts.forbiddenPatterns.split(",").map((s) => s.trim()) : void 0;
     const created = taskModel.create(opts.plan, opts.title, {
       parentId: opts.parent,
       spec: opts.spec,
       acceptance: opts.acceptance,
-      dependsOn
+      dependsOn,
+      allowedFiles,
+      forbiddenPatterns
     });
     output(created, `Created task: ${created.id} "${created.title}" (${created.status})`);
   } catch (e) {
     outputError(e instanceof Error ? e.message : String(e));
   }
 });
-task.command("update").argument("<id>", "Task ID").argument("<status>", "New status (todo, in_progress, done, blocked, skipped)").option("--impl-status <status>", "Implementation status (DONE, DONE_WITH_CONCERNS, BLOCKED)").option("--test-count <count>", "Number of tests written").option("--files-changed <count>", "Number of files changed").option("--has-concerns", "Whether there are concerns").description("Update task status with optional metrics").action((id, status, opts) => {
+task.command("update").argument("<id>", "Task ID").argument("<status>", "New status (todo, in_progress, done, blocked, skipped)").option("--impl-status <status>", "Implementation status (DONE, DONE_WITH_CONCERNS, BLOCKED)").option("--test-count <count>", "Number of tests written").option("--files-changed <count>", "Number of files changed").option("--has-concerns", "Whether there are concerns").option("--changed-files-detail <json>", "JSON string of changed files detail").option("--scope-violations <json>", "JSON string of scope violations").description("Update task status with optional metrics").action((id, status, opts) => {
   const VALID = ["todo", "in_progress", "done", "blocked", "skipped"];
   if (!VALID.includes(status)) {
     return outputError(`Invalid status. Must be: ${VALID.join(", ")}`);
@@ -1925,6 +1972,8 @@ task.command("update").argument("<id>", "Task ID").argument("<status>", "New sta
       if (opts.testCount) metrics.test_count = parseInt(opts.testCount, 10);
       if (opts.filesChanged) metrics.files_changed = parseInt(opts.filesChanged, 10);
       if (opts.hasConcerns) metrics.has_concerns = true;
+      if (opts.changedFilesDetail) metrics.changed_files_detail = opts.changedFilesDetail;
+      if (opts.scopeViolations) metrics.scope_violations = opts.scopeViolations;
       taskMetricsModel.record(id, updated.plan_id, status, Object.keys(metrics).length > 0 ? metrics : void 0);
     } catch {
     }
@@ -1962,6 +2011,8 @@ task.command("show").argument("<id>", "Task ID").description("Show task details"
     `Depth:      ${t.depth}`,
     t.spec ? `Spec:       ${t.spec}` : "",
     t.acceptance ? `Acceptance: ${t.acceptance}` : "",
+    t.allowed_files ? `Allowed:    ${t.allowed_files}` : "",
+    t.forbidden_patterns ? `Forbidden:  ${t.forbidden_patterns}` : "",
     `Created:    ${t.created_at}`,
     t.completed_at ? `Completed:  ${t.completed_at}` : ""
   ].filter(Boolean).join("\n"));
@@ -1979,11 +2030,21 @@ task.command("block").argument("<id>", "Task ID").option("--reason <reason>", "R
     `Task blocked: ${blocked.id} "${blocked.title}"${opts.reason ? ` (reason: ${opts.reason})` : ""}`
   );
 });
-task.command("edit").argument("<id>", "Task ID").option("--title <title>", "New title").option("--spec <spec>", "New spec").option("--acceptance <acceptance>", "New acceptance criteria").description("Edit task title, spec, or acceptance").action((id, opts) => {
+task.command("edit").argument("<id>", "Task ID").option("--title <title>", "New title").option("--spec <spec>", "New spec").option("--acceptance <acceptance>", "New acceptance criteria").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").description("Edit task title, spec, acceptance, or scope").action((id, opts) => {
   const { taskModel } = initModels();
   const t = taskModel.getById(id);
   if (!t) return outputError(`Task not found: ${id}`);
-  const edited = taskModel.update(id, opts);
+  const fields = {};
+  if (opts.title !== void 0) fields.title = opts.title;
+  if (opts.spec !== void 0) fields.spec = opts.spec;
+  if (opts.acceptance !== void 0) fields.acceptance = opts.acceptance;
+  if (opts.allowedFiles !== void 0) {
+    fields.allowed_files = JSON.stringify(opts.allowedFiles.split(",").map((s) => s.trim()));
+  }
+  if (opts.forbiddenPatterns !== void 0) {
+    fields.forbidden_patterns = JSON.stringify(opts.forbiddenPatterns.split(",").map((s) => s.trim()));
+  }
+  const edited = taskModel.update(id, fields);
   output(edited, `Task edited: ${edited.id} "${edited.title}"`);
 });
 task.command("delete").argument("<id>", "Task ID").description("Delete a task and its subtasks").action((id) => {

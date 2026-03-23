@@ -25,6 +25,8 @@ export interface Task {
   spec: string | null;
   acceptance: string | null;
   depends_on: string | null;
+  allowed_files: string | null;
+  forbidden_patterns: string | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -114,6 +116,8 @@ export interface TaskMetrics {
   test_count: number | null;
   files_changed: number | null;
   has_concerns: boolean;
+  changed_files_detail: string | null;
+  scope_violations: string | null;
   created_at: string;
 }
 

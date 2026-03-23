@@ -19,6 +19,8 @@ export class TaskModel {
       acceptance?: string;
       sortOrder?: number;
       dependsOn?: string[];
+      allowedFiles?: string[];
+      forbiddenPatterns?: string[];
     },
   ): Task {
     const id = nanoid(12);
@@ -36,6 +38,12 @@ export class TaskModel {
     const dependsOn = opts?.dependsOn && opts.dependsOn.length > 0
       ? JSON.stringify(opts.dependsOn)
       : null;
+    const allowedFiles = opts?.allowedFiles && opts.allowedFiles.length > 0
+      ? JSON.stringify(opts.allowedFiles)
+      : null;
+    const forbiddenPatterns = opts?.forbiddenPatterns && opts.forbiddenPatterns.length > 0
+      ? JSON.stringify(opts.forbiddenPatterns)
+      : null;
 
     if (opts?.dependsOn && opts.dependsOn.length > 0) {
       this.validateDependencies(planId, id, opts.dependsOn);
@@ -43,8 +51,8 @@ export class TaskModel {
 
     this.db
       .prepare(
-        `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on)
-         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on, allowed_files, forbidden_patterns)
+         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -56,6 +64,8 @@ export class TaskModel {
         opts?.spec ?? null,
         opts?.acceptance ?? null,
         dependsOn,
+        allowedFiles,
+        forbiddenPatterns,
       );
 
     const task = this.getById(id)!;
@@ -130,7 +140,7 @@ export class TaskModel {
 
   update(
     id: string,
-    fields: Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order' | 'depends_on'>>,
+    fields: Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order' | 'depends_on' | 'allowed_files' | 'forbidden_patterns'>>,
   ): Task {
     const setClauses: string[] = [];
     const values: unknown[] = [];
@@ -163,6 +173,14 @@ export class TaskModel {
       }
       setClauses.push('depends_on = ?');
       values.push(fields.depends_on);
+    }
+    if (fields.allowed_files !== undefined) {
+      setClauses.push('allowed_files = ?');
+      values.push(fields.allowed_files);
+    }
+    if (fields.forbidden_patterns !== undefined) {
+      setClauses.push('forbidden_patterns = ?');
+      values.push(fields.forbidden_patterns);
     }
 
     if (setClauses.length === 0) {

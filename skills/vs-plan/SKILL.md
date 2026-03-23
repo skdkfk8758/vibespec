@@ -89,6 +89,10 @@ invocation: user
    - 명확한 spec (구현 상세)
    - 검증 가능한 acceptance criteria
    - 의존성 순서대로 정렬
+   - **Scope 규칙** (권장): 각 태스크의 spec에 다음을 포함하세요:
+     - 수정 허용 파일 (`allowed_files`) — spec에서 언급된 파일을 기반으로 추출
+     - 수정 금지 영역 (`forbidden_patterns`) — 해당 태스크와 무관한 core/공통/설정 모듈
+     - 이 정보는 에이전트의 범위 이탈을 방지하는 안전장치입니다
 
 5. **플랜 리뷰**
    태스크 분해 결과를 아래 관점으로 직접 비판적 검토하세요:
@@ -111,6 +115,7 @@ invocation: user
    - 승인된 각 태스크를 Bash 도구로 `vs task create --json --plan <id> --title "..." --spec "..." --acceptance "..."` 명령을 실행하여 생성하세요
    - 복합 태스크는 `--parent <id>` 옵션을 사용하여 서브태스크로 구성하세요
    - 의존성이 있는 태스크는 `--depends-on "id1,id2"` 옵션을 추가하세요
+   - scope 규칙이 정의된 태스크는 `--allowed-files "파일1,파일2"` 및 `--forbidden-patterns "패턴1,패턴2"` 옵션을 추가하세요
    - spec과 acceptance를 반드시 포함하세요
 
 7. **결과 확인**

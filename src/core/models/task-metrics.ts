@@ -17,6 +17,8 @@ export class TaskMetricsModel {
       test_count?: number;
       files_changed?: number;
       has_concerns?: boolean;
+      changed_files_detail?: string;
+      scope_violations?: string;
     },
   ): TaskMetrics {
     const durationMin = this.calculateDuration(taskId);
@@ -25,8 +27,8 @@ export class TaskMetricsModel {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO task_metrics
-         (task_id, plan_id, duration_min, final_status, block_reason, impl_status, test_count, files_changed, has_concerns)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (task_id, plan_id, duration_min, final_status, block_reason, impl_status, test_count, files_changed, has_concerns, changed_files_detail, scope_violations)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         taskId,
@@ -38,6 +40,8 @@ export class TaskMetricsModel {
         metrics?.test_count ?? null,
         metrics?.files_changed ?? null,
         metrics?.has_concerns ? 1 : 0,
+        metrics?.changed_files_detail ?? null,
+        metrics?.scope_violations ?? null,
       );
 
     return this.getByTask(taskId)!;

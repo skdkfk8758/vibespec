@@ -23,6 +23,7 @@ invocation: user
 호출 시 다음 정보가 컨텍스트에 존재해야 합니다:
 - **task**: 태스크 제목, spec, acceptance criteria (`vs task show <task_id> --json`으로 조회)
 - **impl_report**: tdd-implementer 리포트 (있는 경우, 없으면 생략)
+- **scope** (선택): 태스크의 allowed_files, forbidden_patterns (있는 경우)
 
 ## Steps
 
@@ -56,7 +57,23 @@ invocation: user
    - 리포트의 테스트 결과를 신뢰하되, 테스트는 **반드시 재실행**하세요 (리팩토링 후 깨질 수 있음)
    - 빌드/lint는 리포트에 포함되지 않으므로 항상 실행하세요
 
-3. **Acceptance Criteria 크로스체크**
+3. **Scope Verification** (scope 정보가 있는 경우에만)
+   태스크의 allowed_files, forbidden_patterns가 있으면 이 단계를 실행하세요. 둘 다 비어있으면 **SKIP**하세요.
+
+   **a. 변경 파일 수집:**
+   - `git diff --name-only` (태스크 시작 이후 변경분)로 변경된 파일 목록을 수집하세요
+
+   **b. Scope 규칙 대조:**
+   각 변경 파일에 대해:
+   - `*.test.*`, `*.spec.*`, `__tests__/` 패턴에 매칭되는 파일은 **자동 예외** (TDD 허용)
+   - allowed_files가 있으면: 파일이 허용 목록 glob에 매칭 안 되면 → **out_of_scope**
+   - forbidden_patterns가 있으면: 파일이 금지 패턴에 매칭되면 → **forbidden_violation**
+
+   **c. Scope 판정:**
+   - 위반 없음 → scope verdict: **PASS**
+   - 위반 있음 → scope verdict: **WARN** (단독으로 FAIL 아님)
+
+4. **Acceptance Criteria 크로스체크**
    각 acceptance 항목에 대해:
    - `git diff HEAD~1` (또는 태스크 시작 이후 변경분)을 확인하세요
    - 해당 항목을 충족하는 **증거**를 찾으세요:
@@ -69,10 +86,12 @@ invocation: user
 4. **최종 판정**
 
    ```
-   PASS = 기술 검증 전체 통과(또는 SKIP) AND acceptance 전항목 PASS
-   WARN = 기술 검증 전체 통과(또는 SKIP) AND acceptance에 WARN 항목 존재 (FAIL 없음)
+   PASS = 기술 검증 전체 통과(또는 SKIP) AND acceptance 전항목 PASS AND scope PASS/SKIP
+   WARN = 기술 검증 전체 통과(또는 SKIP) AND (acceptance에 WARN 항목 존재 OR scope WARN) (FAIL 없음)
    FAIL = 기술 검증 실패 OR acceptance에 FAIL 항목 존재
    ```
+
+   Note: scope WARN은 단독으로 FAIL을 발생시키지 않습니다.
 
 5. **리포트 출력**
    반드시 다음 형식으로 출력하세요:
@@ -92,6 +111,19 @@ invocation: user
    |---|------|------|------|
    | 1 | {criteria 내용} | [PASS|WARN|FAIL] | {근거} |
    | 2 | ... | ... | ... |
+
+   ### Scope Verification
+   - 변경 파일: N개
+   - 범위 내: N개
+   - 범위 외: N개 [파일 목록]
+   - 금지 위반: N개 [파일 목록 + 위반 규칙]
+   - 판정: [PASS | WARN | SKIP]
+   (scope 정보가 없는 경우: "Scope 규칙 미지정 — SKIP")
+
+   ### 변경 파일 요약
+   | 파일 | +/- | 사유 |
+   |------|-----|------|
+   | src/a.ts | +10/-3 | AC #1 관련 |
 
    ### 요약
    - 충족: N/M

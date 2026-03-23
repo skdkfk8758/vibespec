@@ -25,6 +25,8 @@ export function initSchema(db: Database.Database): void {
       spec        TEXT,
       acceptance  TEXT,
       depends_on  TEXT,
+      allowed_files TEXT,
+      forbidden_patterns TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -80,6 +82,8 @@ export function initSchema(db: Database.Database): void {
       test_count      INTEGER,
       files_changed   INTEGER,
       has_concerns    BOOLEAN DEFAULT 0,
+      changed_files_detail TEXT,
+      scope_violations TEXT,
       created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -196,5 +200,36 @@ export function applyMigrations(db: Database.Database): void {
     `);
 
     db.pragma('user_version = 3');
+  }
+
+  if (version < 4) {
+    const columns = db.pragma('table_info(tasks)') as Array<{ name: string }>;
+    const hasColumn = (name: string) => columns.some((c) => c.name === name);
+
+    if (!hasColumn('allowed_files')) {
+      db.exec('ALTER TABLE tasks ADD COLUMN allowed_files TEXT');
+    }
+    if (!hasColumn('forbidden_patterns')) {
+      db.exec('ALTER TABLE tasks ADD COLUMN forbidden_patterns TEXT');
+    }
+
+    db.pragma('user_version = 4');
+  }
+
+  if (version < 5) {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_metrics'").all();
+    if (tables.length > 0) {
+      const columns = db.pragma('table_info(task_metrics)') as Array<{ name: string }>;
+      const hasColumn = (name: string) => columns.some((c) => c.name === name);
+
+      if (!hasColumn('changed_files_detail')) {
+        db.exec('ALTER TABLE task_metrics ADD COLUMN changed_files_detail TEXT');
+      }
+      if (!hasColumn('scope_violations')) {
+        db.exec('ALTER TABLE task_metrics ADD COLUMN scope_violations TEXT');
+      }
+    }
+
+    db.pragma('user_version = 5');
   }
 }

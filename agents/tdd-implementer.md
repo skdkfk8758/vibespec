@@ -14,6 +14,7 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 에이전트 디스패치 시 다음 정보를 전달받습니다:
 - **task**: 태스크 제목, spec, acceptance criteria
 - **plan_context**: 플랜 제목, 전체 스펙 요약 (구현 맥락 파악용)
+- **scope** (선택): allowed_files (수정 허용 파일 패턴), forbidden_patterns (수정 금지 패턴)
 
 ## Execution Process
 
@@ -32,6 +33,27 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
    - 프로젝트 기술 스택에 맞는 최소 테스트 환경을 세팅하세요
    - 기존 코드에 영향 없이 테스트만 추가할 수 있도록 구성하세요
    - 세팅 내용을 리포트에 포함하세요
+
+### Phase 0.5: Modification Plan
+
+환경 탐색 결과와 태스크 spec을 기반으로 수정 계획을 수립하세요.
+
+1. **수정 예정 파일 목록 작성**
+   - 태스크 spec과 acceptance criteria를 분석하여 수정이 필요한 파일을 나열하세요
+   - 각 파일별 예상 변경 내용과 사유를 한 줄로 요약하세요
+
+2. **건드리지 않을 영역 명시**
+   - 수정 대상이 아닌 관련 파일/모듈을 명시하세요
+   - 특히 core/공통 모듈, 레거시 코드, 설정 파일 등을 나열하세요
+
+3. **Scope 규칙 대조** (scope 정보가 전달된 경우)
+   - allowed_files가 있으면: 수정 예정 파일이 모두 허용 목록에 포함되는지 확인하세요
+   - forbidden_patterns가 있으면: 수정 예정 파일이 금지 패턴에 매칭되지 않는지 확인하세요
+   - 충돌이 있으면: 계획을 조정하거나 BLOCKED 보고하세요
+
+4. **Modification Plan 기록**
+   - 이 계획을 리포트의 Modification Plan 섹션에 포함하세요
+   - 이후 Phase에서 이 계획 밖의 파일을 수정하지 마세요
 
 ### Phase 1: RED — 실패하는 테스트 작성
 
@@ -70,7 +92,13 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
    - 태스크 범위 내에서만 리팩토링하세요
    - 매 리팩토링 스텝마다 테스트가 통과하는지 확인하세요
 
-2. **REFACTOR 체크포인트 기록**
+2. **REFACTOR 제약 (엄격히 준수)**
+   - 이번 태스크 acceptance criteria와 직접 관련 없는 리팩토링 금지
+   - 기존 레거시 코드 정리, 네이밍 변경, 포맷팅-only 변경, 미사용 코드 삭제 금지
+   - REFACTOR에서 새 파일을 추가하거나 기존 파일을 삭제하지 마세요
+   - Modification Plan에 없던 파일을 REFACTOR에서 수정하지 마세요
+
+3. **REFACTOR 체크포인트 기록**
    - 리팩토링 내용과 최종 테스트 결과를 기록하세요
 
 ### Phase 4: 자기 리뷰
@@ -83,6 +111,7 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 | **정확성** | 기존 테스트가 깨지지 않았는가? 엣지 케이스를 고려했는가? |
 | **품질** | 기존 코드 패턴을 따르는가? 네이밍이 명확한가? |
 | **범위** | 태스크 spec 범위를 벗어난 변경이 없는가? 불필요한 코드를 추가하지 않았는가? |
+| **범위 상세** | Modification Plan에 없던 파일을 수정하지 않았는가? allowed_files/forbidden_patterns를 위반하지 않았는가? |
 
 문제를 발견하면 리포트 전에 수정하세요.
 
@@ -107,6 +136,12 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 - 프레임워크: [vitest / jest / pytest / ...]
 - 신규 세팅 여부: [기존 환경 사용 / 새로 세팅 (내용)]
 
+### Modification Plan
+- 수정 예정 파일:
+  - [파일]: [예상 변경 내용]
+- 건드리지 않을 영역: [목록]
+- Scope 규칙 충돌: [없음 / 있으면 상세]
+
 ### RED Phase
 - 작성한 테스트: N개
 - [테스트 목록과 각 테스트의 검증 대상]
@@ -114,6 +149,8 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 
 ### GREEN Phase
 - 구현한 파일: [파일 목록]
+- 파일별 변경 사유:
+  - [파일]: [사유 (AC #N 관련)]
 - 핵심 구현 내용: [요약]
 - 전체 테스트 통과: ✅ (N/N passed)
 
@@ -129,6 +166,7 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 - 정확성: [OK / 우려사항]
 - 품질: [OK / 우려사항]
 - 범위: [OK / 우려사항]
+- 범위 상세: [OK / 우려사항 — Modification Plan 대비 실제 변경 비교]
 
 ### 우려 사항 (있는 경우)
 - [구체적 내용]

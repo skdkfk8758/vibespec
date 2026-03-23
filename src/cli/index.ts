@@ -208,16 +208,22 @@ task
   .option('--spec <spec>', 'Task specification')
   .option('--acceptance <acceptance>', 'Acceptance criteria')
   .option('--depends-on <ids>', 'Comma-separated task IDs this task depends on')
+  .option('--allowed-files <files>', 'Comma-separated list of allowed files')
+  .option('--forbidden-patterns <patterns>', 'Comma-separated list of forbidden patterns')
   .description('Create a new task')
-  .action((opts: { plan: string; title: string; parent?: string; spec?: string; acceptance?: string; dependsOn?: string }) => {
+  .action((opts: { plan: string; title: string; parent?: string; spec?: string; acceptance?: string; dependsOn?: string; allowedFiles?: string; forbiddenPatterns?: string }) => {
     const { taskModel } = initModels();
     try {
       const dependsOn = opts.dependsOn ? opts.dependsOn.split(',').map(s => s.trim()) : undefined;
+      const allowedFiles = opts.allowedFiles ? opts.allowedFiles.split(',').map(s => s.trim()) : undefined;
+      const forbiddenPatterns = opts.forbiddenPatterns ? opts.forbiddenPatterns.split(',').map(s => s.trim()) : undefined;
       const created = taskModel.create(opts.plan, opts.title, {
         parentId: opts.parent,
         spec: opts.spec,
         acceptance: opts.acceptance,
         dependsOn,
+        allowedFiles,
+        forbiddenPatterns,
       });
       output(created, `Created task: ${created.id} "${created.title}" (${created.status})`);
     } catch (e: unknown) {
@@ -233,8 +239,10 @@ task
   .option('--test-count <count>', 'Number of tests written')
   .option('--files-changed <count>', 'Number of files changed')
   .option('--has-concerns', 'Whether there are concerns')
+  .option('--changed-files-detail <json>', 'JSON string of changed files detail')
+  .option('--scope-violations <json>', 'JSON string of scope violations')
   .description('Update task status with optional metrics')
-  .action((id: string, status: string, opts: { implStatus?: string; testCount?: string; filesChanged?: string; hasConcerns?: boolean }) => {
+  .action((id: string, status: string, opts: { implStatus?: string; testCount?: string; filesChanged?: string; hasConcerns?: boolean; changedFilesDetail?: string; scopeViolations?: string }) => {
     const VALID: TaskStatus[] = ['todo', 'in_progress', 'done', 'blocked', 'skipped'];
     if (!VALID.includes(status as TaskStatus)) {
       return outputError(`Invalid status. Must be: ${VALID.join(', ')}`);
@@ -253,6 +261,8 @@ task
         if (opts.testCount) metrics.test_count = parseInt(opts.testCount, 10);
         if (opts.filesChanged) metrics.files_changed = parseInt(opts.filesChanged, 10);
         if (opts.hasConcerns) metrics.has_concerns = true;
+        if (opts.changedFilesDetail) metrics.changed_files_detail = opts.changedFilesDetail;
+        if (opts.scopeViolations) metrics.scope_violations = opts.scopeViolations;
         taskMetricsModel.record(id, updated.plan_id, status, Object.keys(metrics).length > 0 ? metrics as any : undefined);
       } catch {
         // Metrics recording is non-blocking
@@ -302,6 +312,8 @@ task
       `Depth:      ${t.depth}`,
       t.spec ? `Spec:       ${t.spec}` : '',
       t.acceptance ? `Acceptance: ${t.acceptance}` : '',
+      t.allowed_files ? `Allowed:    ${t.allowed_files}` : '',
+      t.forbidden_patterns ? `Forbidden:  ${t.forbidden_patterns}` : '',
       `Created:    ${t.created_at}`,
       t.completed_at ? `Completed:  ${t.completed_at}` : '',
     ].filter(Boolean).join('\n'));
@@ -332,12 +344,24 @@ task
   .option('--title <title>', 'New title')
   .option('--spec <spec>', 'New spec')
   .option('--acceptance <acceptance>', 'New acceptance criteria')
-  .description('Edit task title, spec, or acceptance')
-  .action((id: string, opts: { title?: string; spec?: string; acceptance?: string }) => {
+  .option('--allowed-files <files>', 'Comma-separated list of allowed files')
+  .option('--forbidden-patterns <patterns>', 'Comma-separated list of forbidden patterns')
+  .description('Edit task title, spec, acceptance, or scope')
+  .action((id: string, opts: { title?: string; spec?: string; acceptance?: string; allowedFiles?: string; forbiddenPatterns?: string }) => {
     const { taskModel } = initModels();
     const t = taskModel.getById(id);
     if (!t) return outputError(`Task not found: ${id}`);
-    const edited = taskModel.update(id, opts);
+    const fields: Record<string, unknown> = {};
+    if (opts.title !== undefined) fields.title = opts.title;
+    if (opts.spec !== undefined) fields.spec = opts.spec;
+    if (opts.acceptance !== undefined) fields.acceptance = opts.acceptance;
+    if (opts.allowedFiles !== undefined) {
+      fields.allowed_files = JSON.stringify(opts.allowedFiles.split(',').map(s => s.trim()));
+    }
+    if (opts.forbiddenPatterns !== undefined) {
+      fields.forbidden_patterns = JSON.stringify(opts.forbiddenPatterns.split(',').map(s => s.trim()));
+    }
+    const edited = taskModel.update(id, fields as any);
     output(edited, `Task edited: ${edited.id} "${edited.title}"`);
   });
 

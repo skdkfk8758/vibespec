@@ -16,6 +16,7 @@ description: 태스크 실패 자동 디버깅 에이전트. 실패 리포트를
 - **plan_context**: 플랜 제목, 전체 스펙 요약
 - **failure_report**: verifier의 FAIL 리포트 (실패 항목, 테스트 에러, 빌드 에러 등)
 - **impl_report**: tdd-implementer 리포트 (있는 경우)
+- **scope** (선택): allowed_files (수정 허용 파일 패턴), forbidden_patterns (수정 금지 패턴)
 
 ## Execution Process
 
@@ -35,10 +36,16 @@ description: 태스크 실패 자동 디버깅 에이전트. 실패 리포트를
    - `git diff`로 태스크에서 변경된 내용을 확인하세요
    - 실패 원인이 이 태스크의 변경인지, 기존 코드의 문제인지 판별하세요
 
-3. **수정 가능성 판단**
+3. **Scope 규칙 확인** (scope 정보가 전달된 경우)
+   - allowed_files가 있으면: 수정 가능 파일 범위를 파악하세요
+   - forbidden_patterns가 있으면: 건드리면 안 되는 영역을 파악하세요
+   - 수정 계획이 scope 규칙을 위반하면 NEEDS_MANUAL로 판정하세요
+
+4. **수정 가능성 판단**
    - 이 태스크 범위 내에서 수정 가능한가?
    - 다른 태스크나 외부 의존성이 필요한가?
    - 예상 수정 규모가 적절한가? (10개 이상 파일 변경이면 NEEDS_MANUAL)
+   - scope 규칙 내에서 수정 가능한가?
 
 ### Phase 2: 자동 수정
 
@@ -89,6 +96,7 @@ description: 태스크 실패 자동 디버깅 에이전트. 실패 리포트를
 - 테스트: [PASS (N/N passed) | 미실행]
 - 빌드: [PASS | 미실행]
 - 실패했던 항목 재확인: [PASS | 여전히 FAIL]
+- Scope 규칙 준수: [PASS | WARN (위반 상세) | N/A (scope 미지정)]
 
 ### 수동 개입 필요 사항 (NEEDS_MANUAL인 경우)
 - [필요한 작업 설명]
