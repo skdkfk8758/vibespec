@@ -1,6 +1,6 @@
 ---
 name: vs-merge
-description: Use when merging a worktree branch into the main branch. Squash-merge로 워크트리 변경사항을 정리하고, 연구 기반의 고품질 커밋 메시지를 생성합니다.
+description: Use when merging a worktree branch into a target branch. Squash-merge로 워크트리 변경사항을 정리하고, 연구 기반의 고품질 커밋 메시지를 생성합니다.
 invocation: user
 argument-hint: "[target-branch]"
 ---
@@ -27,7 +27,11 @@ argument-hint: "[target-branch]"
 
 3. **타겟 브랜치 결정**:
    - `$ARGUMENTS`가 있으면 해당 값을 타겟으로 사용
-   - 없으면 `main` 존재 확인 → 없으면 `master` 확인 → 둘 다 없으면 사용자에게 물어봅니다
+   - 없으면 사용자에게 `AskUserQuestion`으로 타겟 브랜치를 물어봅니다:
+     - header: "머지 타겟 브랜치 선택"
+     - `git branch --list`로 로컬 브랜치 목록을 가져와 현재 워크트리 브랜치를 제외한 브랜치들을 선택지로 제시합니다
+     - `main` 또는 `master`가 있으면 해당 브랜치를 기본값(첫 번째 선택지)으로 표시합니다
+     - "직접 입력" 선택지도 포함하여 목록에 없는 리모트 브랜치도 지정할 수 있게 합니다
 
 4. **원본 레포 경로 해석**: `git rev-parse --git-common-dir`로 메인 레포의 .git 경로를 찾고, 그 부모 디렉토리가 원본 레포 작업 디렉토리입니다.
 
