@@ -23,6 +23,7 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "validate": "npx tsx scripts/validate-plugin.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

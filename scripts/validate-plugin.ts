@@ -2,18 +2,14 @@
 import fs from "fs";
 import path from "path";
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-const SKILLS_DIR = path.join(ROOT, "skills");
-const AGENTS_DIR = path.join(ROOT, "agents");
-const PLUGIN_JSON = path.join(ROOT, ".claude-plugin", "plugin.json");
-const HOOKS_JSON = path.join(ROOT, "hooks", "hooks.json");
-
 const C = { RED: "\x1b[91m", GREEN: "\x1b[92m", YELLOW: "\x1b[93m", CYAN: "\x1b[96m", BOLD: "\x1b[1m", DIM: "\x1b[2m", RESET: "\x1b[0m" };
 
-interface Frontmatter { [key: string]: string }
-interface VR { errors: string[]; warnings: string[]; info: string[] }
+export interface Frontmatter { [key: string]: string }
+export interface VR { errors: string[]; warnings: string[]; info: string[] }
 
-function parseFM(content: string): Frontmatter | null {
+const VALID_INVOCATIONS = ["user", "auto", "system"];
+
+export function parseFrontmatter(content: string): Frontmatter | null {
   if (!content.startsWith("---")) return null;
   const end = content.indexOf("---", 3);
   if (end === -1) return null;
@@ -25,36 +21,61 @@ function parseFM(content: string): Frontmatter | null {
   return result;
 }
 
+export function validateSkillContent(content: string, dirName: string): VR {
+  const r: VR = { errors: [], warnings: [], info: [] };
+  const fm = parseFrontmatter(content);
+  if (!fm) { r.errors.push("Missing YAML frontmatter (must start with ---)"); return r; }
+
+  // Required fields
+  for (const f of ["name", "description"]) {
+    if (!fm[f]) r.errors.push(`Missing required field: ${f}`);
+  }
+
+  // Name must match directory
+  if (fm.name && fm.name !== dirName) r.errors.push(`Name mismatch: '${fm.name}' vs dir '${dirName}'`);
+
+  // Description length warning
+  if (fm.description && fm.description.length < 20) r.warnings.push(`Description very short (${fm.description.length} chars)`);
+
+  // Invocation enum check
+  if (fm.invocation && !VALID_INVOCATIONS.includes(fm.invocation)) {
+    r.warnings.push(`Invalid invocation '${fm.invocation}' (expected: ${VALID_INVOCATIONS.join("|")})`);
+  }
+
+  // Body section check: ## Steps or ## When to Use
+  const body = content.slice(content.indexOf("---", 3) + 3);
+  if (!body.includes("## Steps") && !body.includes("## When to Use")) {
+    r.warnings.push("Missing recommended section: ## Steps or ## When to Use");
+  }
+
+  // Info
+  r.info.push(`${content.split(/\s+/).length} words`);
+  if (fm.type) r.info.push(`type: ${fm.type}`);
+  return r;
+}
+
 function vr(): VR { return { errors: [], warnings: [], info: [] } }
 
-function validateSkills(): { results: Record<string, VR>; count: number } {
+function validateSkills(skillsDir: string): { results: Record<string, VR>; count: number } {
   const results: Record<string, VR> = {};
-  if (!fs.existsSync(SKILLS_DIR)) return { results, count: 0 };
-  const dirs = fs.readdirSync(SKILLS_DIR).filter(d => fs.statSync(path.join(SKILLS_DIR, d)).isDirectory());
+  if (!fs.existsSync(skillsDir)) return { results, count: 0 };
+  const dirs = fs.readdirSync(skillsDir).filter(d => fs.statSync(path.join(skillsDir, d)).isDirectory());
   for (const dir of dirs) {
-    const r = vr();
-    const p = path.join(SKILLS_DIR, dir, "SKILL.md");
-    if (!fs.existsSync(p)) { r.errors.push("Missing SKILL.md"); results[dir] = r; continue; }
+    const p = path.join(skillsDir, dir, "SKILL.md");
+    if (!fs.existsSync(p)) { const r = vr(); r.errors.push("Missing SKILL.md"); results[dir] = r; continue; }
     const content = fs.readFileSync(p, "utf-8");
-    const fm = parseFM(content);
-    if (!fm) { r.errors.push("Missing YAML frontmatter (must start with ---)"); results[dir] = r; continue; }
-    for (const f of ["name", "description"]) if (!fm[f]) r.errors.push(`Missing required field: ${f}`);
-    if (fm.name && fm.name !== dir) r.errors.push(`Name mismatch: '${fm.name}' vs dir '${dir}'`);
-    if (fm.description && fm.description.length < 20) r.warnings.push(`Description very short (${fm.description.length} chars)`);
-    r.info.push(`${content.split(/\s+/).length} words`);
-    if (fm.type) r.info.push(`type: ${fm.type}`);
-    results[dir] = r;
+    results[dir] = validateSkillContent(content, dir);
   }
   return { results, count: dirs.length };
 }
 
-function validateAgents(): { results: Record<string, VR>; count: number } {
+export function validateAgents(agentsDir: string): { results: Record<string, VR>; count: number } {
   const results: Record<string, VR> = {};
-  if (!fs.existsSync(AGENTS_DIR)) return { results, count: 0 };
-  const files = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith(".md"));
+  if (!fs.existsSync(agentsDir)) return { results, count: 0 };
+  const files = fs.readdirSync(agentsDir).filter(f => f.endsWith(".md"));
   for (const file of files) {
     const r = vr();
-    const fm = parseFM(fs.readFileSync(path.join(AGENTS_DIR, file), "utf-8"));
+    const fm = parseFrontmatter(fs.readFileSync(path.join(agentsDir, file), "utf-8"));
     if (!fm) { r.errors.push("Missing YAML frontmatter"); results[file] = r; continue; }
     for (const f of ["name", "description"]) if (!fm[f]) r.errors.push(`Missing required field: ${f}`);
     results[file] = r;
@@ -62,28 +83,65 @@ function validateAgents(): { results: Record<string, VR>; count: number } {
   return { results, count: files.length };
 }
 
-function validateHooks(): VR {
+export function validateHooks(hooksJson: string, root: string): VR {
   const r = vr();
-  if (!fs.existsSync(HOOKS_JSON)) { r.warnings.push("Missing hooks/hooks.json"); return r; }
-  let config: { hooks?: Record<string, Array<{ command: string }>> };
-  try { config = JSON.parse(fs.readFileSync(HOOKS_JSON, "utf-8")); } catch { r.errors.push("Invalid JSON"); return r; }
+  if (!fs.existsSync(hooksJson)) { r.warnings.push("Missing hooks/hooks.json"); return r; }
+  let config: { hooks?: Record<string, unknown[]> };
+  try { config = JSON.parse(fs.readFileSync(hooksJson, "utf-8")); } catch { r.errors.push("Invalid JSON"); return r; }
   let count = 0;
+
+  function checkCommand(cmd: string, evt: string) {
+    count++;
+    const m = cmd.match(/hooks\/[\w.-]+\.sh/);
+    if (m && !fs.existsSync(path.join(root, m[0]))) r.errors.push(`Script not found: ${m[0]} (${evt})`);
+  }
+
   for (const [evt, list] of Object.entries(config.hooks || {})) {
     if (!Array.isArray(list)) continue;
-    for (const h of list) {
-      count++;
-      const m = h.command?.match(/hooks\/[\w.-]+\.sh/);
-      if (m && !fs.existsSync(path.join(ROOT, m[0]))) r.errors.push(`Script not found: ${m[0]} (${evt})`);
+    for (const entry of list) {
+      const e = entry as Record<string, unknown>;
+      // Flat format: { command: "..." }
+      if (typeof e.command === "string") {
+        checkCommand(e.command, evt);
+      }
+      // Nested format: { matcher: "...", hooks: [{ command: "..." }] }
+      if (Array.isArray(e.hooks)) {
+        for (const h of e.hooks) {
+          const hh = h as Record<string, unknown>;
+          if (typeof hh.command === "string") checkCommand(hh.command, evt);
+        }
+      }
     }
   }
   r.info.push(`${count} hooks`); return r;
 }
 
-function validatePlugin(): VR {
+export function validateConsistency(root: string): VR {
   const r = vr();
-  if (!fs.existsSync(PLUGIN_JSON)) { r.errors.push("Missing plugin.json"); return r; }
+  const hooksJson = path.join(root, "hooks", "hooks.json");
+  const agentsDir = path.join(root, "agents");
+
+  // Validate hooks script references
+  const hookR = validateHooks(hooksJson, root);
+  r.errors.push(...hookR.errors);
+  r.warnings.push(...hookR.warnings);
+  r.info.push(...hookR.info);
+
+  // Validate agent frontmatter
+  const { results: agentR } = validateAgents(agentsDir);
+  for (const [file, result] of Object.entries(agentR)) {
+    for (const e of result.errors) r.errors.push(`agents/${file}: ${e}`);
+    for (const w of result.warnings) r.warnings.push(`agents/${file}: ${w}`);
+  }
+
+  return r;
+}
+
+function validatePluginJson(pluginJson: string): VR {
+  const r = vr();
+  if (!fs.existsSync(pluginJson)) { r.errors.push("Missing plugin.json"); return r; }
   let data: Record<string, unknown>;
-  try { data = JSON.parse(fs.readFileSync(PLUGIN_JSON, "utf-8")); } catch { r.errors.push("Invalid JSON"); return r; }
+  try { data = JSON.parse(fs.readFileSync(pluginJson, "utf-8")); } catch { r.errors.push("Invalid JSON"); return r; }
   for (const f of ["name", "version", "description"]) if (!data[f]) r.errors.push(`Missing: ${f}`);
   const v = data.version as string;
   if (v && !/^\d+\.\d+\.\d+$/.test(v)) r.warnings.push(`Version '${v}' not semver`);
@@ -97,32 +155,43 @@ function print(r: VR, indent = 4) {
   for (const i of r.info) console.log(`${p}${C.DIM}ℹ ${i}${C.RESET}`);
 }
 
-const pluginR = validatePlugin();
-const { results: skillR, count: sc } = validateSkills();
-const { results: agentR, count: ac } = validateAgents();
-const hookR = validateHooks();
+// CLI entry point — only runs when executed directly
+const isMain = typeof import.meta.dirname !== "undefined" && process.argv[1]?.endsWith("validate-plugin.ts");
 
-let te = pluginR.errors.length + hookR.errors.length;
-let tw = pluginR.warnings.length + hookR.warnings.length;
-for (const v of Object.values(skillR)) { te += v.errors.length; tw += v.warnings.length; }
-for (const v of Object.values(agentR)) { te += v.errors.length; tw += v.warnings.length; }
+if (isMain) {
+  const ROOT = path.resolve(import.meta.dirname, "..");
+  const SKILLS_DIR = path.join(ROOT, "skills");
+  const AGENTS_DIR = path.join(ROOT, "agents");
+  const PLUGIN_JSON = path.join(ROOT, ".claude-plugin", "plugin.json");
+  const HOOKS_JSON = path.join(ROOT, "hooks", "hooks.json");
 
-console.log(`\n${C.BOLD}${"=".repeat(60)}\n VibeSpec Plugin Validator\n${"=".repeat(60)}${C.RESET}\n`);
-const status = te === 0 ? `${C.GREEN}✓ PASS${C.RESET}` : `${C.RED}✗ FAIL${C.RESET}`;
-console.log(`${C.BOLD}${C.CYAN}┌─ Plugin: vs${C.RESET}  [${sc} skills, ${ac} agents]  ${status}${tw > 0 ? ` ${C.YELLOW}(${tw} warnings)${C.RESET}` : ""}`);
+  const pluginR = validatePluginJson(PLUGIN_JSON);
+  const { results: skillR, count: sc } = validateSkills(SKILLS_DIR);
+  const { results: agentR, count: ac } = validateAgents(AGENTS_DIR);
+  const hookR = validateHooks(HOOKS_JSON, ROOT);
 
-if (pluginR.errors.length || pluginR.warnings.length) { console.log(`  ${C.BOLD}Manifest:${C.RESET}`); print(pluginR); }
-const si = Object.entries(skillR).filter(([,v]) => v.errors.length || v.warnings.length);
-if (si.length) { console.log(`  ${C.BOLD}Skills with issues:${C.RESET}`); for (const [n,v] of si) { console.log(`    ${n}:`); print(v, 6); } }
-const ai = Object.entries(agentR).filter(([,v]) => v.errors.length || v.warnings.length);
-if (ai.length) { console.log(`  ${C.BOLD}Agents with issues:${C.RESET}`); for (const [n,v] of ai) { console.log(`    ${n}:`); print(v, 6); } }
-if (hookR.errors.length || hookR.warnings.length) { console.log(`  ${C.BOLD}Hooks:${C.RESET}`); print(hookR); }
+  let te = pluginR.errors.length + hookR.errors.length;
+  let tw = pluginR.warnings.length + hookR.warnings.length;
+  for (const v of Object.values(skillR)) { te += v.errors.length; tw += v.warnings.length; }
+  for (const v of Object.values(agentR)) { te += v.errors.length; tw += v.warnings.length; }
 
-console.log(`${C.CYAN}└${"─".repeat(59)}${C.RESET}\n`);
-console.log(`${C.BOLD}${"=".repeat(60)}\n Summary\n${"=".repeat(60)}${C.RESET}`);
-console.log(`  Skills:  ${sc}\n  Agents:  ${ac}`);
-const hi = hookR.info.find(i => i.includes("hooks")); if (hi) console.log(`  Hooks:   ${hi}`);
-console.log();
-console.log(te === 0 ? `  ${C.GREEN}${C.BOLD}✓ ALL CHECKS PASSED${C.RESET} (${tw} warnings)` : `  ${C.RED}${C.BOLD}✗ ${te} ERRORS${C.RESET}, ${tw} warnings`);
-console.log();
-process.exit(te > 0 ? 1 : 0);
+  console.log(`\n${C.BOLD}${"=".repeat(60)}\n VibeSpec Plugin Validator\n${"=".repeat(60)}${C.RESET}\n`);
+  const status = te === 0 ? `${C.GREEN}✓ PASS${C.RESET}` : `${C.RED}✗ FAIL${C.RESET}`;
+  console.log(`${C.BOLD}${C.CYAN}┌─ Plugin: vs${C.RESET}  [${sc} skills, ${ac} agents]  ${status}${tw > 0 ? ` ${C.YELLOW}(${tw} warnings)${C.RESET}` : ""}`);
+
+  if (pluginR.errors.length || pluginR.warnings.length) { console.log(`  ${C.BOLD}Manifest:${C.RESET}`); print(pluginR); }
+  const si = Object.entries(skillR).filter(([,v]) => v.errors.length || v.warnings.length);
+  if (si.length) { console.log(`  ${C.BOLD}Skills with issues:${C.RESET}`); for (const [n,v] of si) { console.log(`    ${n}:`); print(v, 6); } }
+  const ai = Object.entries(agentR).filter(([,v]) => v.errors.length || v.warnings.length);
+  if (ai.length) { console.log(`  ${C.BOLD}Agents with issues:${C.RESET}`); for (const [n,v] of ai) { console.log(`    ${n}:`); print(v, 6); } }
+  if (hookR.errors.length || hookR.warnings.length) { console.log(`  ${C.BOLD}Hooks:${C.RESET}`); print(hookR); }
+
+  console.log(`${C.CYAN}└${"─".repeat(59)}${C.RESET}\n`);
+  console.log(`${C.BOLD}${"=".repeat(60)}\n Summary\n${"=".repeat(60)}${C.RESET}`);
+  console.log(`  Skills:  ${sc}\n  Agents:  ${ac}`);
+  const hi = hookR.info.find(i => i.includes("hooks")); if (hi) console.log(`  Hooks:   ${hi}`);
+  console.log();
+  console.log(te === 0 ? `  ${C.GREEN}${C.BOLD}✓ ALL CHECKS PASSED${C.RESET} (${tw} warnings)` : `  ${C.RED}${C.BOLD}✗ ${te} ERRORS${C.RESET}, ${tw} warnings`);
+  console.log();
+  process.exit(te > 0 ? 1 : 0);
+}
