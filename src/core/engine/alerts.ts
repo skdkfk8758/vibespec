@@ -11,6 +11,9 @@ export class AlertsEngine {
   getAlerts(): Alert[] {
     const alerts: Alert[] = [];
 
+    // Load plan_progress once for blocked/completable checks
+    const progress = this.getAllPlanProgress();
+
     for (const task of this.getStaleTasks()) {
       alerts.push({
         type: 'stale',
@@ -20,7 +23,7 @@ export class AlertsEngine {
       });
     }
 
-    for (const plan of this.getBlockedPlans()) {
+    for (const plan of progress.filter(p => p.blocked_tasks > 0)) {
       alerts.push({
         type: 'blocked',
         entity_type: 'plan',
@@ -29,7 +32,7 @@ export class AlertsEngine {
       });
     }
 
-    for (const plan of this.getCompletablePlans()) {
+    for (const plan of progress.filter(p => p.progress_pct === 100 && p.status === 'active')) {
       alerts.push({
         type: 'completable',
         entity_type: 'plan',
@@ -50,8 +53,14 @@ export class AlertsEngine {
     return alerts;
   }
 
+  private getAllPlanProgress(): PlanProgress[] {
+    return this.db
+      .prepare('SELECT * FROM plan_progress')
+      .all() as PlanProgress[];
+  }
+
   getStaleTasks(thresholdDays: number = 3): (Task & { days_stale: number })[] {
-    const rows = this.db
+    return this.db
       .prepare(
         `SELECT t.*, CAST(JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) AS INTEGER) AS days_stale
          FROM tasks t
@@ -61,8 +70,6 @@ export class AlertsEngine {
          HAVING JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) > ?`,
       )
       .all(thresholdDays) as (Task & { days_stale: number })[];
-
-    return rows;
   }
 
   getBlockedPlans(): PlanProgress[] {
@@ -80,7 +87,7 @@ export class AlertsEngine {
   }
 
   getForgottenPlans(thresholdDays: number = 7): (Plan & { days_inactive: number })[] {
-    const rows = this.db
+    return this.db
       .prepare(
         `SELECT p.*, CAST(JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) AS INTEGER) AS days_inactive
          FROM plans p
@@ -93,7 +100,5 @@ export class AlertsEngine {
          HAVING JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) > ?`,
       )
       .all(thresholdDays) as (Plan & { days_inactive: number })[];
-
-    return rows;
   }
 }

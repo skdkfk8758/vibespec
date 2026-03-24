@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { nanoid } from 'nanoid';
+import { generateId } from '../utils.js';
 import type {
   ErrorEntry,
   ErrorKBStats,
@@ -123,7 +123,7 @@ export class ErrorKBEngine {
   }
 
   add(newEntry: NewErrorEntry): ErrorEntry {
-    const id = nanoid(12);
+    const id = generateId();
     const now = new Date().toISOString();
 
     const meta: FrontmatterData = {
@@ -264,27 +264,26 @@ export class ErrorKBEngine {
       top_recurring: [],
     };
 
-    const entries: ErrorEntry[] = [];
+    const entries: Array<{ id: string; title: string; occurrences: number }> = [];
     for (const file of files) {
       const id = path.basename(file, '.md');
-      const entry = this.show(id);
-      if (!entry) continue;
+      const raw = fs.readFileSync(file, 'utf-8');
+      const { meta } = parseFrontmatter(raw);
 
       stats.total++;
-      stats.by_severity[entry.severity]++;
-      stats.by_status[entry.status]++;
-      entries.push(entry);
+      stats.by_severity[meta.severity]++;
+      stats.by_status[meta.status]++;
+      entries.push({ id, title: meta.title, occurrences: meta.occurrences });
     }
 
     stats.top_recurring = entries
       .sort((a, b) => b.occurrences - a.occurrences)
-      .slice(0, 10)
-      .map((e) => ({ id: e.id, title: e.title, occurrences: e.occurrences }));
+      .slice(0, 10);
 
     return stats;
   }
 
-  toErrorEntry(id: string, meta: FrontmatterData, body: string): ErrorEntry {
+  private toErrorEntry(id: string, meta: FrontmatterData, body: string): ErrorEntry {
     return {
       id,
       title: meta.title,

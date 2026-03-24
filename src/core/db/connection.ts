@@ -34,15 +34,13 @@ export function findProjectRoot(startDir: string): string {
 
 export function detectGitContext(): GitContext {
   try {
-    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+    const raw = execSync('git rev-parse --abbrev-ref HEAD --git-dir', {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
-
-    const gitDir = execSync('git rev-parse --git-dir', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+    const lines = raw.split('\n');
+    const branch = lines[0];
+    const gitDir = lines[1] ?? '';
 
     const isWorktree = gitDir.includes('/worktrees/');
     let worktreeName: string | null = null;

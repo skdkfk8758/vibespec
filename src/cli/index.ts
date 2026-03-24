@@ -17,6 +17,7 @@ import { SkillUsageModel } from '../core/models/skill-usage.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage } from './formatters.js';
 import type { TaskStatus, PlanStatus, ErrorSeverity } from '../core/types.js';
+import { VALID_PLAN_STATUSES } from '../core/types.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -38,6 +39,14 @@ function outputError(message: string) {
     console.error(message);
   }
   process.exit(1);
+}
+
+function withErrorHandler(fn: () => void): void {
+  try {
+    fn();
+  } catch (e: unknown) {
+    outputError(e instanceof Error ? e.message : String(e));
+  }
 }
 
 function initModels() {
@@ -95,7 +104,12 @@ plan
   .action((opts: { status?: string; branch?: string }) => {
     const { planModel } = initModels();
     const filter: { status?: PlanStatus; branch?: string } = {};
-    if (opts.status) filter.status = opts.status as PlanStatus;
+    if (opts.status) {
+      if (!VALID_PLAN_STATUSES.includes(opts.status as PlanStatus)) {
+        return outputError(`Invalid status. Must be: ${VALID_PLAN_STATUSES.join(', ')}`);
+      }
+      filter.status = opts.status as PlanStatus;
+    }
     if (opts.branch) filter.branch = opts.branch;
     const plans = planModel.list(Object.keys(filter).length > 0 ? filter : undefined);
     output(plans, formatPlanList(plans));
@@ -132,13 +146,11 @@ plan
   .argument('<id>', 'Plan ID')
   .description('Complete a plan')
   .action((id: string) => {
-    const { lifecycle } = initModels();
-    try {
+    withErrorHandler(() => {
+      const { lifecycle } = initModels();
       const completed = lifecycle.completePlan(id);
       output(completed, `Plan completed: ${completed.id} "${completed.title}"`);
-    } catch (e: unknown) {
-      outputError(e instanceof Error ? e.message : String(e));
-    }
+    });
   });
 
 plan
@@ -146,13 +158,11 @@ plan
   .argument('<id>', 'Plan ID')
   .description('Approve a plan (active → approved)')
   .action((id: string) => {
-    const { planModel } = initModels();
-    try {
+    withErrorHandler(() => {
+      const { planModel } = initModels();
       const approved = planModel.approve(id);
       output(approved, `Plan approved: ${approved.id} "${approved.title}"`);
-    } catch (e: unknown) {
-      outputError(e instanceof Error ? e.message : String(e));
-    }
+    });
   });
 
 plan
@@ -187,13 +197,11 @@ plan
   .argument('<id>', 'Plan ID')
   .description('Delete a draft plan and all its tasks')
   .action((id: string) => {
-    const { planModel } = initModels();
-    try {
+    withErrorHandler(() => {
+      const { planModel } = initModels();
       planModel.delete(id);
       output({ deleted: true, plan_id: id }, `Plan deleted: ${id}`);
-    } catch (e: unknown) {
-      outputError(e instanceof Error ? e.message : String(e));
-    }
+    });
   });
 
 // ── task ───────────────────────────────────────────────────────────────
@@ -212,8 +220,8 @@ task
   .option('--forbidden-patterns <patterns>', 'Comma-separated list of forbidden patterns')
   .description('Create a new task')
   .action((opts: { plan: string; title: string; parent?: string; spec?: string; acceptance?: string; dependsOn?: string; allowedFiles?: string; forbiddenPatterns?: string }) => {
-    const { taskModel } = initModels();
-    try {
+    withErrorHandler(() => {
+      const { taskModel } = initModels();
       const dependsOn = opts.dependsOn ? opts.dependsOn.split(',').map(s => s.trim()) : undefined;
       const allowedFiles = opts.allowedFiles ? opts.allowedFiles.split(',').map(s => s.trim()) : undefined;
       const forbiddenPatterns = opts.forbiddenPatterns ? opts.forbiddenPatterns.split(',').map(s => s.trim()) : undefined;
@@ -226,9 +234,7 @@ task
         forbiddenPatterns,
       });
       output(created, `Created task: ${created.id} "${created.title}" (${created.status})`);
-    } catch (e: unknown) {
-      outputError(e instanceof Error ? e.message : String(e));
-    }
+    });
   });
 
 task
@@ -371,12 +377,10 @@ task
   .description('Delete a task and its subtasks')
   .action((id: string) => {
     const { taskModel } = initModels();
-    try {
+    withErrorHandler(() => {
       taskModel.delete(id);
       output({ deleted: true, task_id: id }, `Task deleted: ${id}`);
-    } catch (e: unknown) {
-      outputError(e instanceof Error ? e.message : String(e));
-    }
+    });
   });
 
 // ── context ────────────────────────────────────────────────────────────
@@ -437,8 +441,12 @@ program
   .argument('<id>', 'Entity ID')
   .description('Show change history')
   .action((type: string, id: string) => {
+    const validTypes = ['plan', 'task'];
+    if (!validTypes.includes(type)) {
+      return outputError(`Invalid entity type. Must be: ${validTypes.join(', ')}`);
+    }
     const { events } = initModels();
-    const eventList = events.getByEntity(type, id);
+    const eventList = events.getByEntity(type as 'plan' | 'task', id);
     output(eventList, formatHistory(eventList));
   });
 
