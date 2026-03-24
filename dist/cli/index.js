@@ -67,8 +67,8 @@ function resolveDbPath() {
 }
 function getDb(dbPath) {
   if (_db) return _db;
-  const path2 = dbPath ?? resolveDbPath();
-  _db = new Database(path2);
+  const path3 = dbPath ?? resolveDbPath();
+  _db = new Database(path3);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   return _db;
@@ -348,6 +348,27 @@ function applyMigrations(db) {
       GROUP BY p.id
     `);
     db.pragma("user_version = 6");
+  }
+  if (version < 7) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS self_improve_rules (
+        id                TEXT PRIMARY KEY,
+        error_kb_id       TEXT,
+        title             TEXT NOT NULL,
+        category          TEXT NOT NULL,
+        rule_path         TEXT NOT NULL,
+        occurrences       INTEGER DEFAULT 0,
+        prevented         INTEGER DEFAULT 0,
+        status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+        created_at        TEXT DEFAULT (datetime('now')),
+        last_triggered_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_self_improve_rules_status ON self_improve_rules(status);
+      CREATE INDEX IF NOT EXISTS idx_self_improve_rules_category ON self_improve_rules(category);
+      CREATE INDEX IF NOT EXISTS idx_self_improve_rules_kb_id ON self_improve_rules(error_kb_id);
+    `);
+    db.pragma("user_version = 7");
   }
 }
 
@@ -942,6 +963,10 @@ ${newEntry.solution}
   }
 };
 
+// src/core/engine/self-improve.ts
+import * as fs2 from "fs";
+import * as path2 from "path";
+
 // src/core/config.ts
 function getConfig(db, key) {
   const row = db.prepare("SELECT value FROM vs_config WHERE key = ?").get(key);
@@ -956,6 +981,160 @@ function deleteConfig(db, key) {
 function listConfig(db) {
   return db.prepare("SELECT key, value FROM vs_config ORDER BY key").all();
 }
+
+// src/core/engine/self-improve.ts
+var RULES_DIR = ".claude/rules";
+var ARCHIVE_DIR = ".claude/rules/archive";
+var PENDING_DIR = ".claude/self-improve/pending";
+var PROCESSED_DIR = ".claude/self-improve/processed";
+var CONFIG_LAST_RUN = "self_improve_last_run";
+var MAX_ACTIVE_RULES = 30;
+var SelfImproveEngine = class {
+  db;
+  projectRoot;
+  rulesDir;
+  archiveDir;
+  pendingDir;
+  processedDir;
+  constructor(db, projectRoot) {
+    this.db = db;
+    this.projectRoot = projectRoot;
+    this.rulesDir = path2.join(projectRoot, RULES_DIR);
+    this.archiveDir = path2.join(projectRoot, ARCHIVE_DIR);
+    this.pendingDir = path2.join(projectRoot, PENDING_DIR);
+    this.processedDir = path2.join(projectRoot, PROCESSED_DIR);
+    this.ensureDirectories();
+  }
+  ensureDirectories() {
+    fs2.mkdirSync(this.rulesDir, { recursive: true });
+    fs2.mkdirSync(this.archiveDir, { recursive: true });
+    fs2.mkdirSync(this.pendingDir, { recursive: true });
+    fs2.mkdirSync(this.processedDir, { recursive: true });
+  }
+  createRule(newRule) {
+    const id = generateId();
+    const slug = newRule.title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
+    const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
+    const rulePath = path2.join(RULES_DIR, filename);
+    const fullPath = path2.join(this.projectRoot, rulePath);
+    fs2.writeFileSync(fullPath, newRule.ruleContent, "utf-8");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(`
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, now);
+    return {
+      id,
+      error_kb_id: newRule.error_kb_id ?? null,
+      title: newRule.title,
+      category: newRule.category,
+      rule_path: rulePath,
+      occurrences: 0,
+      prevented: 0,
+      status: "active",
+      created_at: now,
+      last_triggered_at: null
+    };
+  }
+  listRules(status) {
+    if (status) {
+      return this.db.prepare(
+        "SELECT * FROM self_improve_rules WHERE status = ? ORDER BY created_at DESC"
+      ).all(status);
+    }
+    return this.db.prepare(
+      "SELECT * FROM self_improve_rules ORDER BY status ASC, created_at DESC"
+    ).all();
+  }
+  getRule(id) {
+    return this.db.prepare(
+      "SELECT * FROM self_improve_rules WHERE id = ?"
+    ).get(id) ?? null;
+  }
+  archiveRule(id) {
+    const rule = this.getRule(id);
+    if (!rule || rule.status === "archived") return false;
+    const srcPath = path2.join(this.projectRoot, rule.rule_path);
+    const destPath = path2.join(this.archiveDir, path2.basename(rule.rule_path));
+    if (fs2.existsSync(srcPath)) {
+      fs2.renameSync(srcPath, destPath);
+    }
+    const newRulePath = path2.join(ARCHIVE_DIR, path2.basename(rule.rule_path));
+    this.db.prepare(
+      "UPDATE self_improve_rules SET status = ?, rule_path = ? WHERE id = ?"
+    ).run("archived", newRulePath, id);
+    return true;
+  }
+  incrementPrevented(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
+  updateOccurrences(id, occurrences) {
+    this.db.prepare(
+      "UPDATE self_improve_rules SET occurrences = ? WHERE id = ?"
+    ).run(occurrences, id);
+  }
+  getPendingCount() {
+    if (!fs2.existsSync(this.pendingDir)) return 0;
+    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).length;
+  }
+  listPending() {
+    if (!fs2.existsSync(this.pendingDir)) return [];
+    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).map((f) => path2.join(this.pendingDir, f)).sort();
+  }
+  movePendingToProcessed(pendingPath) {
+    const filename = path2.basename(pendingPath);
+    const destPath = path2.join(this.processedDir, filename);
+    if (fs2.existsSync(pendingPath)) {
+      fs2.renameSync(pendingPath, destPath);
+    }
+  }
+  getLastRunTimestamp() {
+    return getConfig(this.db, CONFIG_LAST_RUN);
+  }
+  setLastRunTimestamp() {
+    setConfig(this.db, CONFIG_LAST_RUN, (/* @__PURE__ */ new Date()).toISOString());
+  }
+  getRuleStats() {
+    const row = this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
+        COALESCE(SUM(prevented), 0) AS total_prevented
+      FROM self_improve_rules
+    `).get();
+    return {
+      active: row?.active ?? 0,
+      archived: row?.archived ?? 0,
+      total_prevented: row?.total_prevented ?? 0
+    };
+  }
+  getEffectiveness(id) {
+    const rule = this.getRule(id);
+    if (!rule) return 0;
+    const total = rule.prevented + rule.occurrences;
+    if (total === 0) return 0;
+    return rule.prevented / total;
+  }
+  isAtCapacity() {
+    const stats = this.getRuleStats();
+    return stats.active >= MAX_ACTIVE_RULES;
+  }
+  getMaxActiveRules() {
+    return MAX_ACTIVE_RULES;
+  }
+  getRulesDir() {
+    return this.rulesDir;
+  }
+  getPendingDir() {
+    return this.pendingDir;
+  }
+  getProcessedDir() {
+    return this.processedDir;
+  }
+};
 
 // src/core/models/task.ts
 var ACTION_VERBS_KO = /(?:반환|표시|생성|포함|존재|동작|출력|실행|저장|삭제|변경|확인|처리|전달|호출|설정|검증|수행|발생|제공|응답|보여|보고|판정|매핑|이동)(?:한다|된다|하다|된다|합니다|됩니다|해야)/;
@@ -2276,6 +2455,63 @@ errorKb.command("delete").argument("<id>", "Error ID").description("Delete an er
   const deleted = engine.delete(id);
   if (!deleted) return outputError(`Error not found: ${id}`);
   output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
+});
+var selfImprove = program.command("self-improve").description("Self-improve rules management");
+function getSelfImproveEngine() {
+  const db = getDb();
+  initSchema(db);
+  const root = findProjectRoot(process.cwd());
+  return new SelfImproveEngine(db, root);
+}
+selfImprove.command("status").description("Show self-improve status (pending, rules, last run)").action(() => {
+  const engine = getSelfImproveEngine();
+  const pending = engine.getPendingCount();
+  const stats = engine.getRuleStats();
+  const lastRun = engine.getLastRunTimestamp();
+  const data = { pending, rules: stats, last_run: lastRun };
+  if (jsonMode) {
+    output(data);
+  } else {
+    const lines = [
+      `Pending: ${pending}\uAC74`,
+      `Rules: active ${stats.active}, archived ${stats.archived}, prevented ${stats.total_prevented}`,
+      `Last run: ${lastRun ?? "never"}`
+    ];
+    if (stats.active > engine.getMaxActiveRules()) {
+      lines.push(`\u26A0 \uD65C\uC131 \uADDC\uCE59\uC774 ${engine.getMaxActiveRules()}\uAC1C \uC0C1\uD55C\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4.`);
+    }
+    output(data, lines.join("\n"));
+  }
+});
+var rules = selfImprove.command("rules").description("Manage self-improve rules");
+rules.command("list").option("--status <status>", "Filter by status (active, archived)").description("List self-improve rules").action((opts) => {
+  const engine = getSelfImproveEngine();
+  const status = opts.status;
+  const ruleList = engine.listRules(status);
+  if (ruleList.length === 0) {
+    output(ruleList, "No rules found.");
+    return;
+  }
+  if (jsonMode) {
+    output(ruleList);
+  } else {
+    const lines = ruleList.map(
+      (r) => `[${r.status}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
+    );
+    output(ruleList, lines.join("\n"));
+  }
+});
+rules.command("show").argument("<id>", "Rule ID").description("Show rule details").action((id) => {
+  const engine = getSelfImproveEngine();
+  const rule = engine.getRule(id);
+  if (!rule) return outputError(`Rule not found: ${id}`);
+  output(rule);
+});
+rules.command("archive").argument("<id>", "Rule ID").description("Archive a rule").action((id) => {
+  const engine = getSelfImproveEngine();
+  const result = engine.archiveRule(id);
+  if (!result) return outputError(`Rule not found or already archived: ${id}`);
+  output({ archived: true, rule_id: id }, `Rule archived: ${id}`);
 });
 program.command("skill-log").argument("<name>", "Skill name to record").option("--plan-id <id>", "Plan ID to associate").option("--session-id <id>", "Session ID to associate").description("Record a skill usage").action((name, opts) => {
   const { skillUsageModel } = initModels();

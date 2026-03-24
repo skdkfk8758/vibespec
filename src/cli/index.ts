@@ -7,6 +7,7 @@ import { AlertsEngine } from '../core/engine/alerts.js';
 import { StatsEngine } from '../core/engine/stats.js';
 import { InsightsEngine } from '../core/engine/insights.js';
 import { ErrorKBEngine } from '../core/engine/error-kb.js';
+import { SelfImproveEngine } from '../core/engine/self-improve.js';
 import { getConfig, setConfig, deleteConfig, listConfig } from '../core/config.js';
 import { TaskModel } from '../core/models/task.js';
 import { EventModel } from '../core/models/event.js';
@@ -645,6 +646,87 @@ errorKb
     const deleted = engine.delete(id);
     if (!deleted) return outputError(`Error not found: ${id}`);
     output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
+  });
+
+// ── self-improve ─────────────────────────────────────────────────────
+
+const selfImprove = program.command('self-improve').description('Self-improve rules management');
+
+function getSelfImproveEngine(): SelfImproveEngine {
+  const db = getDb();
+  initSchema(db);
+  const root = findProjectRoot(process.cwd());
+  return new SelfImproveEngine(db, root);
+}
+
+selfImprove
+  .command('status')
+  .description('Show self-improve status (pending, rules, last run)')
+  .action(() => {
+    const engine = getSelfImproveEngine();
+    const pending = engine.getPendingCount();
+    const stats = engine.getRuleStats();
+    const lastRun = engine.getLastRunTimestamp();
+    const data = { pending, rules: stats, last_run: lastRun };
+    if (jsonMode) {
+      output(data);
+    } else {
+      const lines = [
+        `Pending: ${pending}건`,
+        `Rules: active ${stats.active}, archived ${stats.archived}, prevented ${stats.total_prevented}`,
+        `Last run: ${lastRun ?? 'never'}`,
+      ];
+      if (stats.active > engine.getMaxActiveRules()) {
+        lines.push(`⚠ 활성 규칙이 ${engine.getMaxActiveRules()}개 상한을 초과했습니다.`);
+      }
+      output(data, lines.join('\n'));
+    }
+  });
+
+const rules = selfImprove.command('rules').description('Manage self-improve rules');
+
+rules
+  .command('list')
+  .option('--status <status>', 'Filter by status (active, archived)')
+  .description('List self-improve rules')
+  .action((opts: { status?: string }) => {
+    const engine = getSelfImproveEngine();
+    const status = opts.status as 'active' | 'archived' | undefined;
+    const ruleList = engine.listRules(status);
+    if (ruleList.length === 0) {
+      output(ruleList, 'No rules found.');
+      return;
+    }
+    if (jsonMode) {
+      output(ruleList);
+    } else {
+      const lines = ruleList.map(r =>
+        `[${r.status}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
+      );
+      output(ruleList, lines.join('\n'));
+    }
+  });
+
+rules
+  .command('show')
+  .argument('<id>', 'Rule ID')
+  .description('Show rule details')
+  .action((id: string) => {
+    const engine = getSelfImproveEngine();
+    const rule = engine.getRule(id);
+    if (!rule) return outputError(`Rule not found: ${id}`);
+    output(rule);
+  });
+
+rules
+  .command('archive')
+  .argument('<id>', 'Rule ID')
+  .description('Archive a rule')
+  .action((id: string) => {
+    const engine = getSelfImproveEngine();
+    const result = engine.archiveRule(id);
+    if (!result) return outputError(`Rule not found or already archived: ${id}`);
+    output({ archived: true, rule_id: id }, `Rule archived: ${id}`);
   });
 
 // ── skill-log ─────────────────────────────────────────────────────────
