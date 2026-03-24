@@ -117,11 +117,16 @@ EOF
 
 ### Scope 결정
 
-1. 변경 파일의 주요 디렉토리에서 추출
+1. **파일 경로 기반 추출** (기본):
    - `src/auth/login.ts` → `auth`
    - `agents/tdd-implementer.md` → `tdd-implementer`
-2. 여러 디렉토리에 걸치면 가장 상위 공통 모듈
-3. 프로젝트 전반 변경 → `project`
+2. **diff 내용 기반 보정** (경로만으로 부족할 때):
+   - `git diff`의 실제 변경 내용(함수명, 클래스명, 모듈 import)을 분석하세요
+   - 같은 디렉토리 내 파일이라도 서로 다른 기능(함수/클래스)을 수정했으면 별도 scope로 분리
+   - 서로 다른 디렉토리 파일이라도 동일 모듈/기능을 수정했으면 하나의 scope로 통합
+   - 예: `src/api/user.ts`와 `src/models/user.ts`가 모두 `UserProfile` 관련 변경이면 → `user-profile`
+3. 여러 디렉토리에 걸치면 가장 상위 공통 모듈
+4. 프로젝트 전반 변경 → `project`
 
 ## Rules
 
@@ -130,7 +135,12 @@ EOF
 - NEVER use `git add -A` or `git add .` — 항상 파일을 명시적으로 지정
 - 논리적으로 무관한 변경을 하나의 커밋에 섞지 않음
 - 테스트 파일은 대응하는 구현 변경과 같은 커밋에 포함
-- staged된 파일이 이미 있으면 해당 파일을 첫 번째 그룹으로 우선 배치
+- staged된 파일이 이미 있으면 아래 절차를 따르세요:
+  1. 기존 staged 내용과 unstaged 변경사항을 각각 요약하여 사용자에게 보여주세요
+  2. AskUserQuestion으로 처리 방식을 확인하세요:
+     - "staged 내용만 먼저 커밋" — staged 변경사항을 별도 커밋으로 분리하고, 나머지는 이후 Phase 3에서 분석
+     - "전체 통합 분석" — staged를 unstage(`git reset`)한 뒤 모든 변경사항을 함께 논리 그룹화
+     - "staged 유지하고 나머지만 커밋" — staged 변경사항은 그대로 두고 unstaged만 분석/커밋
 - 태스크 상태(done 등)는 변경하지 않음 — 태스크 라이프사이클은 vs-next가 관리
 
 ## 다음 단계
