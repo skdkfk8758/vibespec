@@ -1,6 +1,6 @@
 ---
 name: error-kb
-description: "에러 지식 베이스 검색 및 기록. 에러 발생 시 과거 해결책 조회, 디버깅 완료 후 새 에러 자동 기록. Use when encountering errors, test failures, build errors, or after debugging to record solutions. Also use when starting implementation to check for known error patterns."
+description: "Use when encountering errors, test failures, or build errors to search past solutions. Also use after debugging to record new error entries, or before implementation to check known error patterns. 에러 지식 베이스 검색 및 기록."
 invocation: user
 ---
 
