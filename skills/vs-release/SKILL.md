@@ -81,7 +81,12 @@ git log --oneline v{current}..HEAD
    - `test` → **테스트**
    - `docs` → **문서**
    - `chore`, `ci` 등 → **기타**
-2. 각 항목 형식: `- **{scope}**: {한글 설명} ({short_hash})`
+2. **복합 변경 분류 규칙** — 하나의 커밋에 여러 타입이 혼재된 경우 (예: feat+refactor, fix+perf):
+   - 커밋 메시지의 **주요 타입**(접두사)을 기준으로 분류하세요
+   - 보조 타입은 설명에 괄호로 포함하세요: `- **{scope}**: {한글 설명} (리팩토링 포함) ({short_hash})`
+   - 타입 우선순위: `feat` > `fix` > `perf` > `refactor` > 나머지
+   - 예: `feat(auth)!: 인증 리팩토링 및 OAuth 추가` → **새 기능**에 분류, 설명에 "리팩토링 포함" 표기
+3. 각 항목 형식: `- **{scope}**: {한글 설명} ({short_hash})`
 3. CHANGELOG.md 최상단에 새 섹션 추가 (기존 내용 유지)
 
 ```markdown
@@ -139,6 +144,12 @@ EOF
 | 커밋 | {commit_count}개 포함 |
 | 태그 | v{next} |
 | Release | {github_release_url 또는 "로컬만"} |
+
+### 마켓플레이스 반영 안내
+npm publish 또는 GitHub Release 이후 마켓플레이스에 반영되기까지의 과정:
+- GitHub Release가 생성되면, 마켓플레이스 저장소(`vibespec-marketplace`)의 `marketplace.json`에 새 버전이 반영되어야 합니다
+- 마켓플레이스 저장소가 별도인 경우: `marketplace.json`의 version 필드를 업데이트하고 push하세요
+- 사용자에게 안내: "마켓플레이스 사용자는 `/vs-update`로 새 버전을 받을 수 있습니다"
 ```
 
 ## Rules

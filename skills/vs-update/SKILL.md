@@ -19,6 +19,18 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
    ```bash
    cd ~/.claude/plugins/marketplaces/vibespec-marketplace && git fetch origin && git reset --hard origin/main
    ```
+   - **네트워크 실패 시**: `git fetch`가 실패하면 **1회 재시도**하세요
+     ```bash
+     cd ~/.claude/plugins/marketplaces/vibespec-marketplace && git fetch origin
+     ```
+   - 재시도도 실패하면 **오프라인 모드**로 전환하고 다음을 안내하세요:
+     ```
+     네트워크 연결에 실패했습니다. 오프라인 모드로 전환합니다.
+     - 현재 버전(v{current_version})이 유지됩니다
+     - 네트워크 복구 후 `/vs-update`를 다시 실행하세요
+     - 수동 업데이트: cd ~/.claude/plugins/marketplaces/vibespec-marketplace && git pull origin main
+     ```
+   - 오프라인 모드에서는 이후 단계를 실행하지 않고 STOP하세요
    - 갱신 후 `.claude-plugin/marketplace.json`에서 최신 version을 읽으세요
    - 현재 설치된 버전과 동일하면 STOP: "이미 최신 버전입니다 (v{version})."
 
@@ -69,9 +81,11 @@ VibeSpec 플러그인을 GitHub 최신 커밋으로 업데이트합니다.
 5. **레지스트리 업데이트**
    - `~/.claude/plugins/installed_plugins.json`의 `vibespec@vibespec-marketplace` 항목을 업데이트하세요:
      - `installPath` → 새 캐시 디렉토리 경로
+     - `previousVersion` → 업데이트 전 버전 (롤백 참조용)
      - `version` → 새 버전
      - `lastUpdated` → 현재 ISO 타임스탬프
      - `gitCommitSha` → 새 커밋 SHA
+   - **롤백 정보 보존**: `previousVersion` 필드에 이전 버전을 기록하여, 문제 발생 시 사용자가 어떤 버전으로 돌아가야 하는지 참조할 수 있도록 하세요
 
 6. **이전 캐시 정리**
    - 이전 버전의 캐시 디렉토리를 삭제하세요:

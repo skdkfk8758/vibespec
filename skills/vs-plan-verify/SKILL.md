@@ -45,6 +45,9 @@ invocation: user
    - 있으면 `npm test`를 실행하세요
    - 없으면 `SKIP` 처리하세요
    - 결과: exit code, 통과/실패 테스트 수
+   - **부분 실패 판정**: 실패한 테스트가 있을 경우 git blame/log로 해당 테스트의 추가 시점을 확인하세요
+     - 이번 플랜에서 **새로 추가된 테스트만** 실패 → `WARN` (신규 테스트 불안정)
+     - **기존 테스트**가 실패 → `FAIL` (회귀 발생)
 
    **b. 빌드:**
    - `package.json`의 build 스크립트를 확인하세요
@@ -70,15 +73,19 @@ invocation: user
 
 4. **주의 태스크 집계**
    - `has_concerns: true`로 완료된 태스크 목록을 수집하세요 (metrics 필드 확인)
+   - 각 concern의 **severity를 분류**하세요:
+     - **critical**: 보안 취약점, 데이터 손실 가능성, 핵심 기능 미동작 → FAIL 요소로 취급
+     - **minor**: 코드 스타일, 경미한 성능 이슈, 개선 권고사항 → WARN 요소로 취급
+   - concern 내용(description)에서 severity를 판단하되, 명시되지 않은 경우 minor로 간주하세요
    - skipped 태스크와 사유를 수집하세요
    - blocked 태스크가 있으면 사유를 수집하세요
 
 5. **최종 판정**
 
    ```
-   PASS = 미완료 태스크 없음 AND 회귀 테스트 전체 통과(또는 SKIP) AND success criteria 전항목 PASS
-   WARN = 미완료 태스크 없음 AND 회귀 테스트 통과 AND (success criteria에 WARN 존재 OR concerns 태스크 존재 OR skipped 태스크 존재)
-   FAIL = 미완료 태스크 존재 OR 회귀 테스트 실패 OR success criteria에 FAIL 존재
+   PASS = 미완료 태스크 없음 AND 회귀 테스트 전체 통과(또는 SKIP) AND success criteria 전항목 PASS AND critical concerns 없음
+   WARN = 미완료 태스크 없음 AND 회귀 테스트 통과(또는 신규 테스트만 실패) AND (success criteria에 WARN 존재 OR minor concerns 존재 OR skipped 태스크 존재)
+   FAIL = 미완료 태스크 존재 OR 기존 테스트 실패(회귀) OR success criteria에 FAIL 존재 OR critical concerns 존재
    ```
 
 6. **리포트 출력**
@@ -105,7 +112,8 @@ invocation: user
    | 1 | {criteria} | [PASS|WARN|FAIL] | {근거} |
 
    ### 주의 사항
-   - concerns 태스크: [{task_id}: {title}] (없으면 "없음")
+   - critical concerns: [{task_id}: {title} — {내용}] (없으면 "없음")
+   - minor concerns: [{task_id}: {title} — {내용}] (없으면 "없음")
    - skipped 태스크: [{task_id}: {title} — {사유}] (없으면 "없음")
 
    ### 요약
@@ -139,8 +147,23 @@ invocation: user
    - "검증 실패 항목이 있습니다. 어떻게 진행할까요?"
    - 선택지:
      - "실패 항목 수정" → 실패 원인별 가이드 제공
-     - "강제 완료" → `vs plan complete <plan_id> --json`을 Bash 도구로 실행 (경고 포함)
+     - "강제 완료" → 아래 **강제 완료 절차**를 따름
      - "유지" → 아무 작업 안 함
+
+   **강제 완료 절차** (FAIL 상태에서 "강제 완료" 선택 시):
+   1. 명시적 위험 경고를 출력하세요:
+      ```
+      ⚠️ 경고: 다음 검증 실패 항목이 해결되지 않은 상태로 플랜을 완료합니다.
+      - {실패 항목 1}
+      - {실패 항목 2}
+      이로 인해 회귀 버그, 프로덕션 장애 등의 위험이 발생할 수 있습니다.
+      ```
+   2. `AskUserQuestion`으로 강제 완료 사유를 반드시 입력받으세요:
+      - "강제 완료 사유를 입력해 주세요 (예: '해당 테스트는 다음 스프린트에서 수정 예정')"
+   3. 사유를 플랜 완료 시 기록하세요:
+      ```bash
+      vs plan complete <plan_id> --json --note "강제 완료: {사용자 입력 사유}"
+      ```
 
 ## Rules
 
