@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
-import { nanoid } from 'nanoid';
 import type { SkillUsage, SkillStats } from '../types.js';
+import { generateId } from '../utils.js';
 
 export class SkillUsageModel {
   private db: Database.Database;
@@ -10,7 +10,7 @@ export class SkillUsageModel {
   }
 
   record(skillName: string, opts?: { planId?: string; sessionId?: string }): SkillUsage {
-    const id = nanoid(12);
+    const id = generateId();
     const planId = opts?.planId ?? null;
     const sessionId = opts?.sessionId ?? null;
     const createdAt = new Date().toISOString().replace('T', ' ').slice(0, 19);

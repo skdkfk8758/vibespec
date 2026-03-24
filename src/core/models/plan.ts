@@ -1,8 +1,8 @@
 import type Database from 'better-sqlite3';
-import { nanoid } from 'nanoid';
 import type { Plan, PlanStatus } from '../types.js';
 import type { EventModel } from './event.js';
 import { detectGitContext } from '../db/connection.js';
+import { generateId, buildUpdateQuery } from '../utils.js';
 
 export class PlanModel {
   private db: Database.Database;
@@ -14,21 +14,25 @@ export class PlanModel {
   }
 
   create(title: string, spec?: string, summary?: string): Plan {
-    const id = nanoid(12);
+    const id = generateId();
     const ctx = detectGitContext();
-    const stmt = this.db.prepare(
+    this.db.prepare(
       `INSERT INTO plans (id, title, status, spec, summary, branch, worktree_name) VALUES (?, ?, 'draft', ?, ?, ?, ?)`
-    );
-    stmt.run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
-    const plan = this.getById(id)!;
+    ).run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
+    const plan = this.requireById(id);
     this.events?.record('plan', plan.id, 'created', null, JSON.stringify({ title, status: 'draft', branch: ctx.branch }));
     return plan;
   }
 
   getById(id: string): Plan | null {
-    const stmt = this.db.prepare(`SELECT * FROM plans WHERE id = ?`);
-    const row = stmt.get(id) as Plan | undefined;
+    const row = this.db.prepare(`SELECT * FROM plans WHERE id = ?`).get(id) as Plan | undefined;
     return row ?? null;
+  }
+
+  private requireById(id: string): Plan {
+    const plan = this.getById(id);
+    if (!plan) throw new Error(`Plan not found: ${id}`);
+    return plan;
   }
 
   list(filter?: { status?: PlanStatus; branch?: string }): Plan[] {
@@ -45,31 +49,14 @@ export class PlanModel {
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const stmt = this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`);
-    return stmt.all(...params) as Plan[];
+    return this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`).all(...params) as Plan[];
   }
 
   update(id: string, fields: Partial<Pick<Plan, 'title' | 'summary' | 'spec'>>): Plan {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
+    const plan = this.requireById(id);
 
-    const sets: string[] = [];
-    const values: unknown[] = [];
-
-    if (fields.title !== undefined) {
-      sets.push('title = ?');
-      values.push(fields.title);
-    }
-    if (fields.summary !== undefined) {
-      sets.push('summary = ?');
-      values.push(fields.summary);
-    }
-    if (fields.spec !== undefined) {
-      sets.push('spec = ?');
-      values.push(fields.spec);
-    }
-
-    if (sets.length === 0) return plan;
+    const query = buildUpdateQuery('plans', id, fields);
+    if (!query) return plan;
 
     const oldFields: Record<string, unknown> = {};
     const newFields: Record<string, unknown> = {};
@@ -80,77 +67,62 @@ export class PlanModel {
       }
     }
 
-    values.push(id);
-    const stmt = this.db.prepare(`UPDATE plans SET ${sets.join(', ')} WHERE id = ?`);
-    stmt.run(...values);
+    this.db.prepare(query.sql).run(...query.params);
     this.events?.record('plan', id, 'updated', JSON.stringify(oldFields), JSON.stringify(newFields));
-    return this.getById(id)!;
+    return this.requireById(id);
+  }
+
+  private transitionStatus(
+    id: string,
+    newStatus: PlanStatus,
+    eventType: 'activated' | 'completed' | 'approved' | 'archived',
+    guard?: (plan: Plan) => void,
+    extra?: string,
+  ): Plan {
+    const plan = this.requireById(id);
+    if (guard) guard(plan);
+    const oldStatus = plan.status;
+
+    const sql = extra
+      ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?`
+      : `UPDATE plans SET status = ? WHERE id = ?`;
+    this.db.prepare(sql).run(newStatus, id);
+
+    this.events?.record('plan', id, eventType,
+      JSON.stringify({ status: oldStatus }),
+      JSON.stringify({ status: newStatus }),
+    );
+    return this.requireById(id);
   }
 
   activate(id: string): Plan {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
-    const oldStatus = plan.status;
-
-    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
-    stmt.run('active', id);
-    this.events?.record('plan', id, 'activated', JSON.stringify({ status: oldStatus }), JSON.stringify({ status: 'active' }));
-    return this.getById(id)!;
+    return this.transitionStatus(id, 'active', 'activated');
   }
 
   complete(id: string): Plan {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
-    const oldStatus = plan.status;
-
-    const stmt = this.db.prepare(
-      `UPDATE plans SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`
-    );
-    stmt.run(id);
-    this.events?.record('plan', id, 'completed', JSON.stringify({ status: oldStatus }), JSON.stringify({ status: 'completed' }));
-    return this.getById(id)!;
-  }
-
-  delete(id: string): void {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
-    if (plan.status !== 'draft') {
-      throw new Error(`Only draft plans can be deleted. Current status: ${plan.status}`);
-    }
-    // Delete events referencing tasks in this plan
-    this.db.prepare(
-      'DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)',
-    ).run(id);
-    // Delete events referencing the plan itself
-    this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
-    // Delete tasks (FK constraint)
-    this.db.prepare('DELETE FROM tasks WHERE plan_id = ?').run(id);
-    // Delete the plan
-    this.db.prepare('DELETE FROM plans WHERE id = ?').run(id);
+    return this.transitionStatus(id, 'completed', 'completed', undefined, 'completed_at = CURRENT_TIMESTAMP');
   }
 
   approve(id: string): Plan {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
-    if (plan.status !== 'active') {
-      throw new Error(`Only active plans can be approved. Current status: ${plan.status}`);
-    }
-    const oldStatus = plan.status;
-
-    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
-    stmt.run('approved', id);
-    this.events?.record('plan', id, 'approved', JSON.stringify({ status: oldStatus }), JSON.stringify({ status: 'approved' }));
-    return this.getById(id)!;
+    return this.transitionStatus(id, 'approved', 'approved', (plan) => {
+      if (plan.status !== 'active') {
+        throw new Error(`Only active plans can be approved. Current status: ${plan.status}`);
+      }
+    });
   }
 
   archive(id: string): Plan {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
-    const oldStatus = plan.status;
+    return this.transitionStatus(id, 'archived', 'archived');
+  }
 
-    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
-    stmt.run('archived', id);
-    this.events?.record('plan', id, 'archived', JSON.stringify({ status: oldStatus }), JSON.stringify({ status: 'archived' }));
-    return this.getById(id)!;
+  delete(id: string): void {
+    const plan = this.requireById(id);
+    if (plan.status !== 'draft') {
+      throw new Error(`Only draft plans can be deleted. Current status: ${plan.status}`);
+    }
+    this.db.prepare('DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)').run(id);
+    this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
+    this.db.prepare('DELETE FROM tasks WHERE plan_id = ?').run(id);
+    this.db.prepare('DELETE FROM plans WHERE id = ?').run(id);
   }
 }

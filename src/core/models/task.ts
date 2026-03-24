@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
-import { nanoid } from 'nanoid';
 import type { Task, TaskStatus, TaskTreeNode, Wave } from '../types.js';
 import type { EventModel } from './event.js';
+import { generateId } from '../utils.js';
 
 export class TaskModel {
   private events?: EventModel;
@@ -23,7 +23,7 @@ export class TaskModel {
       forbiddenPatterns?: string[];
     },
   ): Task {
-    const id = nanoid(12);
+    const id = generateId();
     let depth = 0;
 
     if (opts?.parentId) {
@@ -211,15 +211,9 @@ export class TaskModel {
   delete(id: string): void {
     const task = this.getById(id);
     if (!task) throw new Error(`Task not found: ${id}`);
-    // Delete events for child tasks
-    this.db.prepare(
-      'DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)',
-    ).run(id);
-    // Delete child tasks
+    this.db.prepare('DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)').run(id);
     this.db.prepare('DELETE FROM tasks WHERE parent_id = ?').run(id);
-    // Delete events for this task
     this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
-    // Delete the task
     this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
     this.events?.record('task', id, 'deleted', JSON.stringify({ title: task.title }), null);
   }
@@ -229,51 +223,40 @@ export class TaskModel {
       return;
     }
 
+    // Batch load all tasks in the plan to avoid N+1 queries
+    const allTasks = this.getByPlan(planId);
+    const taskMap = this.buildTaskMap(allTasks);
+
     for (const depId of dependsOn) {
-      // Self-reference check
       if (depId === taskId) {
         throw new Error(`Task cannot depend on itself: ${depId}`);
       }
 
-      // Existence check
-      const depTask = this.getById(depId);
+      const depTask = taskMap.get(depId);
       if (!depTask) {
+        // Check if it exists in a different plan
+        const crossPlanTask = this.getById(depId);
+        if (crossPlanTask && crossPlanTask.plan_id !== planId) {
+          throw new Error(
+            `Dependency task ${depId} belongs to different plan: ${crossPlanTask.plan_id}`,
+          );
+        }
         throw new Error(`Dependency task not found: ${depId}`);
-      }
-
-      // Same plan check
-      if (depTask.plan_id !== planId) {
-        throw new Error(
-          `Dependency task ${depId} belongs to different plan: ${depTask.plan_id}`,
-        );
       }
     }
 
-    // Circular dependency check (DFS)
-    // From each dependency, follow depends_on chains. If we reach taskId, it's circular.
+    // Circular dependency check (DFS) using in-memory taskMap
     const visited = new Set<string>();
 
     const hasCycle = (currentId: string): boolean => {
-      if (currentId === taskId) {
-        return true;
-      }
-      if (visited.has(currentId)) {
-        return false;
-      }
+      if (currentId === taskId) return true;
+      if (visited.has(currentId)) return false;
       visited.add(currentId);
 
-      const current = this.getById(currentId);
-      if (!current || !current.depends_on) {
-        return false;
-      }
-
-      const deps: string[] = JSON.parse(current.depends_on);
-      for (const dep of deps) {
-        if (hasCycle(dep)) {
-          return true;
-        }
-      }
-      return false;
+      const current = taskMap.get(currentId);
+      if (!current) return false;
+      const deps = this.parseDeps(current);
+      return deps.some(dep => hasCycle(dep));
     };
 
     for (const depId of dependsOn) {
