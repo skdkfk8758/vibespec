@@ -1,6 +1,10 @@
 export type PlanStatus = 'draft' | 'active' | 'approved' | 'completed' | 'archived';
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'skipped';
 export type AlertType = 'stale' | 'blocked' | 'completable' | 'forgotten';
+export type EntityType = 'plan' | 'task';
+export type EventType = 'created' | 'updated' | 'status_changed' | 'activated' | 'completed' | 'approved' | 'archived' | 'deleted' | 'blocked_reason';
+
+export const VALID_PLAN_STATUSES: readonly PlanStatus[] = ['draft', 'active', 'approved', 'completed', 'archived'] as const;
 
 export interface Plan {
   id: string;
@@ -42,9 +46,9 @@ export interface Wave {
 
 export interface Event {
   id: number;
-  entity_type: string;
+  entity_type: EntityType;
   entity_id: string;
-  event_type: string;
+  event_type: EventType;
   old_value: string | null;
   new_value: string | null;
   session_id: string | null;
@@ -110,7 +114,7 @@ export interface TaskMetrics {
   task_id: string;
   plan_id: string;
   duration_min: number | null;
-  final_status: string;
+  final_status: TaskStatus;
   block_reason: string | null;
   impl_status: string | null;
   test_count: number | null;

@@ -1,5 +1,14 @@
 import type Database from 'better-sqlite3';
-import type { Event } from '../types.js';
+import type { EntityType, Event, EventType } from '../types.js';
+
+export interface RecordEventOpts {
+  entityType: EntityType;
+  entityId: string;
+  eventType: EventType;
+  oldValue?: string | null;
+  newValue?: string | null;
+  sessionId?: string | null;
+}
 
 export class EventModel {
   private db: Database.Database;
@@ -8,32 +17,56 @@ export class EventModel {
     this.db = db;
   }
 
+  record(opts: RecordEventOpts): Event;
+  /** @deprecated Use options object overload instead */
   record(
-    entityType: string,
+    entityType: EntityType,
     entityId: string,
-    eventType: string,
+    eventType: EventType,
+    oldValue?: string | null,
+    newValue?: string | null,
+    sessionId?: string | null,
+  ): Event;
+  record(
+    optsOrEntityType: RecordEventOpts | EntityType,
+    entityId?: string,
+    eventType?: EventType,
     oldValue?: string | null,
     newValue?: string | null,
     sessionId?: string | null,
   ): Event {
+    let opts: RecordEventOpts;
+    if (typeof optsOrEntityType === 'object') {
+      opts = optsOrEntityType;
+    } else {
+      opts = {
+        entityType: optsOrEntityType,
+        entityId: entityId!,
+        eventType: eventType!,
+        oldValue,
+        newValue,
+        sessionId,
+      };
+    }
+
     const stmt = this.db.prepare(
       `INSERT INTO events (entity_type, entity_id, event_type, old_value, new_value, session_id)
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
     const result = stmt.run(
-      entityType,
-      entityId,
-      eventType,
-      oldValue ?? null,
-      newValue ?? null,
-      sessionId ?? null,
+      opts.entityType,
+      opts.entityId,
+      opts.eventType,
+      opts.oldValue ?? null,
+      opts.newValue ?? null,
+      opts.sessionId ?? null,
     );
     return this.db
       .prepare(`SELECT * FROM events WHERE id = ?`)
       .get(result.lastInsertRowid) as Event;
   }
 
-  getByEntity(entityType: string, entityId: string): Event[] {
+  getByEntity(entityType: EntityType, entityId: string): Event[] {
     const stmt = this.db.prepare(
       `SELECT * FROM events WHERE entity_type = ? AND entity_id = ? ORDER BY created_at ASC, id ASC`,
     );
