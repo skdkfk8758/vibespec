@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.1] - 2026-03-24
+
+### 버그 수정
+- **schema**: plans.status CHECK 제약에 approved 추가 — DB 마이그레이션 v6 (c316bf1)
+
+### 리팩토링
+- **core**: 공유 유틸리티 모듈 추출 및 타입 안전성 강화 — generateId, hasColumn, buildUpdateQuery, EntityType/EventType union (3ca4ffd)
+- **models**: PlanModel·TaskModel 중복 제거 및 성능 개선 — transitionStatus 추출, N+1 쿼리 제거 (748a1de)
+
+### 성능 개선
+- **engine**: ErrorKB·Alerts 성능 최적화 및 CLI 리팩토링 — getStats 직접 파싱, plan_progress 1회 조회, withErrorHandler 추출 (b22e684)
+
 ## [0.23.0] - 2026-03-24
 
 ### 새 기능
