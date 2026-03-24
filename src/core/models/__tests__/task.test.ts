@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createMemoryDb } from '../../db/connection.js';
 import { initSchema } from '../../db/schema.js';
-import { TaskModel } from '../task.js';
+import { TaskModel, validateAcceptance } from '../task.js';
 import { EventModel } from '../event.js';
 import type Database from 'better-sqlite3';
 
@@ -649,5 +649,134 @@ describe('TaskModel with EventModel', () => {
     expect(statusEvent.event_type).toBe('status_changed');
     expect(statusEvent.old_value).toBe('{"status":"todo"}');
     expect(statusEvent.new_value).toBe('{"status":"done"}');
+  });
+});
+
+describe('TaskModel AC validation integration', () => {
+  let db: Database.Database;
+  let taskModel: TaskModel;
+
+  beforeEach(() => {
+    db = createMemoryDb();
+    initSchema(db);
+    db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run(
+      'test-plan',
+      'Test Plan',
+      'active',
+    );
+    taskModel = new TaskModel(db);
+  });
+
+  it('should include warnings in create() result for vague acceptance', () => {
+    const result = taskModel.create('test-plan', 'Task', {
+      acceptance: '기능 구현',
+    });
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings.length).toBeGreaterThan(0);
+    // Task properties still accessible
+    expect(result.id).toHaveLength(12);
+    expect(result.title).toBe('Task');
+  });
+
+  it('should return empty warnings for valid acceptance', () => {
+    const result = taskModel.create('test-plan', 'Task', {
+      acceptance: '- 정상 입력 시 데이터를 반환한다\n- 에러 시 예외를 발생한다',
+    });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('should return empty warnings when no acceptance provided', () => {
+    const result = taskModel.create('test-plan', 'Task');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('should include warnings in update() result when acceptance is changed', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    const updated = taskModel.update(task.id, {
+      acceptance: '모호한 내용',
+    });
+    expect(updated.warnings.length).toBeGreaterThan(0);
+  });
+
+  it('should return empty warnings in update() when acceptance not changed', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    const updated = taskModel.update(task.id, { title: 'New Title' });
+    expect(updated.warnings).toEqual([]);
+  });
+});
+
+describe('validateAcceptance', () => {
+  it('should return valid with no warnings for null input', () => {
+    const result = validateAcceptance(null);
+    expect(result).toEqual({ valid: true, warnings: [] });
+  });
+
+  it('should return valid with no warnings for undefined input', () => {
+    const result = validateAcceptance(undefined);
+    expect(result).toEqual({ valid: true, warnings: [] });
+  });
+
+  it('should return invalid for empty string', () => {
+    const result = validateAcceptance('');
+    expect(result.valid).toBe(false);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain('비어있습니다');
+  });
+
+  it('should return invalid for whitespace-only string', () => {
+    const result = validateAcceptance('   \n  ');
+    expect(result.valid).toBe(false);
+    expect(result.warnings[0]).toContain('비어있습니다');
+  });
+
+  it('should warn when only one AC item exists', () => {
+    const result = validateAcceptance('- 데이터를 반환한다');
+    expect(result.warnings.some(w => w.includes('1개뿐'))).toBe(true);
+  });
+
+  it('should warn when items lack action verbs', () => {
+    const result = validateAcceptance('- 첫번째 항목\n- 두번째 항목');
+    expect(result.warnings.some(w => w.includes('검증 가능한 동사가 없습니다'))).toBe(true);
+  });
+
+  it('should pass for well-formed Korean AC with action verbs', () => {
+    const ac = `- 빈 입력 시 에러를 반환한다
+- 정상 입력 시 데이터가 저장된다
+- 중복 키 입력 시 경고를 표시한다`;
+    const result = validateAcceptance(ac);
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('should pass for Given-When-Then format', () => {
+    const ac = `- Given a valid user, When login is called, Then a token should be returned
+- Given an invalid password, When login is called, Then an error should be thrown`;
+    const result = validateAcceptance(ac);
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('should pass for English AC with action verbs', () => {
+    const ac = `- The function should return an error for empty input
+- The API must handle concurrent requests`;
+    const result = validateAcceptance(ac);
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('should handle numbered list format', () => {
+    const ac = `1. 데이터를 정상적으로 저장한다
+2. 에러 발생 시 롤백 처리한다`;
+    const result = validateAcceptance(ac);
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('should identify specific unverifiable items by number', () => {
+    const ac = `- 첫번째 기능
+- 정상 입력 시 데이터를 반환한다
+- 세번째 기능`;
+    const result = validateAcceptance(ac);
+    expect(result.warnings.some(w => w.includes('1') && w.includes('3') && w.includes('검증 가능한 동사'))).toBe(true);
   });
 });

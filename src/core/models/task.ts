@@ -3,6 +3,84 @@ import type { Task, TaskStatus, TaskTreeNode, Wave } from '../types.js';
 import type { EventModel } from './event.js';
 import { generateId } from '../utils.js';
 
+export interface AcceptanceValidationResult {
+  valid: boolean;
+  warnings: string[];
+}
+
+const ACTION_VERBS_KO = /(?:반환|표시|생성|포함|존재|동작|출력|실행|저장|삭제|변경|확인|처리|전달|호출|설정|검증|수행|발생|제공|응답|보여|보고|판정|매핑|이동)(?:한다|된다|하다|된다|합니다|됩니다|해야)/;
+const ACTION_VERBS_EN = /\b(?:return|display|create|contain|exist|output|run|save|delete|change|verify|should|must|shall|throw|fail|pass|handle|accept|reject|render|show|send|receive|include|produce|emit|dispatch|call|update|remove|add|store|load|fetch|respond|report|generate|trigger|prevent|allow|deny|block|skip)s?\b/i;
+const GIVEN_WHEN_THEN = /\b(?:given|when|then)\b/i;
+
+export function validateAcceptance(acceptance: string | null | undefined): AcceptanceValidationResult {
+  if (acceptance === null || acceptance === undefined) {
+    return { valid: true, warnings: [] };
+  }
+
+  const trimmed = acceptance.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, warnings: ['AC가 비어있습니다. acceptance criteria를 작성해주세요.'] };
+  }
+
+  // Parse items: split by lines starting with -, *, or numbered (1., 2., etc.)
+  const lines = trimmed.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const items: string[] = [];
+  let currentItem = '';
+
+  for (const line of lines) {
+    if (/^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line)) {
+      if (currentItem) items.push(currentItem);
+      currentItem = line.replace(/^[-*]\s+/, '').replace(/^\d+[.)]\s+/, '');
+    } else if (items.length === 0 && !currentItem) {
+      // First line without list marker - treat as single item
+      currentItem = line;
+    } else {
+      // Continuation of previous item
+      currentItem += ' ' + line;
+    }
+  }
+  if (currentItem) items.push(currentItem);
+
+  // If no list markers found, treat each line as an item
+  if (items.length === 0) {
+    items.push(trimmed);
+  }
+
+  const warnings: string[] = [];
+
+  if (items.length === 1) {
+    warnings.push('AC 항목이 1개뿐입니다. 다양한 시나리오를 커버하는 여러 항목을 작성하세요.');
+  }
+
+  // Check each item for verifiability
+  const unverifiable: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const hasKoVerb = ACTION_VERBS_KO.test(item);
+    const hasEnVerb = ACTION_VERBS_EN.test(item);
+    const hasGWT = GIVEN_WHEN_THEN.test(item);
+
+    if (!hasKoVerb && !hasEnVerb && !hasGWT) {
+      unverifiable.push(i + 1);
+    }
+  }
+
+  if (unverifiable.length > 0) {
+    const itemNums = unverifiable.join(', ');
+    warnings.push(
+      `AC #${itemNums}번 항목에 검증 가능한 동사가 없습니다. ` +
+      `"~한다/~된다" 또는 "should/must" 형태로 기대 동작을 명시하세요.`
+    );
+  }
+
+  return {
+    valid: warnings.length === 0,
+    warnings,
+  };
+}
+
+export type TaskWithWarnings = Task & { warnings: string[] };
+
 export class TaskModel {
   private events?: EventModel;
 
@@ -22,7 +100,8 @@ export class TaskModel {
       allowedFiles?: string[];
       forbiddenPatterns?: string[];
     },
-  ): Task {
+  ): TaskWithWarnings {
+    const { warnings } = validateAcceptance(opts?.acceptance);
     const id = generateId();
     let depth = 0;
 
@@ -70,7 +149,7 @@ export class TaskModel {
 
     const task = this.getById(id)!;
     this.events?.record('task', task.id, 'created', null, JSON.stringify({ title, status: 'todo' }));
-    return task;
+    return Object.assign(task, { warnings });
   }
 
   getById(id: string): Task | null {
@@ -141,7 +220,10 @@ export class TaskModel {
   update(
     id: string,
     fields: Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order' | 'depends_on' | 'allowed_files' | 'forbidden_patterns'>>,
-  ): Task {
+  ): TaskWithWarnings {
+    const { warnings } = fields.acceptance !== undefined
+      ? validateAcceptance(fields.acceptance)
+      : { warnings: [] as string[] };
     const setClauses: string[] = [];
     const values: unknown[] = [];
 
@@ -184,7 +266,7 @@ export class TaskModel {
     }
 
     if (setClauses.length === 0) {
-      return this.getById(id)!;
+      return Object.assign(this.getById(id)!, { warnings });
     }
 
     values.push(id);
@@ -192,7 +274,7 @@ export class TaskModel {
       .prepare(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`)
       .run(...values);
 
-    return this.getById(id)!;
+    return Object.assign(this.getById(id)!, { warnings });
   }
 
   updateStatus(id: string, status: TaskStatus): Task {
