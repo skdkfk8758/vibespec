@@ -126,18 +126,79 @@ argument-hint: "[target-branch]"
       4. "개별 처리" 선택 시 해당 카테고리만 아래 파일별 인터뷰로 전환합니다
 
       **파일별 인터뷰** — 각 충돌 파일에 대해 순서대로:
-      1. 충돌 파일의 전체 내용을 `Read`로 읽어 충돌 마커(`<<<<<<<`, `=======`, `>>>>>>>`)를 찾습니다
-      2. 각 충돌 영역에 대해 **ours** (타겟 브랜치)와 **theirs** (워크트리 브랜치) 내용을 명확히 구분하여 보여줍니다
-      3. `AskUserQuestion`으로 선택지를 제시합니다:
-         - header: "충돌: {파일명}"
-         - 선택지:
-           - label: "ours (타겟)", description: "{타겟 브랜치} 쪽 코드를 유지합니다"
-           - label: "theirs (워크트리)", description: "워크트리에서 작업한 코드를 유지합니다"
-           - label: "수동 편집", description: "직접 내용을 지정합니다"
-      4. 선택에 따라:
-         - **ours/theirs**: `git -C <original-repo> checkout --ours <file>` 또는 `--theirs <file>` 실행
-         - **수동 편집**: 사용자에게 원하는 내용을 물어보고 `Edit`으로 충돌 마커를 제거하며 반영
-      5. 해결된 파일을 staging: `git -C <original-repo> add <file>`
+
+      1. **충돌 파일 분석**:
+         - 충돌 파일의 전체 내용을 `Read`로 읽어 모든 충돌 마커(`<<<<<<<`, `=======`, `>>>>>>>`)를 찾습니다
+         - 충돌 영역(hunk) 수를 카운트합니다
+
+      2. **파일 개요 표시**: 인터뷰 시작 전에 파일 컨텍스트를 보여줍니다:
+         ```
+         📄 {파일명} — 충돌 영역 {N}개
+         ```
+         - 해당 파일이 속한 모듈/컴포넌트 설명 (파일 경로와 imports 기반으로 추론)
+         - 충돌 원인 커밋 조회:
+           ```bash
+           # ours 쪽 (타겟 브랜치에서 이 파일을 마지막으로 변경한 커밋)
+           git -C <original-repo> log --oneline -1 <target> -- <file>
+           # theirs 쪽 (워크트리 브랜치에서 이 파일을 마지막으로 변경한 커밋)
+           git -C <original-repo> log --oneline -1 <worktree-branch> -- <file>
+           ```
+         - 표시 형식:
+           ```
+           ours 마지막 변경: <commit-hash> <message> (타겟: {target})
+           theirs 마지막 변경: <commit-hash> <message> (워크트리: {branch})
+           ```
+
+      3. **충돌 영역(hunk) 단위 인터뷰** — 파일에 충돌 영역이 **1개**이면 파일 단위로 처리하고, **2개 이상**이면 각 영역을 개별적으로 인터뷰합니다:
+
+         각 충돌 영역에 대해:
+
+         a. **3-way diff 표시** — base(공통 조상), ours, theirs를 모두 보여줍니다:
+            - base 내용 조회:
+              ```bash
+              git -C <original-repo> show :1:<file>
+              ```
+              (`:1:`은 merge base 버전, `:2:`는 ours, `:3:`은 theirs)
+            - 표시 형식:
+              ```
+              ── 충돌 #{N} (line {start}-{end}) ──
+
+              ◆ BASE (공통 조상):
+              {base 내용 — 양쪽이 분기하기 전 원본}
+
+              ◆ OURS (타겟: {target}):
+              {ours 내용}
+
+              ◆ THEIRS (워크트리: {branch}):
+              {theirs 내용}
+              ```
+
+         b. **의미 요약** — 각 side가 무엇을 하려는 것인지 1문장으로 설명합니다:
+            ```
+            💡 분석:
+            - ours: {타겟에서 이 영역을 어떻게 변경했는지 — 예: "함수 시그니처에 옵션 파라미터 추가"}
+            - theirs: {워크트리에서 이 영역을 어떻게 변경했는지 — 예: "반환 타입을 Promise로 변경하고 async 추가"}
+            - 충돌 원인: {양쪽이 왜 충돌하는지 — 예: "같은 함수 선언부를 양쪽에서 다르게 수정"}
+            ```
+
+         c. **`AskUserQuestion`으로 선택지 제시**:
+            - header: "충돌 #{N}: {파일명} (line {start}-{end})"
+            - 선택지:
+              - label: "ours (타겟)", description: "{ours 의미 요약} — {타겟 브랜치} 쪽 코드를 유지합니다"
+              - label: "theirs (워크트리)", description: "{theirs 의미 요약} — 워크트리에서 작업한 코드를 유지합니다"
+              - label: "양쪽 모두 (ours 먼저)", description: "ours 코드 다음에 theirs 코드를 이어붙입니다"
+              - label: "양쪽 모두 (theirs 먼저)", description: "theirs 코드 다음에 ours 코드를 이어붙입니다"
+              - label: "수동 편집", description: "직접 내용을 지정합니다"
+
+         d. **선택에 따른 처리**:
+            - **ours/theirs** (파일에 충돌이 1개일 때): `git -C <original-repo> checkout --ours <file>` 또는 `--theirs <file>` 실행
+            - **ours/theirs** (파일에 충돌이 2개 이상일 때): `Edit`으로 해당 충돌 영역의 마커를 제거하고 선택된 쪽 내용만 남깁니다
+            - **양쪽 모두**: `Edit`으로 충돌 마커를 제거하고 선택된 순서로 양쪽 내용을 이어붙입니다
+            - **수동 편집**: 사용자에게 원하는 내용을 물어보고 `Edit`으로 충돌 마커를 제거하며 반영
+
+      4. **모든 hunk 해결 후 파일 staging**: `git -C <original-repo> add <file>`
+
+      5. **파일 해결 완료 확인**: 해결된 파일 내용을 간략히 보여주고 다음 파일로 진행합니다
 
    c. **모든 충돌 해소 확인**:
       ```bash
