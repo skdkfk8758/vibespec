@@ -958,6 +958,59 @@ function listConfig(db) {
 }
 
 // src/core/models/task.ts
+var ACTION_VERBS_KO = /(?:반환|표시|생성|포함|존재|동작|출력|실행|저장|삭제|변경|확인|처리|전달|호출|설정|검증|수행|발생|제공|응답|보여|보고|판정|매핑|이동)(?:한다|된다|하다|된다|합니다|됩니다|해야)/;
+var ACTION_VERBS_EN = /\b(?:return|display|create|contain|exist|output|run|save|delete|change|verify|should|must|shall|throw|fail|pass|handle|accept|reject|render|show|send|receive|include|produce|emit|dispatch|call|update|remove|add|store|load|fetch|respond|report|generate|trigger|prevent|allow|deny|block|skip)s?\b/i;
+var GIVEN_WHEN_THEN = /\b(?:given|when|then)\b/i;
+function validateAcceptance(acceptance) {
+  if (acceptance === null || acceptance === void 0) {
+    return { valid: true, warnings: [] };
+  }
+  const trimmed = acceptance.trim();
+  if (trimmed.length === 0) {
+    return { valid: false, warnings: ["AC\uAC00 \uBE44\uC5B4\uC788\uC2B5\uB2C8\uB2E4. acceptance criteria\uB97C \uC791\uC131\uD574\uC8FC\uC138\uC694."] };
+  }
+  const lines = trimmed.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const items = [];
+  let currentItem = "";
+  for (const line of lines) {
+    if (/^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line)) {
+      if (currentItem) items.push(currentItem);
+      currentItem = line.replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "");
+    } else if (items.length === 0 && !currentItem) {
+      currentItem = line;
+    } else {
+      currentItem += " " + line;
+    }
+  }
+  if (currentItem) items.push(currentItem);
+  if (items.length === 0) {
+    items.push(trimmed);
+  }
+  const warnings = [];
+  if (items.length === 1) {
+    warnings.push("AC \uD56D\uBAA9\uC774 1\uAC1C\uBFD0\uC785\uB2C8\uB2E4. \uB2E4\uC591\uD55C \uC2DC\uB098\uB9AC\uC624\uB97C \uCEE4\uBC84\uD558\uB294 \uC5EC\uB7EC \uD56D\uBAA9\uC744 \uC791\uC131\uD558\uC138\uC694.");
+  }
+  const unverifiable = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const hasKoVerb = ACTION_VERBS_KO.test(item);
+    const hasEnVerb = ACTION_VERBS_EN.test(item);
+    const hasGWT = GIVEN_WHEN_THEN.test(item);
+    if (!hasKoVerb && !hasEnVerb && !hasGWT) {
+      unverifiable.push(i + 1);
+    }
+  }
+  if (unverifiable.length > 0) {
+    const itemNums = unverifiable.join(", ");
+    warnings.push(
+      `AC #${itemNums}\uBC88 \uD56D\uBAA9\uC5D0 \uAC80\uC99D \uAC00\uB2A5\uD55C \uB3D9\uC0AC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. "~\uD55C\uB2E4/~\uB41C\uB2E4" \uB610\uB294 "should/must" \uD615\uD0DC\uB85C \uAE30\uB300 \uB3D9\uC791\uC744 \uBA85\uC2DC\uD558\uC138\uC694.`
+    );
+  }
+  return {
+    valid: warnings.length === 0,
+    warnings
+  };
+}
 var TaskModel = class {
   constructor(db, events) {
     this.db = db;
@@ -965,6 +1018,7 @@ var TaskModel = class {
   }
   events;
   create(planId, title, opts) {
+    const { warnings } = validateAcceptance(opts?.acceptance);
     const id = generateId();
     let depth = 0;
     if (opts?.parentId) {
@@ -999,7 +1053,7 @@ var TaskModel = class {
     );
     const task2 = this.getById(id);
     this.events?.record("task", task2.id, "created", null, JSON.stringify({ title, status: "todo" }));
-    return task2;
+    return Object.assign(task2, { warnings });
   }
   getById(id) {
     const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
@@ -1051,6 +1105,7 @@ var TaskModel = class {
     return this.db.prepare("SELECT * FROM tasks WHERE parent_id = ? ORDER BY sort_order").all(parentId);
   }
   update(id, fields) {
+    const { warnings } = fields.acceptance !== void 0 ? validateAcceptance(fields.acceptance) : { warnings: [] };
     const setClauses = [];
     const values = [];
     if (fields.title !== void 0) {
@@ -1091,11 +1146,11 @@ var TaskModel = class {
       values.push(fields.forbidden_patterns);
     }
     if (setClauses.length === 0) {
-      return this.getById(id);
+      return Object.assign(this.getById(id), { warnings });
     }
     values.push(id);
     this.db.prepare(`UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
-    return this.getById(id);
+    return Object.assign(this.getById(id), { warnings });
   }
   updateStatus(id, status) {
     const oldTask = this.getById(id);
@@ -1949,7 +2004,7 @@ plan.command("delete").argument("<id>", "Plan ID").description("Delete a draft p
   });
 });
 var task = program.command("task").description("Manage tasks");
-task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").description("Create a new task").action((opts) => {
+task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").option("--force", "Skip acceptance criteria validation warnings").description("Create a new task").action((opts) => {
   withErrorHandler(() => {
     const { taskModel } = initModels();
     const dependsOn = opts.dependsOn ? opts.dependsOn.split(",").map((s) => s.trim()) : void 0;
@@ -1963,7 +2018,17 @@ task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOpt
       allowedFiles,
       forbiddenPatterns
     });
-    output(created, `Created task: ${created.id} "${created.title}" (${created.status})`);
+    const { warnings, ...taskData } = created;
+    if (warnings.length > 0 && !opts.force) {
+      for (const w of warnings) {
+        console.error(`\u26A0 AC Warning: ${w}`);
+      }
+    }
+    if (jsonMode) {
+      output({ ...taskData, warnings }, `Created task: ${created.id} "${created.title}" (${created.status})`);
+    } else {
+      output(taskData, `Created task: ${created.id} "${created.title}" (${created.status})`);
+    }
   });
 });
 task.command("update").argument("<id>", "Task ID").argument("<status>", "New status (todo, in_progress, done, blocked, skipped)").option("--impl-status <status>", "Implementation status (DONE, DONE_WITH_CONCERNS, BLOCKED)").option("--test-count <count>", "Number of tests written").option("--files-changed <count>", "Number of files changed").option("--has-concerns", "Whether there are concerns").option("--changed-files-detail <json>", "JSON string of changed files detail").option("--scope-violations <json>", "JSON string of scope violations").description("Update task status with optional metrics").action((id, status, opts) => {

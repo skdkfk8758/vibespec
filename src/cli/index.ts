@@ -218,8 +218,9 @@ task
   .option('--depends-on <ids>', 'Comma-separated task IDs this task depends on')
   .option('--allowed-files <files>', 'Comma-separated list of allowed files')
   .option('--forbidden-patterns <patterns>', 'Comma-separated list of forbidden patterns')
+  .option('--force', 'Skip acceptance criteria validation warnings')
   .description('Create a new task')
-  .action((opts: { plan: string; title: string; parent?: string; spec?: string; acceptance?: string; dependsOn?: string; allowedFiles?: string; forbiddenPatterns?: string }) => {
+  .action((opts: { plan: string; title: string; parent?: string; spec?: string; acceptance?: string; dependsOn?: string; allowedFiles?: string; forbiddenPatterns?: string; force?: boolean }) => {
     withErrorHandler(() => {
       const { taskModel } = initModels();
       const dependsOn = opts.dependsOn ? opts.dependsOn.split(',').map(s => s.trim()) : undefined;
@@ -233,7 +234,17 @@ task
         allowedFiles,
         forbiddenPatterns,
       });
-      output(created, `Created task: ${created.id} "${created.title}" (${created.status})`);
+      const { warnings, ...taskData } = created;
+      if (warnings.length > 0 && !opts.force) {
+        for (const w of warnings) {
+          console.error(`⚠ AC Warning: ${w}`);
+        }
+      }
+      if (jsonMode) {
+        output({ ...taskData, warnings }, `Created task: ${created.id} "${created.title}" (${created.status})`);
+      } else {
+        output(taskData, `Created task: ${created.id} "${created.title}" (${created.status})`);
+      }
     });
   });
 
