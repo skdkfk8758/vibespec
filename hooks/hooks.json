@@ -8,6 +8,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/worktree-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/pre-commit-rule-check.sh",
+            "timeout": 5
           }
         ]
       }
@@ -25,6 +30,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/error-kb-suggest.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/self-improve-trigger.sh",
+            "timeout": 5
           }
         ]
       },
@@ -47,6 +57,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/session-restore-check.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/self-improve-status.sh",
+            "timeout": 5
           }
         ]
       }
