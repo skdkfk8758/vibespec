@@ -32,14 +32,13 @@ function findProjectRoot(startDir) {
 }
 function detectGitContext() {
   try {
-    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+    const raw = execSync("git rev-parse --abbrev-ref HEAD --git-dir", {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"]
     }).trim();
-    const gitDir = execSync("git rev-parse --git-dir", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"]
-    }).trim();
+    const lines = raw.split("\n");
+    const branch = lines[0];
+    const gitDir = lines[1] ?? "";
     const isWorktree = gitDir.includes("/worktrees/");
     let worktreeName = null;
     if (isWorktree) {
@@ -75,13 +74,80 @@ function getDb(dbPath) {
   return _db;
 }
 
+// node_modules/nanoid/index.js
+import { webcrypto as crypto } from "crypto";
+
+// node_modules/nanoid/url-alphabet/index.js
+var urlAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
+
+// node_modules/nanoid/index.js
+var POOL_SIZE_MULTIPLIER = 128;
+var pool;
+var poolOffset;
+function fillPool(bytes) {
+  if (!pool || pool.length < bytes) {
+    pool = Buffer.allocUnsafe(bytes * POOL_SIZE_MULTIPLIER);
+    crypto.getRandomValues(pool);
+    poolOffset = 0;
+  } else if (poolOffset + bytes > pool.length) {
+    crypto.getRandomValues(pool);
+    poolOffset = 0;
+  }
+  poolOffset += bytes;
+}
+function nanoid(size = 21) {
+  fillPool(size |= 0);
+  let id = "";
+  for (let i = poolOffset - size; i < poolOffset; i++) {
+    id += urlAlphabet[pool[i] & 63];
+  }
+  return id;
+}
+
+// src/core/utils.ts
+function generateId() {
+  return nanoid(12);
+}
+function hasColumn(db, table, column) {
+  const columns = db.pragma(`table_info(${table})`);
+  return columns.some((c) => c.name === column);
+}
+function buildUpdateQuery(table, id, fields) {
+  const sets = [];
+  const values = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== void 0) {
+      sets.push(`${key} = ?`);
+      values.push(value);
+    }
+  }
+  if (sets.length === 0) return null;
+  values.push(id);
+  return {
+    sql: `UPDATE ${table} SET ${sets.join(", ")} WHERE id = ?`,
+    params: values
+  };
+}
+
 // src/core/db/schema.ts
+var PLAN_PROGRESS_VIEW_SQL = `
+  SELECT
+    p.id, p.title, p.status, p.branch, p.worktree_name,
+    COUNT(t.id) AS total_tasks,
+    SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
+    SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
+    SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
+    ROUND(SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END) / MAX(COUNT(t.id), 1) * 100) AS progress_pct
+  FROM plans p LEFT JOIN tasks t ON t.plan_id = p.id
+  WHERE p.status IN ('active', 'draft')
+  GROUP BY p.id
+`;
 function initSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS plans (
       id          TEXT PRIMARY KEY,
       title       TEXT NOT NULL,
-      status      TEXT NOT NULL CHECK(status IN ('draft','active','completed','archived')) DEFAULT 'draft',
+      status      TEXT NOT NULL CHECK(status IN ('draft','active','approved','completed','archived')) DEFAULT 'draft',
       summary     TEXT,
       spec        TEXT,
       branch      TEXT,
@@ -127,25 +193,7 @@ function initSchema(db) {
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE VIEW IF NOT EXISTS plan_progress AS
-    SELECT
-      p.id,
-      p.title,
-      p.status,
-      p.branch,
-      p.worktree_name,
-      COUNT(t.id) AS total_tasks,
-      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
-      SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
-      SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
-      ROUND(
-        SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END)
-        / MAX(COUNT(t.id), 1) * 100
-      ) AS progress_pct
-    FROM plans p
-    LEFT JOIN tasks t ON t.plan_id = p.id
-    WHERE p.status IN ('active', 'draft')
-    GROUP BY p.id;
+    CREATE VIEW IF NOT EXISTS plan_progress AS ${PLAN_PROGRESS_VIEW_SQL};
 
     CREATE TABLE IF NOT EXISTS task_metrics (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,42 +259,18 @@ function initSchema(db) {
 function applyMigrations(db) {
   const version = db.pragma("user_version", { simple: true });
   if (version < 1) {
-    const columns = db.pragma("table_info(plans)");
-    const hasColumn = (name) => columns.some((c) => c.name === name);
-    if (!hasColumn("branch")) {
+    if (!hasColumn(db, "plans", "branch")) {
       db.exec("ALTER TABLE plans ADD COLUMN branch TEXT");
     }
-    if (!hasColumn("worktree_name")) {
+    if (!hasColumn(db, "plans", "worktree_name")) {
       db.exec("ALTER TABLE plans ADD COLUMN worktree_name TEXT");
     }
     db.exec("DROP VIEW IF EXISTS plan_progress");
-    db.exec(`
-      CREATE VIEW plan_progress AS
-      SELECT
-        p.id,
-        p.title,
-        p.status,
-        p.branch,
-        p.worktree_name,
-        COUNT(t.id) AS total_tasks,
-        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
-        SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
-        SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
-        ROUND(
-          SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END)
-          / MAX(COUNT(t.id), 1) * 100
-        ) AS progress_pct
-      FROM plans p
-      LEFT JOIN tasks t ON t.plan_id = p.id
-      WHERE p.status IN ('active', 'draft')
-      GROUP BY p.id
-    `);
+    db.exec(`CREATE VIEW plan_progress AS ${PLAN_PROGRESS_VIEW_SQL}`);
     db.pragma("user_version = 1");
   }
   if (version < 2) {
-    const columns = db.pragma("table_info(tasks)");
-    const hasColumn = (name) => columns.some((c) => c.name === name);
-    if (!hasColumn("depends_on")) {
+    if (!hasColumn(db, "tasks", "depends_on")) {
       db.exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT");
     }
     db.pragma("user_version = 2");
@@ -267,12 +291,10 @@ function applyMigrations(db) {
     db.pragma("user_version = 3");
   }
   if (version < 4) {
-    const columns = db.pragma("table_info(tasks)");
-    const hasColumn = (name) => columns.some((c) => c.name === name);
-    if (!hasColumn("allowed_files")) {
+    if (!hasColumn(db, "tasks", "allowed_files")) {
       db.exec("ALTER TABLE tasks ADD COLUMN allowed_files TEXT");
     }
-    if (!hasColumn("forbidden_patterns")) {
+    if (!hasColumn(db, "tasks", "forbidden_patterns")) {
       db.exec("ALTER TABLE tasks ADD COLUMN forbidden_patterns TEXT");
     }
     db.pragma("user_version = 4");
@@ -280,16 +302,52 @@ function applyMigrations(db) {
   if (version < 5) {
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_metrics'").all();
     if (tables.length > 0) {
-      const columns = db.pragma("table_info(task_metrics)");
-      const hasColumn = (name) => columns.some((c) => c.name === name);
-      if (!hasColumn("changed_files_detail")) {
+      if (!hasColumn(db, "task_metrics", "changed_files_detail")) {
         db.exec("ALTER TABLE task_metrics ADD COLUMN changed_files_detail TEXT");
       }
-      if (!hasColumn("scope_violations")) {
+      if (!hasColumn(db, "task_metrics", "scope_violations")) {
         db.exec("ALTER TABLE task_metrics ADD COLUMN scope_violations TEXT");
       }
     }
     db.pragma("user_version = 5");
+  }
+  if (version < 6) {
+    db.pragma("foreign_keys = OFF");
+    db.exec(`DROP VIEW IF EXISTS plan_progress`);
+    db.exec(`DROP VIEW IF EXISTS plan_metrics`);
+    db.exec(`
+      CREATE TABLE plans_new (
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK(status IN ('draft','active','approved','completed','archived')) DEFAULT 'draft',
+        summary     TEXT,
+        spec        TEXT,
+        branch      TEXT,
+        worktree_name TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME
+      );
+      INSERT INTO plans_new SELECT * FROM plans;
+      DROP TABLE plans;
+      ALTER TABLE plans_new RENAME TO plans;
+    `);
+    db.pragma("foreign_keys = ON");
+    db.exec(`CREATE VIEW plan_progress AS ${PLAN_PROGRESS_VIEW_SQL}`);
+    db.exec(`
+      CREATE VIEW plan_metrics AS
+      SELECT
+        p.id, p.title, p.status,
+        COUNT(tm.id) AS recorded_tasks,
+        ROUND(AVG(tm.duration_min), 2) AS avg_duration_min,
+        SUM(CASE WHEN tm.final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
+        SUM(CASE WHEN tm.final_status = 'done' THEN 1 ELSE 0 END) AS done_count,
+        SUM(CASE WHEN tm.has_concerns = 1 THEN 1 ELSE 0 END) AS concern_count,
+        ROUND(SUM(CASE WHEN tm.final_status = 'done' THEN 1.0 ELSE 0 END) / MAX(COUNT(tm.id), 1) * 100) AS success_rate
+      FROM plans p JOIN task_metrics tm ON tm.plan_id = p.id
+      WHERE p.status IN ('completed', 'archived')
+      GROUP BY p.id
+    `);
+    db.pragma("user_version = 6");
   }
 }
 
@@ -326,6 +384,7 @@ var AlertsEngine = class {
   }
   getAlerts() {
     const alerts = [];
+    const progress = this.getAllPlanProgress();
     for (const task2 of this.getStaleTasks()) {
       alerts.push({
         type: "stale",
@@ -334,7 +393,7 @@ var AlertsEngine = class {
         message: `Task "${task2.title}" has been in progress for ${task2.days_stale} days with no activity`
       });
     }
-    for (const plan2 of this.getBlockedPlans()) {
+    for (const plan2 of progress.filter((p) => p.blocked_tasks > 0)) {
       alerts.push({
         type: "blocked",
         entity_type: "plan",
@@ -342,7 +401,7 @@ var AlertsEngine = class {
         message: `Plan "${plan2.title}" has ${plan2.blocked_tasks} blocked task(s)`
       });
     }
-    for (const plan2 of this.getCompletablePlans()) {
+    for (const plan2 of progress.filter((p) => p.progress_pct === 100 && p.status === "active")) {
       alerts.push({
         type: "completable",
         entity_type: "plan",
@@ -360,8 +419,11 @@ var AlertsEngine = class {
     }
     return alerts;
   }
+  getAllPlanProgress() {
+    return this.db.prepare("SELECT * FROM plan_progress").all();
+  }
   getStaleTasks(thresholdDays = 3) {
-    const rows = this.db.prepare(
+    return this.db.prepare(
       `SELECT t.*, CAST(JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) AS INTEGER) AS days_stale
          FROM tasks t
          JOIN events e ON e.entity_id = t.id
@@ -369,7 +431,6 @@ var AlertsEngine = class {
          GROUP BY t.id
          HAVING JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) > ?`
     ).all(thresholdDays);
-    return rows;
   }
   getBlockedPlans() {
     return this.db.prepare("SELECT * FROM plan_progress WHERE blocked_tasks > 0").all();
@@ -380,7 +441,7 @@ var AlertsEngine = class {
     ).all();
   }
   getForgottenPlans(thresholdDays = 7) {
-    const rows = this.db.prepare(
+    return this.db.prepare(
       `SELECT p.*, CAST(JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) AS INTEGER) AS days_inactive
          FROM plans p
          JOIN events e ON (
@@ -391,7 +452,6 @@ var AlertsEngine = class {
          GROUP BY p.id
          HAVING JULIANDAY('now') - JULIANDAY(MAX(e.created_at)) > ?`
     ).all(thresholdDays);
-    return rows;
   }
 };
 
@@ -628,38 +688,6 @@ var InsightsEngine = class {
 // src/core/engine/error-kb.ts
 import * as fs from "fs";
 import * as path from "path";
-
-// node_modules/nanoid/index.js
-import { webcrypto as crypto } from "crypto";
-
-// node_modules/nanoid/url-alphabet/index.js
-var urlAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
-
-// node_modules/nanoid/index.js
-var POOL_SIZE_MULTIPLIER = 128;
-var pool;
-var poolOffset;
-function fillPool(bytes) {
-  if (!pool || pool.length < bytes) {
-    pool = Buffer.allocUnsafe(bytes * POOL_SIZE_MULTIPLIER);
-    crypto.getRandomValues(pool);
-    poolOffset = 0;
-  } else if (poolOffset + bytes > pool.length) {
-    crypto.getRandomValues(pool);
-    poolOffset = 0;
-  }
-  poolOffset += bytes;
-}
-function nanoid(size = 21) {
-  fillPool(size |= 0);
-  let id = "";
-  for (let i = poolOffset - size; i < poolOffset; i++) {
-    id += urlAlphabet[pool[i] & 63];
-  }
-  return id;
-}
-
-// src/core/engine/error-kb.ts
 var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
 var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
 var VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -736,7 +764,7 @@ var ErrorKBEngine = class {
     return path.join(this.errorsDir, `${id}.md`);
   }
   add(newEntry) {
-    const id = nanoid(12);
+    const id = generateId();
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const meta = {
       title: newEntry.title,
@@ -855,14 +883,14 @@ ${newEntry.solution}
     const entries = [];
     for (const file of files) {
       const id = path.basename(file, ".md");
-      const entry = this.show(id);
-      if (!entry) continue;
+      const raw = fs.readFileSync(file, "utf-8");
+      const { meta } = parseFrontmatter(raw);
       stats.total++;
-      stats.by_severity[entry.severity]++;
-      stats.by_status[entry.status]++;
-      entries.push(entry);
+      stats.by_severity[meta.severity]++;
+      stats.by_status[meta.status]++;
+      entries.push({ id, title: meta.title, occurrences: meta.occurrences });
     }
-    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10).map((e) => ({ id: e.id, title: e.title, occurrences: e.occurrences }));
+    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10);
     return stats;
   }
   toErrorEntry(id, meta, body) {
@@ -937,7 +965,7 @@ var TaskModel = class {
   }
   events;
   create(planId, title, opts) {
-    const id = nanoid(12);
+    const id = generateId();
     let depth = 0;
     if (opts?.parentId) {
       const parent = this.getById(opts.parentId);
@@ -1080,9 +1108,7 @@ var TaskModel = class {
   delete(id) {
     const task2 = this.getById(id);
     if (!task2) throw new Error(`Task not found: ${id}`);
-    this.db.prepare(
-      "DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)"
-    ).run(id);
+    this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)").run(id);
     this.db.prepare("DELETE FROM tasks WHERE parent_id = ?").run(id);
     this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
     this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
@@ -1092,40 +1118,32 @@ var TaskModel = class {
     if (!dependsOn || dependsOn.length === 0) {
       return;
     }
+    const allTasks = this.getByPlan(planId);
+    const taskMap = this.buildTaskMap(allTasks);
     for (const depId of dependsOn) {
       if (depId === taskId) {
         throw new Error(`Task cannot depend on itself: ${depId}`);
       }
-      const depTask = this.getById(depId);
+      const depTask = taskMap.get(depId);
       if (!depTask) {
+        const crossPlanTask = this.getById(depId);
+        if (crossPlanTask && crossPlanTask.plan_id !== planId) {
+          throw new Error(
+            `Dependency task ${depId} belongs to different plan: ${crossPlanTask.plan_id}`
+          );
+        }
         throw new Error(`Dependency task not found: ${depId}`);
-      }
-      if (depTask.plan_id !== planId) {
-        throw new Error(
-          `Dependency task ${depId} belongs to different plan: ${depTask.plan_id}`
-        );
       }
     }
     const visited = /* @__PURE__ */ new Set();
     const hasCycle = (currentId) => {
-      if (currentId === taskId) {
-        return true;
-      }
-      if (visited.has(currentId)) {
-        return false;
-      }
+      if (currentId === taskId) return true;
+      if (visited.has(currentId)) return false;
       visited.add(currentId);
-      const current = this.getById(currentId);
-      if (!current || !current.depends_on) {
-        return false;
-      }
-      const deps = JSON.parse(current.depends_on);
-      for (const dep of deps) {
-        if (hasCycle(dep)) {
-          return true;
-        }
-      }
-      return false;
+      const current = taskMap.get(currentId);
+      if (!current) return false;
+      const deps = this.parseDeps(current);
+      return deps.some((dep) => hasCycle(dep));
     };
     for (const depId of dependsOn) {
       visited.clear();
@@ -1232,18 +1250,31 @@ var EventModel = class {
   constructor(db) {
     this.db = db;
   }
-  record(entityType, entityId, eventType, oldValue, newValue, sessionId) {
+  record(optsOrEntityType, entityId, eventType, oldValue, newValue, sessionId) {
+    let opts;
+    if (typeof optsOrEntityType === "object") {
+      opts = optsOrEntityType;
+    } else {
+      opts = {
+        entityType: optsOrEntityType,
+        entityId,
+        eventType,
+        oldValue,
+        newValue,
+        sessionId
+      };
+    }
     const stmt = this.db.prepare(
       `INSERT INTO events (entity_type, entity_id, event_type, old_value, new_value, session_id)
        VALUES (?, ?, ?, ?, ?, ?)`
     );
     const result = stmt.run(
-      entityType,
-      entityId,
-      eventType,
-      oldValue ?? null,
-      newValue ?? null,
-      sessionId ?? null
+      opts.entityType,
+      opts.entityId,
+      opts.eventType,
+      opts.oldValue ?? null,
+      opts.newValue ?? null,
+      opts.sessionId ?? null
     );
     return this.db.prepare(`SELECT * FROM events WHERE id = ?`).get(result.lastInsertRowid);
   }
@@ -1276,20 +1307,23 @@ var PlanModel = class {
     this.events = events;
   }
   create(title, spec, summary) {
-    const id = nanoid(12);
+    const id = generateId();
     const ctx = detectGitContext();
-    const stmt = this.db.prepare(
+    this.db.prepare(
       `INSERT INTO plans (id, title, status, spec, summary, branch, worktree_name) VALUES (?, ?, 'draft', ?, ?, ?, ?)`
-    );
-    stmt.run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
-    const plan2 = this.getById(id);
+    ).run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
+    const plan2 = this.requireById(id);
     this.events?.record("plan", plan2.id, "created", null, JSON.stringify({ title, status: "draft", branch: ctx.branch }));
     return plan2;
   }
   getById(id) {
-    const stmt = this.db.prepare(`SELECT * FROM plans WHERE id = ?`);
-    const row = stmt.get(id);
+    const row = this.db.prepare(`SELECT * FROM plans WHERE id = ?`).get(id);
     return row ?? null;
+  }
+  requireById(id) {
+    const plan2 = this.getById(id);
+    if (!plan2) throw new Error(`Plan not found: ${id}`);
+    return plan2;
   }
   list(filter) {
     const conditions = [];
@@ -1303,27 +1337,12 @@ var PlanModel = class {
       params.push(filter.branch);
     }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const stmt = this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`);
-    return stmt.all(...params);
+    return this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`).all(...params);
   }
   update(id, fields) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
-    const sets = [];
-    const values = [];
-    if (fields.title !== void 0) {
-      sets.push("title = ?");
-      values.push(fields.title);
-    }
-    if (fields.summary !== void 0) {
-      sets.push("summary = ?");
-      values.push(fields.summary);
-    }
-    if (fields.spec !== void 0) {
-      sets.push("spec = ?");
-      values.push(fields.spec);
-    }
-    if (sets.length === 0) return plan2;
+    const plan2 = this.requireById(id);
+    const query = buildUpdateQuery("plans", id, fields);
+    if (!query) return plan2;
     const oldFields = {};
     const newFields = {};
     for (const key of Object.keys(fields)) {
@@ -1332,65 +1351,50 @@ var PlanModel = class {
         newFields[key] = fields[key];
       }
     }
-    values.push(id);
-    const stmt = this.db.prepare(`UPDATE plans SET ${sets.join(", ")} WHERE id = ?`);
-    stmt.run(...values);
+    this.db.prepare(query.sql).run(...query.params);
     this.events?.record("plan", id, "updated", JSON.stringify(oldFields), JSON.stringify(newFields));
-    return this.getById(id);
+    return this.requireById(id);
+  }
+  transitionStatus(id, newStatus, eventType, guard, extra) {
+    const plan2 = this.requireById(id);
+    if (guard) guard(plan2);
+    const oldStatus = plan2.status;
+    const sql = extra ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?` : `UPDATE plans SET status = ? WHERE id = ?`;
+    this.db.prepare(sql).run(newStatus, id);
+    this.events?.record(
+      "plan",
+      id,
+      eventType,
+      JSON.stringify({ status: oldStatus }),
+      JSON.stringify({ status: newStatus })
+    );
+    return this.requireById(id);
   }
   activate(id) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
-    const oldStatus = plan2.status;
-    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
-    stmt.run("active", id);
-    this.events?.record("plan", id, "activated", JSON.stringify({ status: oldStatus }), JSON.stringify({ status: "active" }));
-    return this.getById(id);
+    return this.transitionStatus(id, "active", "activated");
   }
   complete(id) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
-    const oldStatus = plan2.status;
-    const stmt = this.db.prepare(
-      `UPDATE plans SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`
-    );
-    stmt.run(id);
-    this.events?.record("plan", id, "completed", JSON.stringify({ status: oldStatus }), JSON.stringify({ status: "completed" }));
-    return this.getById(id);
+    return this.transitionStatus(id, "completed", "completed", void 0, "completed_at = CURRENT_TIMESTAMP");
+  }
+  approve(id) {
+    return this.transitionStatus(id, "approved", "approved", (plan2) => {
+      if (plan2.status !== "active") {
+        throw new Error(`Only active plans can be approved. Current status: ${plan2.status}`);
+      }
+    });
+  }
+  archive(id) {
+    return this.transitionStatus(id, "archived", "archived");
   }
   delete(id) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
+    const plan2 = this.requireById(id);
     if (plan2.status !== "draft") {
       throw new Error(`Only draft plans can be deleted. Current status: ${plan2.status}`);
     }
-    this.db.prepare(
-      "DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)"
-    ).run(id);
+    this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)").run(id);
     this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
     this.db.prepare("DELETE FROM tasks WHERE plan_id = ?").run(id);
     this.db.prepare("DELETE FROM plans WHERE id = ?").run(id);
-  }
-  approve(id) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
-    if (plan2.status !== "active") {
-      throw new Error(`Only active plans can be approved. Current status: ${plan2.status}`);
-    }
-    const oldStatus = plan2.status;
-    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
-    stmt.run("approved", id);
-    this.events?.record("plan", id, "approved", JSON.stringify({ status: oldStatus }), JSON.stringify({ status: "approved" }));
-    return this.getById(id);
-  }
-  archive(id) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
-    const oldStatus = plan2.status;
-    const stmt = this.db.prepare(`UPDATE plans SET status = ? WHERE id = ?`);
-    stmt.run("archived", id);
-    this.events?.record("plan", id, "archived", JSON.stringify({ status: oldStatus }), JSON.stringify({ status: "archived" }));
-    return this.getById(id);
   }
 };
 
@@ -1512,7 +1516,7 @@ var SkillUsageModel = class {
     this.db = db;
   }
   record(skillName, opts) {
-    const id = nanoid(12);
+    const id = generateId();
     const planId = opts?.planId ?? null;
     const sessionId = opts?.sessionId ?? null;
     const createdAt = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 19);
@@ -1820,6 +1824,9 @@ function formatSkillUsage(skillStats) {
   return lines.join("\n");
 }
 
+// src/core/types.ts
+var VALID_PLAN_STATUSES = ["draft", "active", "approved", "completed", "archived"];
+
 // src/cli/index.ts
 var require2 = createRequire(import.meta.url);
 var pkg = require2("../../package.json");
@@ -1838,6 +1845,13 @@ function outputError(message) {
     console.error(message);
   }
   process.exit(1);
+}
+function withErrorHandler(fn) {
+  try {
+    fn();
+  } catch (e) {
+    outputError(e instanceof Error ? e.message : String(e));
+  }
 }
 function initModels() {
   const db = getDb();
@@ -1875,7 +1889,12 @@ var plan = program.command("plan").description("Manage plans");
 plan.command("list").option("--status <status>", "Filter by status (draft, active, approved, completed, archived)").option("--branch <branch>", "Filter by branch").description("List plans").action((opts) => {
   const { planModel } = initModels();
   const filter = {};
-  if (opts.status) filter.status = opts.status;
+  if (opts.status) {
+    if (!VALID_PLAN_STATUSES.includes(opts.status)) {
+      return outputError(`Invalid status. Must be: ${VALID_PLAN_STATUSES.join(", ")}`);
+    }
+    filter.status = opts.status;
+  }
   if (opts.branch) filter.branch = opts.branch;
   const plans = planModel.list(Object.keys(filter).length > 0 ? filter : void 0);
   output(plans, formatPlanList(plans));
@@ -1895,22 +1914,18 @@ plan.command("create").requiredOption("--title <title>", "Plan title").option("-
   output(activated, `Created plan: ${activated.id} "${activated.title}" (${activated.status})`);
 });
 plan.command("complete").argument("<id>", "Plan ID").description("Complete a plan").action((id) => {
-  const { lifecycle } = initModels();
-  try {
+  withErrorHandler(() => {
+    const { lifecycle } = initModels();
     const completed = lifecycle.completePlan(id);
     output(completed, `Plan completed: ${completed.id} "${completed.title}"`);
-  } catch (e) {
-    outputError(e instanceof Error ? e.message : String(e));
-  }
+  });
 });
 plan.command("approve").argument("<id>", "Plan ID").description("Approve a plan (active \u2192 approved)").action((id) => {
-  const { planModel } = initModels();
-  try {
+  withErrorHandler(() => {
+    const { planModel } = initModels();
     const approved = planModel.approve(id);
     output(approved, `Plan approved: ${approved.id} "${approved.title}"`);
-  } catch (e) {
-    outputError(e instanceof Error ? e.message : String(e));
-  }
+  });
 });
 plan.command("archive").argument("<id>", "Plan ID").description("Archive a plan").action((id) => {
   const { planModel } = initModels();
@@ -1927,18 +1942,16 @@ plan.command("update").argument("<id>", "Plan ID").option("--title <title>", "Ne
   output(updated, `Plan updated: ${updated.id} "${updated.title}"`);
 });
 plan.command("delete").argument("<id>", "Plan ID").description("Delete a draft plan and all its tasks").action((id) => {
-  const { planModel } = initModels();
-  try {
+  withErrorHandler(() => {
+    const { planModel } = initModels();
     planModel.delete(id);
     output({ deleted: true, plan_id: id }, `Plan deleted: ${id}`);
-  } catch (e) {
-    outputError(e instanceof Error ? e.message : String(e));
-  }
+  });
 });
 var task = program.command("task").description("Manage tasks");
 task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").description("Create a new task").action((opts) => {
-  const { taskModel } = initModels();
-  try {
+  withErrorHandler(() => {
+    const { taskModel } = initModels();
     const dependsOn = opts.dependsOn ? opts.dependsOn.split(",").map((s) => s.trim()) : void 0;
     const allowedFiles = opts.allowedFiles ? opts.allowedFiles.split(",").map((s) => s.trim()) : void 0;
     const forbiddenPatterns = opts.forbiddenPatterns ? opts.forbiddenPatterns.split(",").map((s) => s.trim()) : void 0;
@@ -1951,9 +1964,7 @@ task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOpt
       forbiddenPatterns
     });
     output(created, `Created task: ${created.id} "${created.title}" (${created.status})`);
-  } catch (e) {
-    outputError(e instanceof Error ? e.message : String(e));
-  }
+  });
 });
 task.command("update").argument("<id>", "Task ID").argument("<status>", "New status (todo, in_progress, done, blocked, skipped)").option("--impl-status <status>", "Implementation status (DONE, DONE_WITH_CONCERNS, BLOCKED)").option("--test-count <count>", "Number of tests written").option("--files-changed <count>", "Number of files changed").option("--has-concerns", "Whether there are concerns").option("--changed-files-detail <json>", "JSON string of changed files detail").option("--scope-violations <json>", "JSON string of scope violations").description("Update task status with optional metrics").action((id, status, opts) => {
   const VALID = ["todo", "in_progress", "done", "blocked", "skipped"];
@@ -2049,12 +2060,10 @@ task.command("edit").argument("<id>", "Task ID").option("--title <title>", "New 
 });
 task.command("delete").argument("<id>", "Task ID").description("Delete a task and its subtasks").action((id) => {
   const { taskModel } = initModels();
-  try {
+  withErrorHandler(() => {
     taskModel.delete(id);
     output({ deleted: true, task_id: id }, `Task deleted: ${id}`);
-  } catch (e) {
-    outputError(e instanceof Error ? e.message : String(e));
-  }
+  });
 });
 var context = program.command("context").description("Manage session context");
 context.command("resume").option("--session-id <id>", "Optional session ID to filter").description("Resume context from previous sessions").action((opts) => {
@@ -2083,6 +2092,10 @@ program.command("stats").argument("[plan_id]", "Optional plan ID").description("
   );
 });
 program.command("history").argument("<type>", "Entity type (plan, task)").argument("<id>", "Entity ID").description("Show change history").action((type, id) => {
+  const validTypes = ["plan", "task"];
+  if (!validTypes.includes(type)) {
+    return outputError(`Invalid entity type. Must be: ${validTypes.join(", ")}`);
+  }
   const { events } = initModels();
   const eventList = events.getByEntity(type, id);
   output(eventList, formatHistory(eventList));
