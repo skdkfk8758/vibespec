@@ -39,12 +39,40 @@ invocation: user
    - 서브태스크가 있으면 들여쓰기로 계층 구조를 표시하세요
    - 상태 이모지: todo=🔲, in_progress=🔄, done=✅, blocked=🚫, skipped=⏭️
 
+   **의존성 상태 표시**: 각 태스크의 `depends_on` 필드를 분석하여 의존성 상태를 함께 표시하세요:
+   - 의존성이 없거나 모든 의존 태스크가 done이면: `[ready]`
+   - 미완료 의존 태스크가 있으면: `[blocked by {미완료 태스크 ID 목록}]`
+   - 테이블에 "의존성" 열을 추가하세요:
+
+   ```
+   ## 📋 태스크 목록 — {플랜 제목}
+
+   | # | ID | 태스크 | 상태 | 의존성 |
+   |---|-----|--------|------|--------|
+   | 1 | T-xxx | 태스크 제목 | 🔲 todo | [ready] |
+   | 2 | T-yyy | 태스크 제목 | 🔲 todo | [blocked by T-xxx] |
+   | 3 | T-zzz | 태스크 제목 | 🔲 todo | [blocked by T-xxx, T-yyy] |
+   | 4 | T-aaa | 태스크 제목 | ✅ done | — |
+   ```
+
 4. **태스크 선택**
    - `AskUserQuestion`을 사용하여 사용자에게 작업할 태스크를 선택하게 하세요
    - 선택지는 todo와 in_progress 상태의 태스크만 포함하세요 (done, skipped 제외)
    - blocked 태스크는 선택지에 포함하되, 차단 사유를 description에 표시하세요
    - 각 옵션의 label은 `{태스크제목}`, description은 `[{상태}] {spec 요약 또는 acceptance criteria 첫 줄}`로 구성하세요
    - 선택 가능한 태스크가 없으면 플랜 완료를 제안하거나 새 태스크 추가를 안내하세요
+
+   **의존성 미충족 태스크 선택 시 경고**: 사용자가 `depends_on`의 선행 태스크가 아직 done이 아닌 태스크를 선택한 경우:
+   → `AskUserQuestion`으로 명시적 경고를 표시하세요:
+     - question: "선택한 태스크 '{태스크 제목}'에 미충족 의존성이 있습니다:\n{미완료 의존 태스크 목록 (ID, 제목, 상태)}\n선행 태스크 없이 진행하면 구현이 불완전하거나 나중에 충돌이 발생할 수 있습니다."
+     - header: "⚠️ 의존성 경고"
+     - multiSelect: false
+     - 선택지:
+       - label: "그래도 진행", description: "의존성 미충족 상태로 구현을 시작합니다"
+       - label: "선행 태스크 먼저", description: "미완료 의존 태스크를 먼저 선택합니다"
+       - label: "다른 태스크 선택", description: "태스크 목록으로 돌아갑니다"
+   → "선행 태스크 먼저" 선택 시 미완료 의존 태스크 중 하나를 자동 선택하여 Step 5로 진행하세요
+   → "다른 태스크 선택" 선택 시 Step 4를 다시 실행하세요
 
 5. **선택된 태스크 상세 표시**
    - Bash 도구로 `vs task show <task_id> --json` 명령을 실행하세요. 선택된 태스크의 상세 정보를 가져오세요
