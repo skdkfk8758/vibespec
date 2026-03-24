@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.26.0] - 2026-03-25
+
+### 새 기능
+- **self-improve**: DB v7 마이그레이션 및 SelfImproveEngine 핵심 인프라 구축 — self_improve_rules 테이블, 규칙 CRUD/승격/아카이브, pending 관리, 효과 측정 (a749772)
+- **hooks**: self-improve hook 시스템 구현 — fix 커밋 감지→pending 생성, 세션 시작 상태 알림, 커밋 전 규칙 리마인드 (c0bcab9)
+- **self-improve**: /self-improve, /self-improve-review 스킬 및 CLI 확장 — 5-Phase pending 분석→KB 기록→규칙 승격 워크플로우, 규칙 정리 스킬, vs self-improve CLI 명령 (1d9cdee)
+- **agents**: Verifier Phase 3.5 Self-Challenge 추가 — PASS 판정 시 Error KB/Rules 대조, 역방향 검증으로 확신의 함정 방지 (2aa3ffe)
+
+### 문서
+- **design**: Self-Improving Pipeline 설계서 추가 — Karpathy autoresearch 영감의 fix→learn→prevent 루프 전체 아키텍처 (6288b82)
+
 ## [0.25.0] - 2026-03-24
 
 ### 새 기능
