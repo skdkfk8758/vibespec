@@ -212,9 +212,9 @@ describe('Schema', () => {
     const tableNames = tables.map((t) => t.name);
     expect(tableNames).toContain('skill_usage');
 
-    // Assert: version should be 5 (all migrations applied)
+    // Assert: version should be 6 (all migrations applied)
     const version = v2Db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(5);
+    expect(version).toBe(6);
 
     v2Db.close();
   });
@@ -237,8 +237,8 @@ describe('Schema', () => {
     expect(tables.map((t) => t.name)).toContain('skill_usage');
   });
 
-  it('should set user_version to 5 after all migrations on fresh DB', () => {
+  it('should set user_version to 6 after all migrations on fresh DB', () => {
     const version = db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(5);
+    expect(version).toBe(6);
   });
 });

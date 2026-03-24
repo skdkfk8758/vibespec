@@ -1,11 +1,25 @@
 import type Database from 'better-sqlite3';
+import { hasColumn } from '../utils.js';
+
+const PLAN_PROGRESS_VIEW_SQL = `
+  SELECT
+    p.id, p.title, p.status, p.branch, p.worktree_name,
+    COUNT(t.id) AS total_tasks,
+    SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
+    SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
+    SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
+    ROUND(SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END) / MAX(COUNT(t.id), 1) * 100) AS progress_pct
+  FROM plans p LEFT JOIN tasks t ON t.plan_id = p.id
+  WHERE p.status IN ('active', 'draft')
+  GROUP BY p.id
+`;
 
 export function initSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS plans (
       id          TEXT PRIMARY KEY,
       title       TEXT NOT NULL,
-      status      TEXT NOT NULL CHECK(status IN ('draft','active','completed','archived')) DEFAULT 'draft',
+      status      TEXT NOT NULL CHECK(status IN ('draft','active','approved','completed','archived')) DEFAULT 'draft',
       summary     TEXT,
       spec        TEXT,
       branch      TEXT,
@@ -51,25 +65,7 @@ export function initSchema(db: Database.Database): void {
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE VIEW IF NOT EXISTS plan_progress AS
-    SELECT
-      p.id,
-      p.title,
-      p.status,
-      p.branch,
-      p.worktree_name,
-      COUNT(t.id) AS total_tasks,
-      SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
-      SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
-      SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
-      ROUND(
-        SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END)
-        / MAX(COUNT(t.id), 1) * 100
-      ) AS progress_pct
-    FROM plans p
-    LEFT JOIN tasks t ON t.plan_id = p.id
-    WHERE p.status IN ('active', 'draft')
-    GROUP BY p.id;
+    CREATE VIEW IF NOT EXISTS plan_progress AS ${PLAN_PROGRESS_VIEW_SQL};
 
     CREATE TABLE IF NOT EXISTS task_metrics (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,47 +134,21 @@ export function applyMigrations(db: Database.Database): void {
   const version = db.pragma('user_version', { simple: true }) as number;
 
   if (version < 1) {
-    const columns = db.pragma('table_info(plans)') as Array<{ name: string }>;
-    const hasColumn = (name: string) => columns.some((c) => c.name === name);
-
-    if (!hasColumn('branch')) {
+    if (!hasColumn(db, 'plans', 'branch')) {
       db.exec('ALTER TABLE plans ADD COLUMN branch TEXT');
     }
-    if (!hasColumn('worktree_name')) {
+    if (!hasColumn(db, 'plans', 'worktree_name')) {
       db.exec('ALTER TABLE plans ADD COLUMN worktree_name TEXT');
     }
 
     db.exec('DROP VIEW IF EXISTS plan_progress');
-    db.exec(`
-      CREATE VIEW plan_progress AS
-      SELECT
-        p.id,
-        p.title,
-        p.status,
-        p.branch,
-        p.worktree_name,
-        COUNT(t.id) AS total_tasks,
-        SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) AS done_tasks,
-        SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) AS active_tasks,
-        SUM(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) AS blocked_tasks,
-        ROUND(
-          SUM(CASE WHEN t.status = 'done' THEN 1.0 ELSE 0 END)
-          / MAX(COUNT(t.id), 1) * 100
-        ) AS progress_pct
-      FROM plans p
-      LEFT JOIN tasks t ON t.plan_id = p.id
-      WHERE p.status IN ('active', 'draft')
-      GROUP BY p.id
-    `);
+    db.exec(`CREATE VIEW plan_progress AS ${PLAN_PROGRESS_VIEW_SQL}`);
 
     db.pragma('user_version = 1');
   }
 
   if (version < 2) {
-    const columns = db.pragma('table_info(tasks)') as Array<{ name: string }>;
-    const hasColumn = (name: string) => columns.some((c) => c.name === name);
-
-    if (!hasColumn('depends_on')) {
+    if (!hasColumn(db, 'tasks', 'depends_on')) {
       db.exec('ALTER TABLE tasks ADD COLUMN depends_on TEXT');
     }
 
@@ -203,13 +173,10 @@ export function applyMigrations(db: Database.Database): void {
   }
 
   if (version < 4) {
-    const columns = db.pragma('table_info(tasks)') as Array<{ name: string }>;
-    const hasColumn = (name: string) => columns.some((c) => c.name === name);
-
-    if (!hasColumn('allowed_files')) {
+    if (!hasColumn(db, 'tasks', 'allowed_files')) {
       db.exec('ALTER TABLE tasks ADD COLUMN allowed_files TEXT');
     }
-    if (!hasColumn('forbidden_patterns')) {
+    if (!hasColumn(db, 'tasks', 'forbidden_patterns')) {
       db.exec('ALTER TABLE tasks ADD COLUMN forbidden_patterns TEXT');
     }
 
@@ -219,17 +186,63 @@ export function applyMigrations(db: Database.Database): void {
   if (version < 5) {
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_metrics'").all();
     if (tables.length > 0) {
-      const columns = db.pragma('table_info(task_metrics)') as Array<{ name: string }>;
-      const hasColumn = (name: string) => columns.some((c) => c.name === name);
-
-      if (!hasColumn('changed_files_detail')) {
+      if (!hasColumn(db, 'task_metrics', 'changed_files_detail')) {
         db.exec('ALTER TABLE task_metrics ADD COLUMN changed_files_detail TEXT');
       }
-      if (!hasColumn('scope_violations')) {
+      if (!hasColumn(db, 'task_metrics', 'scope_violations')) {
         db.exec('ALTER TABLE task_metrics ADD COLUMN scope_violations TEXT');
       }
     }
 
     db.pragma('user_version = 5');
+  }
+
+  if (version < 6) {
+    // Add 'approved' to plans.status CHECK constraint
+    // SQLite cannot ALTER CHECK constraints, so recreate the table
+    // Disable FK temporarily to avoid CASCADE deleting tasks
+    db.pragma('foreign_keys = OFF');
+
+    db.exec(`DROP VIEW IF EXISTS plan_progress`);
+    db.exec(`DROP VIEW IF EXISTS plan_metrics`);
+
+    db.exec(`
+      CREATE TABLE plans_new (
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        status      TEXT NOT NULL CHECK(status IN ('draft','active','approved','completed','archived')) DEFAULT 'draft',
+        summary     TEXT,
+        spec        TEXT,
+        branch      TEXT,
+        worktree_name TEXT,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME
+      );
+      INSERT INTO plans_new SELECT * FROM plans;
+      DROP TABLE plans;
+      ALTER TABLE plans_new RENAME TO plans;
+    `);
+
+    db.pragma('foreign_keys = ON');
+
+    // Recreate views
+    db.exec(`CREATE VIEW plan_progress AS ${PLAN_PROGRESS_VIEW_SQL}`);
+
+    db.exec(`
+      CREATE VIEW plan_metrics AS
+      SELECT
+        p.id, p.title, p.status,
+        COUNT(tm.id) AS recorded_tasks,
+        ROUND(AVG(tm.duration_min), 2) AS avg_duration_min,
+        SUM(CASE WHEN tm.final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
+        SUM(CASE WHEN tm.final_status = 'done' THEN 1 ELSE 0 END) AS done_count,
+        SUM(CASE WHEN tm.has_concerns = 1 THEN 1 ELSE 0 END) AS concern_count,
+        ROUND(SUM(CASE WHEN tm.final_status = 'done' THEN 1.0 ELSE 0 END) / MAX(COUNT(tm.id), 1) * 100) AS success_rate
+      FROM plans p JOIN task_metrics tm ON tm.plan_id = p.id
+      WHERE p.status IN ('completed', 'archived')
+      GROUP BY p.id
+    `);
+
+    db.pragma('user_version = 6');
   }
 }
