@@ -105,15 +105,47 @@ scope 정보(allowed_files, forbidden_patterns)가 전달된 경우에만 실행
 
 품질 이슈가 발견되면 리포트의 "품질 이슈" 섹션에 기록하세요.
 
+### Phase 3.5: Self-Challenge
+
+이 Phase는 **Phase 1~3의 결과가 FAIL이 아닌 경우에만** 실행합니다. 기술 검증이 실패했거나 AC에 FAIL 항목이 있으면 이 Phase를 **건너뛰세요**.
+
+"PASS라고 판단했지만, 정말 맞는가?" — 확신의 함정을 방지하기 위한 역방향 검증입니다.
+
+1. **Error KB 대조**
+   - `git diff --name-only`에서 변경된 파일/모듈 키워드를 추출하세요
+   - `vs error-kb search "<키워드>" --json`으로 유사한 과거 에러를 검색하세요
+   - 유사 패턴이 발견되면:
+     - 해당 에러의 해결책(solution)이 현재 구현에 반영되었는지 확인하세요
+     - 반영되지 않았으면 리포트에 "과거 에러 패턴 미반영" 경고를 추가하세요
+   - 검색 결과를 리포트의 "Self-Challenge" 섹션에 기록하세요
+
+2. **Rules 대조**
+   - `.claude/rules/` 디렉토리의 `.md` 파일을 읽으세요 (없으면 이 단계를 건너뛰세요)
+   - 각 규칙의 `## Applies When` 섹션과 현재 변경 내용을 대조하세요
+   - 규칙의 적용 조건에 해당하는데 `## Rule` 내용이 준수되지 않았으면:
+     - 위반 규칙과 사유를 기록하세요
+     - 해당 규칙의 `## Examples > Bad` 패턴이 현재 코드에 존재하는지 확인하세요
+
+3. **역방향 검증**
+   - PASS로 판정한 각 AC 항목에 대해 한 번씩 반박을 시도하세요:
+     - "테스트가 통과했지만, 테스트 자체가 핵심 시나리오를 놓치고 있지 않은가?"
+     - "코드가 요구사항을 구현했지만, 명시되지 않은 엣지 케이스가 있지 않은가?"
+   - 실제로 문제가 발견되지 않으면 반박 시도만 기록하고 넘어가세요
+
+4. **판정 조정**
+   - **문제 발견 시**: 기존 PASS → WARN으로 하향하고, 발견된 문제를 구체적으로 기록
+   - **문제 미발견 시**: PASS 유지, confidence: high 표기
+   - Self-Challenge는 단독으로 FAIL을 발생시키지 않습니다
+
 ### Phase 4: 최종 판정
 
 ```
-PASS = 기술 검증 전체 통과(또는 SKIP) AND acceptance 전항목 PASS AND scope PASS/SKIP AND 심각한 품질 이슈 없음
-WARN = 기술 검증 전체 통과(또는 SKIP) AND (acceptance에 WARN 항목 존재 OR scope WARN OR 경미한 품질 이슈)
+PASS = 기술 검증 전체 통과(또는 SKIP) AND acceptance 전항목 PASS AND scope PASS/SKIP AND Self-Challenge 통과 AND 심각한 품질 이슈 없음
+WARN = 기술 검증 전체 통과(또는 SKIP) AND (acceptance에 WARN 항목 존재 OR scope WARN OR Self-Challenge에서 문제 발견 OR 경미한 품질 이슈)
 FAIL = 기술 검증 실패 OR acceptance에 FAIL 항목 존재 OR 심각한 품질 이슈
 ```
 
-Note: scope WARN은 단독으로 FAIL을 발생시키지 않습니다. 범위 밖 변경이 의도적일 수 있기 때문입니다.
+Note: scope WARN과 Self-Challenge WARN은 단독으로 FAIL을 발생시키지 않습니다.
 
 ## Status Protocol
 
@@ -152,6 +184,12 @@ AC 매핑 커버리지: {매핑 수}/{전체 수} ({비율}%)
 - 금지 위반: N개 [파일 목록 + 위반 규칙]
 - 판정: [PASS | WARN | SKIP]
 (scope 정보가 없는 경우: "Scope 규칙 미지정 — SKIP")
+
+### Self-Challenge (FAIL이 아닌 경우)
+- Error KB 대조: {검색 결과 요약 — 유사 패턴 N건 발견 또는 "해당 없음"}
+- Rules 대조: {위반 규칙 목록 또는 "위반 없음" 또는 "규칙 없음 (SKIP)"}
+- 역방향 검증: {반박 시도 결과 요약}
+- 판정 조정: {PASS 유지 (confidence: high) 또는 PASS→WARN (사유)}
 
 ### 변경 파일 요약
 | 파일 | +/- | 사유 |
