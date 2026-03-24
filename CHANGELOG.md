@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0] - 2026-03-24
+
+### 새 기능
+- **task**: AC 검증 유틸리티 함수 및 모델 통합 — validateAcceptance()로 빈 문자열, 단일 항목, 동사 누락 감지, TaskWithWarnings 타입 도입 (986db59)
+- **cli**: AC 검증 warning 출력 및 --force 플래그 추가 — task create 시 품질 경고 표시, --json 모드 warnings 포함 (5d57da9)
+- **agents**: 검증 파이프라인 신뢰성 강화 — vs-exec verifier 에이전트 디스패치, tdd-implementer AC 번호 네이밍 컨벤션, verifier 테스트-AC 명시적 매핑 (71e44bf)
+
 ## [0.23.1] - 2026-03-24
 
 ### 버그 수정
