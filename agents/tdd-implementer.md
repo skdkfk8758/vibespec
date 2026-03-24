@@ -58,9 +58,35 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 ### Phase 1: RED — 실패하는 테스트 작성
 
 1. **acceptance criteria → 테스트 변환**
-   - 각 acceptance criteria를 하나 이상의 테스트 케이스로 변환하세요
-   - 테스트 네이밍: `test_<무엇을>_<언제>_<기대결과>` 패턴
-   - AAA 패턴 (Arrange / Act / Assert) 준수
+   - 각 acceptance criteria 항목에 순서대로 번호를 매기세요: AC01, AC02, AC03, ...
+   - 각 항목을 하나 이상의 테스트 케이스로 변환하세요
+   - **AC 번호 네이밍 컨벤션** (필수): 테스트 이름에 해당 AC 번호를 포함하여 verifier가 자동 매핑할 수 있도록 하세요
+
+     ```typescript
+     // JavaScript/TypeScript (vitest, jest)
+     it('AC01: 빈 입력 시 에러를 반환한다', () => { ... });
+     it('AC02: 정상 입력 시 데이터를 저장한다', () => { ... });
+     // 하나의 AC에 여러 테스트가 필요한 경우
+     it('AC03: 중복 키 - 같은 ID로 생성 시 예외 발생', () => { ... });
+     it('AC03: 중복 키 - 다른 ID로 생성 시 정상 동작', () => { ... });
+     ```
+
+     ```python
+     # Python (pytest)
+     def test_AC01_빈_입력시_에러_반환():
+         ...
+     def test_AC02_정상_입력시_데이터_저장():
+         ...
+     ```
+
+     ```go
+     // Go
+     func TestAC01_EmptyInputReturnsError(t *testing.T) { ... }
+     func TestAC02_ValidInputSavesData(t *testing.T) { ... }
+     ```
+
+   - **Fallback**: acceptance criteria가 제공되지 않은 경우(null), AC 번호 없이 기존 패턴으로 네이밍하세요: `test_<무엇을>_<언제>_<기대결과>`
+   - AAA 패턴 (Arrange / Act / Assert) 준수 — AC 번호 네이밍과 병행 적용
 
 2. **테스트 실행 — 반드시 실패해야 함**
    - 모든 테스트를 실행하고 실패를 확인하세요
