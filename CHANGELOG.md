@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.23.0] - 2026-03-24
+
+### 새 기능
+- **vs-plan**: 요구사항 인터뷰 구조화 및 코드베이스 탐색 단계 강화 (c47a9be)
+- **vs-dashboard**: 대시보드 기능 정의 대폭 개선 — 프로그레스 바, 리스크 분석, 속도 통계, 조건부 안내 (bb90da2)
+
+### 버그 수정
+- **skills**: 태스크 실행 스킬 개선 — 순환 의존성 감지, 의존성 시각화, WARN/FAIL 기준표 (dfca58f)
+- **skills**: 리뷰·커밋 스킬 개선 — 타임아웃 처리, scope 보정, staged 분리 처리 (56fd93d)
+- **skills**: 격리·병합 스킬 개선 — lock 파일 판단, 대규모 충돌 처리, 커밋 메시지 확인 (e2f2067)
+- **skills**: 검증·배포 스킬 개선 — 부분 실패 판정, concerns 가중치, 네트워크 재시도 (833c662)
+- **skills**: 온보딩·복원 스킬 개선 — 트러블슈팅 강화, stash 충돌 가이드, alert 신호 추가 (ba8ee95)
+- **skills**: Skills 2.0 준수 — description 패턴 수정 및 When to Use 섹션 추가 (f790c6b)
+- **codex-review**: codex-review 스킬 업데이트 (5e7febf)
+
 ## [0.22.0] - 2026-03-24
 
 ### 새 기능
