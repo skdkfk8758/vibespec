@@ -79,7 +79,29 @@ invocation: user
 
    - 여러 스택이 감지되면 모두 설치하세요 (모노레포 가능)
    - lock 파일 기반 설치를 우선하세요 (재현 가능한 빌드를 위해 `install` 대신 `ci` 사용)
-   - 설치 실패 시 에러를 보여주고, 계속 진행할지 물어보세요
+
+   **lock 파일 없이 매니페스트만 있을 때 판단 기준:**
+
+   | 매니페스트 | 판단 조건 | 설치 명령 |
+   |-----------|-----------|-----------|
+   | `pyproject.toml` | `uv.lock` 존재 → uv | `uv sync` |
+   | `pyproject.toml` | `poetry.lock` 존재 → poetry | `poetry install` |
+   | `pyproject.toml` | lock 파일 없음 → pip 기본 | `pip install -e .` |
+   | `Cargo.toml` | `Cargo.lock` 없어도 빌드 가능 | `cargo build` |
+   | `go.mod` | `go.sum` 없어도 다운로드 가능 | `go mod download` |
+   | `package.json` | lock 파일 없음 → npm 기본 | `npm install` |
+
+   - `pyproject.toml`에 `[tool.poetry]` 섹션이 있으면 poetry로, `[project]` 섹션만 있고 lock 파일이 없으면 pip을 기본으로 사용하세요
+
+   **의존성 설치 실패 시 롤백 전략:**
+
+   설치 실패 시 워크트리는 유지한 채 `AskUserQuestion`으로 3가지 옵션을 제시하세요:
+   - header: "의존성 설치 실패: {에러 요약}"
+   - 선택지:
+     - label: "수동 설치 후 계속", description: "워크트리를 유지하고 직접 의존성을 설치한 뒤 다음 단계로 진행합니다"
+     - label: "워크트리 삭제 후 재시도", description: "현재 워크트리를 제거하고 `/vs-worktree`를 처음부터 다시 실행합니다"
+     - label: "의존성 없이 진행", description: "의존성 설치를 건너뛰고 테스트 베이스라인 확인으로 넘어갑니다 (빌드/테스트 실패 가능)"
+   - "워크트리 삭제 후 재시도" 선택 시: `git worktree remove <path>`로 워크트리를 제거하고 스킬을 종료합니다 (사용자가 다시 `/vs-worktree`를 실행)
 
 6. **테스트 베이스라인 확인**
    감지된 스택에 맞는 테스트 명령을 실행하세요:
