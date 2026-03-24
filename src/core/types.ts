@@ -169,3 +169,41 @@ export interface ErrorKBStats {
   top_recurring: Array<{ id: string; title: string; occurrences: number }>;
 }
 
+// Self-Improve types
+export type RuleCategory =
+  | 'LOGIC_ERROR'
+  | 'TYPE_ERROR'
+  | 'API_MISUSE'
+  | 'MISSING_EDGE'
+  | 'PATTERN_VIOLATION'
+  | 'CONFIG_ERROR'
+  | 'TEST_GAP';
+
+export type RuleStatus = 'active' | 'archived';
+
+export interface SelfImproveRule {
+  id: string;
+  error_kb_id: string | null;
+  title: string;
+  category: RuleCategory;
+  rule_path: string;
+  occurrences: number;
+  prevented: number;
+  status: RuleStatus;
+  created_at: string;
+  last_triggered_at: string | null;
+}
+
+export interface RuleStats {
+  active: number;
+  archived: number;
+  total_prevented: number;
+}
+
+export interface NewRule {
+  error_kb_id?: string;
+  title: string;
+  category: RuleCategory;
+  ruleContent: string;
+}
+

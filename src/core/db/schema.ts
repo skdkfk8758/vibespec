@@ -245,4 +245,27 @@ export function applyMigrations(db: Database.Database): void {
 
     db.pragma('user_version = 6');
   }
+
+  if (version < 7) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS self_improve_rules (
+        id                TEXT PRIMARY KEY,
+        error_kb_id       TEXT,
+        title             TEXT NOT NULL,
+        category          TEXT NOT NULL,
+        rule_path         TEXT NOT NULL,
+        occurrences       INTEGER DEFAULT 0,
+        prevented         INTEGER DEFAULT 0,
+        status            TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+        created_at        TEXT DEFAULT (datetime('now')),
+        last_triggered_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_self_improve_rules_status ON self_improve_rules(status);
+      CREATE INDEX IF NOT EXISTS idx_self_improve_rules_category ON self_improve_rules(category);
+      CREATE INDEX IF NOT EXISTS idx_self_improve_rules_kb_id ON self_improve_rules(error_kb_id);
+    `);
+
+    db.pragma('user_version = 7');
+  }
 }
