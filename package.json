@@ -1,6 +1,6 @@
 {
   "name": "vibespec",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "SDD 기반 바이브코딩을 위한 스펙/플랜/태스크 관리 플러그인",
   "type": "module",
   "main": "dist/cli/index.js",
