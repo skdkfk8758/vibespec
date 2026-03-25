@@ -370,6 +370,80 @@ function applyMigrations(db) {
     `);
     db.pragma("user_version = 7");
   }
+  if (version < 8) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS qa_runs (
+        id                TEXT PRIMARY KEY,
+        plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        trigger           TEXT NOT NULL CHECK(trigger IN ('manual', 'auto', 'milestone')),
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
+        summary           TEXT,
+        total_scenarios   INTEGER DEFAULT 0,
+        passed_scenarios  INTEGER DEFAULT 0,
+        failed_scenarios  INTEGER DEFAULT 0,
+        risk_score        REAL DEFAULT 0,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at      DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS qa_scenarios (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
+        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case')),
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        priority          TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        related_tasks     TEXT,
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'pass', 'fail', 'skip', 'warn')) DEFAULT 'pending',
+        agent             TEXT,
+        evidence          TEXT,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS qa_findings (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
+        scenario_id       TEXT REFERENCES qa_scenarios(id) ON DELETE SET NULL,
+        severity          TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+        category          TEXT NOT NULL CHECK(category IN ('bug', 'regression', 'missing_feature', 'inconsistency', 'performance', 'security', 'ux_issue', 'spec_gap')),
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        affected_files    TEXT,
+        related_task_id   TEXT REFERENCES tasks(id),
+        fix_suggestion    TEXT,
+        status            TEXT NOT NULL CHECK(status IN ('open', 'planned', 'fixed', 'wontfix', 'duplicate')) DEFAULT 'open',
+        fix_plan_id       TEXT REFERENCES plans(id),
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE VIEW IF NOT EXISTS qa_run_summary AS
+      SELECT
+        qr.id,
+        qr.plan_id,
+        qr.status,
+        qr.risk_score,
+        qr.created_at,
+        COUNT(DISTINCT qs.id) AS total_scenarios,
+        SUM(CASE WHEN qs.status = 'pass' THEN 1 ELSE 0 END) AS passed,
+        SUM(CASE WHEN qs.status = 'fail' THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN qs.status = 'warn' THEN 1 ELSE 0 END) AS warned,
+        COUNT(DISTINCT qf.id) AS total_findings,
+        SUM(CASE WHEN qf.severity = 'critical' THEN 1 ELSE 0 END) AS critical_findings,
+        SUM(CASE WHEN qf.severity = 'high' THEN 1 ELSE 0 END) AS high_findings
+      FROM qa_runs qr
+      LEFT JOIN qa_scenarios qs ON qs.run_id = qr.id
+      LEFT JOIN qa_findings qf ON qf.run_id = qr.id
+      GROUP BY qr.id;
+
+      CREATE INDEX IF NOT EXISTS idx_qa_runs_plan ON qa_runs(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_run ON qa_scenarios(run_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_status ON qa_scenarios(status);
+      CREATE INDEX IF NOT EXISTS idx_qa_findings_run ON qa_findings(run_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_findings_severity ON qa_findings(severity);
+      CREATE INDEX IF NOT EXISTS idx_qa_findings_status ON qa_findings(status);
+    `);
+    db.pragma("user_version = 8");
+  }
 }
 
 // src/core/engine/dashboard.ts
@@ -394,6 +468,38 @@ var DashboardEngine = class {
   getPlanSummary(planId) {
     const row = this.db.prepare("SELECT * FROM plan_progress WHERE id = ?").get(planId);
     return row ?? null;
+  }
+  getQASummary(planId) {
+    try {
+      const row = this.db.prepare(
+        `SELECT * FROM qa_run_summary
+           WHERE plan_id = ?
+           ORDER BY created_at DESC LIMIT 1`
+      ).get(planId);
+      return row ?? null;
+    } catch {
+      return null;
+    }
+  }
+  getOpenFindings(planId) {
+    try {
+      const rows = this.db.prepare(
+        `SELECT qf.severity, COUNT(*) AS count
+           FROM qa_findings qf
+           JOIN qa_runs qr ON qr.id = qf.run_id
+           WHERE qr.plan_id = ? AND qf.status = 'open'
+           GROUP BY qf.severity`
+      ).all(planId);
+      const result = { critical: 0, high: 0, medium: 0, low: 0 };
+      for (const row of rows) {
+        if (row.severity in result) {
+          result[row.severity] = row.count;
+        }
+      }
+      return result;
+    } catch {
+      return { critical: 0, high: 0, medium: 0, low: 0 };
+    }
   }
 };
 
@@ -438,7 +544,87 @@ var AlertsEngine = class {
         message: `Plan "${plan2.title}" has had no activity for ${plan2.days_inactive} days`
       });
     }
+    alerts.push(...this.getQAAlerts(progress));
     return alerts;
+  }
+  getQAAlerts(progress) {
+    const qaAlerts = [];
+    if (progress.length === 0) return qaAlerts;
+    try {
+      const planMap = new Map(progress.map((p) => [p.id, p]));
+      const highRiskRuns = this.db.prepare(
+        `SELECT plan_id, risk_score FROM qa_runs
+         WHERE status = 'completed' AND risk_score >= 0.5
+         AND created_at = (SELECT MAX(created_at) FROM qa_runs qr2 WHERE qr2.plan_id = qa_runs.plan_id AND qr2.status = 'completed')
+         GROUP BY plan_id`
+      ).all();
+      for (const row of highRiskRuns) {
+        const plan2 = planMap.get(row.plan_id);
+        if (plan2) {
+          qaAlerts.push({
+            type: "qa_risk_high",
+            entity_type: "plan",
+            entity_id: row.plan_id,
+            message: `Plan "${plan2.title}"\uC758 QA \uB9AC\uC2A4\uD06C\uAC00 \uB192\uC2B5\uB2C8\uB2E4 (risk: ${row.risk_score.toFixed(2)})`
+          });
+        }
+      }
+      const openFindings = this.db.prepare(
+        `SELECT qr.plan_id, COUNT(*) AS count FROM qa_findings qf
+         JOIN qa_runs qr ON qr.id = qf.run_id
+         WHERE qf.status = 'open' AND qf.severity IN ('critical', 'high')
+         GROUP BY qr.plan_id`
+      ).all();
+      for (const row of openFindings) {
+        const plan2 = planMap.get(row.plan_id);
+        if (plan2) {
+          qaAlerts.push({
+            type: "qa_findings_open",
+            entity_type: "plan",
+            entity_id: row.plan_id,
+            message: `Plan "${plan2.title}"\uC5D0 \uBBF8\uD574\uACB0 critical/high QA \uC774\uC288\uAC00 ${row.count}\uAC74 \uC788\uC2B5\uB2C8\uB2E4`
+          });
+        }
+      }
+      const staleRuns = this.db.prepare(
+        `SELECT plan_id, CAST(JULIANDAY('now') - JULIANDAY(MAX(created_at)) AS INTEGER) AS days_since
+         FROM qa_runs WHERE status = 'completed'
+         GROUP BY plan_id
+         HAVING days_since > 7`
+      ).all();
+      for (const row of staleRuns) {
+        const plan2 = planMap.get(row.plan_id);
+        if (plan2) {
+          qaAlerts.push({
+            type: "qa_stale",
+            entity_type: "plan",
+            entity_id: row.plan_id,
+            message: `Plan "${plan2.title}"\uC758 \uB9C8\uC9C0\uB9C9 QA\uAC00 ${row.days_since}\uC77C \uC804\uC785\uB2C8\uB2E4`
+          });
+        }
+      }
+      const blockedFixPlans = this.db.prepare(
+        `SELECT DISTINCT qr.plan_id, COUNT(t.id) AS blocked_count
+         FROM qa_findings qf
+         JOIN qa_runs qr ON qr.id = qf.run_id
+         JOIN tasks t ON t.plan_id = qf.fix_plan_id AND t.status = 'blocked'
+         WHERE qf.fix_plan_id IS NOT NULL
+         GROUP BY qr.plan_id`
+      ).all();
+      for (const row of blockedFixPlans) {
+        const plan2 = planMap.get(row.plan_id);
+        if (plan2) {
+          qaAlerts.push({
+            type: "qa_fix_blocked",
+            entity_type: "plan",
+            entity_id: row.plan_id,
+            message: `QA \uC218\uC815 \uD50C\uB79C\uC5D0 \uCC28\uB2E8\uB41C \uD0DC\uC2A4\uD06C\uAC00 ${row.blocked_count}\uAC74 \uC788\uC2B5\uB2C8\uB2E4`
+          });
+        }
+      }
+    } catch {
+    }
+    return qaAlerts;
   }
   getAllPlanProgress() {
     return this.db.prepare("SELECT * FROM plan_progress").all();
@@ -1777,6 +1963,216 @@ var SkillUsageModel = class {
   }
 };
 
+// src/core/models/qa-run.ts
+var QARunModel = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  create(planId, trigger) {
+    const id = generateId();
+    this.db.prepare(
+      `INSERT INTO qa_runs (id, plan_id, trigger) VALUES (?, ?, ?)`
+    ).run(id, planId, trigger);
+    return this.get(id);
+  }
+  get(id) {
+    const row = this.db.prepare(`SELECT * FROM qa_runs WHERE id = ?`).get(id);
+    return row ?? null;
+  }
+  list(planId) {
+    if (planId) {
+      return this.db.prepare(
+        `SELECT * FROM qa_runs WHERE plan_id = ? ORDER BY created_at DESC`
+      ).all(planId);
+    }
+    return this.db.prepare(
+      `SELECT * FROM qa_runs ORDER BY created_at DESC`
+    ).all();
+  }
+  updateStatus(id, status, summary) {
+    this.db.prepare(
+      `UPDATE qa_runs SET status = ?, summary = ?,
+       completed_at = CASE WHEN ? IN ('completed', 'failed') THEN CURRENT_TIMESTAMP ELSE completed_at END
+       WHERE id = ?`
+    ).run(status, summary ?? null, status, id);
+  }
+  updateScores(id, total, passed, failed, riskScore) {
+    this.db.prepare(
+      `UPDATE qa_runs SET total_scenarios = ?, passed_scenarios = ?, failed_scenarios = ?, risk_score = ? WHERE id = ?`
+    ).run(total, passed, failed, riskScore, id);
+  }
+  getLatestByPlan(planId) {
+    const row = this.db.prepare(
+      `SELECT * FROM qa_runs WHERE plan_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(planId);
+    return row ?? null;
+  }
+  getSummary(id) {
+    const row = this.db.prepare(
+      `SELECT * FROM qa_run_summary WHERE id = ?`
+    ).get(id);
+    return row ?? null;
+  }
+};
+
+// src/core/models/qa-scenario.ts
+var QAScenarioModel = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  create(runId, data) {
+    const id = generateId();
+    this.db.prepare(
+      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, runId, data.category, data.title, data.description, data.priority, data.related_tasks ?? null);
+    return this.get(id);
+  }
+  bulkCreate(runId, scenarios) {
+    const insert = this.db.prepare(
+      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    const ids = [];
+    const tx = this.db.transaction(() => {
+      for (const s of scenarios) {
+        const id = generateId();
+        insert.run(id, runId, s.category, s.title, s.description, s.priority, s.related_tasks ?? null);
+        ids.push(id);
+      }
+    });
+    tx();
+    return ids.map((id) => this.get(id));
+  }
+  get(id) {
+    const row = this.db.prepare(`SELECT * FROM qa_scenarios WHERE id = ?`).get(id);
+    return row ?? null;
+  }
+  listByRun(runId, filters) {
+    const conditions = ["run_id = ?"];
+    const params = [runId];
+    if (filters?.category) {
+      conditions.push("category = ?");
+      params.push(filters.category);
+    }
+    if (filters?.status) {
+      conditions.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters?.agent) {
+      conditions.push("agent = ?");
+      params.push(filters.agent);
+    }
+    const where = conditions.join(" AND ");
+    return this.db.prepare(
+      `SELECT * FROM qa_scenarios WHERE ${where} ORDER BY created_at ASC`
+    ).all(...params);
+  }
+  updateStatus(id, status, evidence) {
+    if (evidence !== void 0) {
+      this.db.prepare(
+        `UPDATE qa_scenarios SET status = ?, evidence = ? WHERE id = ?`
+      ).run(status, evidence, id);
+    } else {
+      this.db.prepare(
+        `UPDATE qa_scenarios SET status = ? WHERE id = ?`
+      ).run(status, id);
+    }
+  }
+  getStatsByRun(runId) {
+    return this.db.prepare(
+      `SELECT
+        category,
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = 'pass' THEN 1 ELSE 0 END) AS passed,
+        SUM(CASE WHEN status = 'fail' THEN 1 ELSE 0 END) AS failed
+      FROM qa_scenarios
+      WHERE run_id = ?
+      GROUP BY category`
+    ).all(runId);
+  }
+};
+
+// src/core/models/qa-finding.ts
+var QAFindingModel = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  create(runId, data) {
+    const id = generateId();
+    this.db.prepare(
+      `INSERT INTO qa_findings (id, run_id, scenario_id, severity, category, title, description, affected_files, related_task_id, fix_suggestion)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      runId,
+      data.scenario_id ?? null,
+      data.severity,
+      data.category,
+      data.title,
+      data.description,
+      data.affected_files ?? null,
+      data.related_task_id ?? null,
+      data.fix_suggestion ?? null
+    );
+    return this.get(id);
+  }
+  get(id) {
+    const row = this.db.prepare(`SELECT * FROM qa_findings WHERE id = ?`).get(id);
+    return row ?? null;
+  }
+  list(filters) {
+    const conditions = [];
+    const params = [];
+    if (filters?.runId) {
+      conditions.push("run_id = ?");
+      params.push(filters.runId);
+    }
+    if (filters?.severity) {
+      conditions.push("severity = ?");
+      params.push(filters.severity);
+    }
+    if (filters?.status) {
+      conditions.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters?.category) {
+      conditions.push("category = ?");
+      params.push(filters.category);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    return this.db.prepare(
+      `SELECT * FROM qa_findings ${where} ORDER BY created_at DESC`
+    ).all(...params);
+  }
+  updateStatus(id, status, fixPlanId) {
+    this.db.prepare(
+      `UPDATE qa_findings SET status = ?,
+       fix_plan_id = CASE WHEN ? IS NOT NULL THEN ? ELSE fix_plan_id END
+       WHERE id = ?`
+    ).run(status, fixPlanId ?? null, fixPlanId ?? null, id);
+  }
+  getOpenByPlan(planId) {
+    return this.db.prepare(
+      `SELECT qf.* FROM qa_findings qf
+       JOIN qa_runs qr ON qr.id = qf.run_id
+       WHERE qr.plan_id = ? AND qf.status = 'open'
+       ORDER BY qf.created_at DESC`
+    ).all(planId);
+  }
+  getStatsByRun(runId) {
+    return this.db.prepare(
+      `SELECT severity, COUNT(*) AS count
+       FROM qa_findings
+       WHERE run_id = ?
+       GROUP BY severity`
+    ).all(runId);
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -2101,7 +2497,10 @@ function initModels() {
   const alerts = new AlertsEngine(db);
   const stats = new StatsEngine(db);
   const insights = new InsightsEngine(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights };
+  const qaRunModel = new QARunModel(db);
+  const qaScenarioModel = new QAScenarioModel(db);
+  const qaFindingModel = new QAFindingModel(db);
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel };
 }
 var program = new Command();
 program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
@@ -2531,5 +2930,153 @@ program.command("skill-stats").option("--days <days>", "Filter by recent N days"
   }
   output(stats, formatSkillUsage(stats));
 });
+var qa = program.command("qa").description("Manage QA runs, scenarios, and findings");
+function getQAModels() {
+  const m = initModels();
+  return { qaRun: m.qaRunModel, qaScenario: m.qaScenarioModel, qaFinding: m.qaFindingModel, planModel: m.planModel };
+}
+var qaRun = qa.command("run").description("Manage QA runs");
+qaRun.command("create").argument("<plan_id>", "Plan ID").option("--trigger <type>", "Trigger type (manual, auto, milestone)", "manual").description("Create a new QA run").action((planId, opts) => withErrorHandler(() => {
+  const { planModel } = initModels();
+  const plan2 = planModel.getById(planId);
+  if (!plan2) return outputError(`Plan not found: ${planId}`);
+  const { qaRun: qaRunModel } = getQAModels();
+  const run = qaRunModel.create(planId, opts.trigger);
+  output(run, `Created QA run: ${run.id} (plan: ${planId}, trigger: ${opts.trigger})`);
+}));
+qaRun.command("list").option("--plan <plan_id>", "Filter by plan ID").description("List QA runs").action((opts) => withErrorHandler(() => {
+  const { qaRun: qaRunModel } = getQAModels();
+  const runs = qaRunModel.list(opts.plan);
+  if (runs.length === 0) {
+    output(runs, "No QA runs found.");
+    return;
+  }
+  output(runs, runs.map(
+    (r) => `${r.id}  ${r.status.padEnd(10)}  risk:${r.risk_score.toFixed(2)}  ${r.passed_scenarios}/${r.total_scenarios} passed  ${r.created_at}`
+  ).join("\n"));
+}));
+qaRun.command("show").argument("<run_id>", "QA Run ID").description("Show QA run details with scenarios and findings").action((runId) => withErrorHandler(() => {
+  const { qaRun: qaRunModel, qaScenario, qaFinding } = getQAModels();
+  const run = qaRunModel.get(runId);
+  if (!run) return outputError(`QA run not found: ${runId}`);
+  const summary = qaRunModel.getSummary(runId);
+  const scenarios = qaScenario.listByRun(runId);
+  const findings = qaFinding.list({ runId });
+  output({ run, summary, scenarios, findings }, [
+    `QA Run: ${run.id} (${run.status})`,
+    `Plan: ${run.plan_id} | Trigger: ${run.trigger} | Risk: ${run.risk_score.toFixed(2)}`,
+    `Scenarios: ${run.passed_scenarios}/${run.total_scenarios} passed, ${run.failed_scenarios} failed`,
+    findings.length > 0 ? `Findings: ${findings.length} total` : "Findings: none",
+    run.summary ? `Summary: ${run.summary}` : ""
+  ].filter(Boolean).join("\n"));
+}));
+var qaScenarioCmd = qa.command("scenario").description("Manage QA scenarios");
+qaScenarioCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Scenario title").requiredOption("--description <desc>", "Scenario description").requiredOption("--category <cat>", "Category (functional, integration, flow, regression, edge_case)").option("--priority <p>", "Priority (critical, high, medium, low)", "medium").option("--related-tasks <ids>", "Comma-separated related task IDs").option("--agent <name>", "Assigned agent name").description("Create a QA scenario").action((runId, opts) => withErrorHandler(() => {
+  const { qaRun: qaRunModel, qaScenario } = getQAModels();
+  const run = qaRunModel.get(runId);
+  if (!run) return outputError(`QA run not found: ${runId}`);
+  if (run.status !== "pending" && run.status !== "running") {
+    return outputError(`Cannot add scenarios to ${run.status} run`);
+  }
+  const scenario = qaScenario.create(runId, {
+    category: opts.category,
+    title: opts.title,
+    description: opts.description,
+    priority: opts.priority,
+    related_tasks: opts.relatedTasks ? JSON.stringify(opts.relatedTasks.split(",").map((s) => s.trim())) : void 0
+  });
+  output(scenario, `Created scenario: ${scenario.id} [${scenario.category}] ${scenario.title}`);
+}));
+qaScenarioCmd.command("update").argument("<id>", "Scenario ID").requiredOption("--status <status>", "Status (pending, running, pass, fail, skip, warn)").option("--evidence <text>", "Evidence text").description("Update scenario status").action((id, opts) => withErrorHandler(() => {
+  const { qaScenario } = getQAModels();
+  const existing = qaScenario.get(id);
+  if (!existing) return outputError(`Scenario not found: ${id}`);
+  qaScenario.updateStatus(id, opts.status, opts.evidence);
+  const updated = qaScenario.get(id);
+  output(updated, `Updated scenario ${id}: ${updated.status}`);
+}));
+qaScenarioCmd.command("list").argument("<run_id>", "QA Run ID").option("--category <cat>", "Filter by category").option("--status <status>", "Filter by status").description("List scenarios for a QA run").action((runId, opts) => withErrorHandler(() => {
+  const { qaScenario } = getQAModels();
+  const scenarios = qaScenario.listByRun(runId, {
+    category: opts.category,
+    status: opts.status
+  });
+  if (scenarios.length === 0) {
+    output(scenarios, "No scenarios found.");
+    return;
+  }
+  output(scenarios, scenarios.map(
+    (s) => `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  ${s.title}`
+  ).join("\n"));
+}));
+var qaFindingCmd = qa.command("finding").description("Manage QA findings");
+qaFindingCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Finding title").requiredOption("--description <desc>", "Finding description").requiredOption("--severity <s>", "Severity (critical, high, medium, low)").requiredOption("--category <cat>", "Category (bug, regression, missing_feature, inconsistency, performance, security, ux_issue, spec_gap)").option("--scenario-id <id>", "Related scenario ID").option("--affected-files <files>", "Comma-separated affected files").option("--related-task-id <id>", "Related task ID").option("--fix-suggestion <text>", "Fix suggestion").description("Create a QA finding").action((runId, opts) => withErrorHandler(() => {
+  const { qaRun: qaRunModel, qaFinding } = getQAModels();
+  const run = qaRunModel.get(runId);
+  if (!run) return outputError(`QA run not found: ${runId}`);
+  const finding = qaFinding.create(runId, {
+    scenario_id: opts.scenarioId,
+    severity: opts.severity,
+    category: opts.category,
+    title: opts.title,
+    description: opts.description,
+    affected_files: opts.affectedFiles ? JSON.stringify(opts.affectedFiles.split(",").map((s) => s.trim())) : void 0,
+    related_task_id: opts.relatedTaskId,
+    fix_suggestion: opts.fixSuggestion
+  });
+  output(finding, `Created finding: ${finding.id} [${finding.severity}] ${finding.title}`);
+}));
+qaFindingCmd.command("update").argument("<id>", "Finding ID").requiredOption("--status <status>", "Status (open, planned, fixed, wontfix, duplicate)").option("--fix-plan-id <id>", "Fix plan ID").description("Update finding status").action((id, opts) => withErrorHandler(() => {
+  const { qaFinding } = getQAModels();
+  const existing = qaFinding.get(id);
+  if (!existing) return outputError(`Finding not found: ${id}`);
+  qaFinding.updateStatus(id, opts.status, opts.fixPlanId);
+  const updated = qaFinding.get(id);
+  output(updated, `Updated finding ${id}: ${updated.status}`);
+}));
+qaFindingCmd.command("list").option("--run <run_id>", "Filter by QA run ID").option("--severity <s>", "Filter by severity").option("--status <s>", "Filter by status").option("--category <cat>", "Filter by category").description("List QA findings").action((opts) => withErrorHandler(() => {
+  const { qaFinding } = getQAModels();
+  const findings = qaFinding.list({
+    runId: opts.run,
+    severity: opts.severity,
+    status: opts.status,
+    category: opts.category
+  });
+  if (findings.length === 0) {
+    output(findings, "No findings found.");
+    return;
+  }
+  output(findings, findings.map(
+    (f) => `${f.id}  [${f.severity}]  ${f.status.padEnd(9)}  ${f.category.padEnd(16)}  ${f.title}`
+  ).join("\n"));
+}));
+qa.command("stats").option("--plan <plan_id>", "Filter by plan ID").description("Show QA statistics").action((opts) => withErrorHandler(() => {
+  const { qaRun: qaRunModel, qaFinding } = getQAModels();
+  const runs = qaRunModel.list(opts.plan);
+  const completedRuns = runs.filter((r) => r.status === "completed");
+  const avgRisk = completedRuns.length > 0 ? completedRuns.reduce((sum, r) => sum + r.risk_score, 0) / completedRuns.length : 0;
+  const allFindings = opts.plan ? runs.flatMap((r) => qaFinding.list({ runId: r.id })) : qaFinding.list();
+  const openFindings = allFindings.filter((f) => f.status === "open");
+  const statsData = {
+    total_runs: runs.length,
+    completed_runs: completedRuns.length,
+    avg_risk_score: Math.round(avgRisk * 100) / 100,
+    total_findings: allFindings.length,
+    open_findings: openFindings.length,
+    findings_by_severity: {
+      critical: openFindings.filter((f) => f.severity === "critical").length,
+      high: openFindings.filter((f) => f.severity === "high").length,
+      medium: openFindings.filter((f) => f.severity === "medium").length,
+      low: openFindings.filter((f) => f.severity === "low").length
+    }
+  };
+  output(statsData, [
+    `QA Statistics${opts.plan ? ` (plan: ${opts.plan})` : ""}`,
+    `Runs: ${statsData.total_runs} total, ${statsData.completed_runs} completed`,
+    `Avg Risk Score: ${statsData.avg_risk_score}`,
+    `Findings: ${statsData.total_findings} total, ${statsData.open_findings} open`,
+    `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`
+  ].join("\n"));
+}));
 program.parse();
 //# sourceMappingURL=index.js.map

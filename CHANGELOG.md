@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.27.0] - 2026-03-25
+
+### 새 기능
+- **qa**: QA 시스템 데이터 레이어 및 CLI 구현 — DB migration 8 (qa_runs, qa_scenarios, qa_findings 테이블 + VIEW), QA 타입/모델 CRUD, vs qa 서브커맨드 10개 (249b65b)
+- **agents**: QA 에이전트 팀 정의 — qa-coordinator(프로젝트 분석→시나리오 생성→팀 디스패치), qa-func-tester(기능/통합/회귀 검증), qa-flow-tester(플로우/엣지케이스 검증), qa-reporter(이슈 정리→수정 플랜 생성) (86be884)
+- **qa**: QA 스킬, 대시보드 통합, 알림 시스템 구현 — /vs-qa, /vs-qa-status, /vs-qa-findings 스킬, DashboardEngine QA 섹션, AlertsEngine QA 알림 4종 (50310dc)
+- **qa**: 시나리오 사용자 가시성 개선 — coordinator 리뷰 체크포인트(Phase 2.5), reporter 마크다운 리포트 자동 생성(Phase 3.5), /vs-qa-scenarios 스킬, /vs-qa 리뷰 모드 옵션 (80bab0a)
+
+### 리팩토링
+- **qa**: 코드 리뷰 개선 — initQAModels() 통합, N+1 쿼리 배치화, updateStatus 조건 분기 단순화, qa stats 집계 버그 수정 (bceb41c)
+
+### 문서
+- **design**: QA Agent Team 설계서 추가 — 아키텍처, 데이터 모델, 에이전트 역할, 사용자 플로우, 대시보드 통합 방안 (a2acac7)
+
 ## [0.26.0] - 2026-03-25
 
 ### 새 기능

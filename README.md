@@ -79,6 +79,10 @@ cp -r skills/* ~/.gemini/skills/
 | `/error-kb` | 에러 지식 베이스 검색/기록 — 과거 해결책 조회, 디버깅 후 자동 기록 |
 | `/self-improve` | fix 커밋 분석 → Error KB 기록 → 반복 패턴 규칙 승격 |
 | `/self-improve-review` | 축적된 규칙 효과 분석, 정리/통합/아카이브 |
+| `/vs-qa` | QA 에이전트 팀 실행 — 시나리오 생성 → 검증 → 이슈 수집 → 수정 플래닝 |
+| `/vs-qa-status` | QA 실행 결과 및 리스크 트렌드 조회 |
+| `/vs-qa-findings` | QA 발견 이슈 필터링 및 상태 관리 |
+| `/vs-qa-scenarios` | QA 시나리오 인터랙티브 조회 및 미리보기 |
 
 ### Domain Skills (자동 참조)
 
