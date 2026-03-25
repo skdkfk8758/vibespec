@@ -268,4 +268,80 @@ export function applyMigrations(db: Database.Database): void {
 
     db.pragma('user_version = 7');
   }
+
+  if (version < 8) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS qa_runs (
+        id                TEXT PRIMARY KEY,
+        plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        trigger           TEXT NOT NULL CHECK(trigger IN ('manual', 'auto', 'milestone')),
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
+        summary           TEXT,
+        total_scenarios   INTEGER DEFAULT 0,
+        passed_scenarios  INTEGER DEFAULT 0,
+        failed_scenarios  INTEGER DEFAULT 0,
+        risk_score        REAL DEFAULT 0,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at      DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS qa_scenarios (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
+        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case')),
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        priority          TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        related_tasks     TEXT,
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'pass', 'fail', 'skip', 'warn')) DEFAULT 'pending',
+        agent             TEXT,
+        evidence          TEXT,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS qa_findings (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
+        scenario_id       TEXT REFERENCES qa_scenarios(id) ON DELETE SET NULL,
+        severity          TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+        category          TEXT NOT NULL CHECK(category IN ('bug', 'regression', 'missing_feature', 'inconsistency', 'performance', 'security', 'ux_issue', 'spec_gap')),
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        affected_files    TEXT,
+        related_task_id   TEXT REFERENCES tasks(id),
+        fix_suggestion    TEXT,
+        status            TEXT NOT NULL CHECK(status IN ('open', 'planned', 'fixed', 'wontfix', 'duplicate')) DEFAULT 'open',
+        fix_plan_id       TEXT REFERENCES plans(id),
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE VIEW IF NOT EXISTS qa_run_summary AS
+      SELECT
+        qr.id,
+        qr.plan_id,
+        qr.status,
+        qr.risk_score,
+        qr.created_at,
+        COUNT(DISTINCT qs.id) AS total_scenarios,
+        SUM(CASE WHEN qs.status = 'pass' THEN 1 ELSE 0 END) AS passed,
+        SUM(CASE WHEN qs.status = 'fail' THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN qs.status = 'warn' THEN 1 ELSE 0 END) AS warned,
+        COUNT(DISTINCT qf.id) AS total_findings,
+        SUM(CASE WHEN qf.severity = 'critical' THEN 1 ELSE 0 END) AS critical_findings,
+        SUM(CASE WHEN qf.severity = 'high' THEN 1 ELSE 0 END) AS high_findings
+      FROM qa_runs qr
+      LEFT JOIN qa_scenarios qs ON qs.run_id = qr.id
+      LEFT JOIN qa_findings qf ON qf.run_id = qr.id
+      GROUP BY qr.id;
+
+      CREATE INDEX IF NOT EXISTS idx_qa_runs_plan ON qa_runs(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_run ON qa_scenarios(run_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_status ON qa_scenarios(status);
+      CREATE INDEX IF NOT EXISTS idx_qa_findings_run ON qa_findings(run_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_findings_severity ON qa_findings(severity);
+      CREATE INDEX IF NOT EXISTS idx_qa_findings_status ON qa_findings(status);
+    `);
+
+    db.pragma('user_version = 8');
+  }
 }

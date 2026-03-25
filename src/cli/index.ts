@@ -15,9 +15,13 @@ import { PlanModel } from '../core/models/plan.js';
 import { ContextModel } from '../core/models/context.js';
 import { TaskMetricsModel } from '../core/models/task-metrics.js';
 import { SkillUsageModel } from '../core/models/skill-usage.js';
+import { QARunModel } from '../core/models/qa-run.js';
+import { QAScenarioModel } from '../core/models/qa-scenario.js';
+import { QAFindingModel } from '../core/models/qa-finding.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage } from './formatters.js';
 import type { TaskStatus, PlanStatus, ErrorSeverity } from '../core/types.js';
+import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus } from '../core/types.js';
 import { VALID_PLAN_STATUSES } from '../core/types.js';
 
 const require = createRequire(import.meta.url);
@@ -764,5 +768,249 @@ program
 
     output(stats, formatSkillUsage(stats));
   });
+
+// ── qa ───────────────────────────────────────────────────────────────
+
+const qa = program.command('qa').description('Manage QA runs, scenarios, and findings');
+
+function initQAModels() {
+  const db = getDb();
+  initSchema(db);
+  return {
+    qaRun: new QARunModel(db),
+    qaScenario: new QAScenarioModel(db),
+    qaFinding: new QAFindingModel(db),
+  };
+}
+
+// qa run
+const qaRun = qa.command('run').description('Manage QA runs');
+
+qaRun
+  .command('create')
+  .argument('<plan_id>', 'Plan ID')
+  .option('--trigger <type>', 'Trigger type (manual, auto, milestone)', 'manual')
+  .description('Create a new QA run')
+  .action((planId: string, opts: { trigger: string }) => withErrorHandler(() => {
+    const { planModel } = initModels();
+    const plan = planModel.getById(planId);
+    if (!plan) return outputError(`Plan not found: ${planId}`);
+    const { qaRun: qaRunModel } = initQAModels();
+    const run = qaRunModel.create(planId, opts.trigger as QARunTrigger);
+    output(run, `Created QA run: ${run.id} (plan: ${planId}, trigger: ${opts.trigger})`);
+  }));
+
+qaRun
+  .command('list')
+  .option('--plan <plan_id>', 'Filter by plan ID')
+  .description('List QA runs')
+  .action((opts: { plan?: string }) => withErrorHandler(() => {
+    const { qaRun: qaRunModel } = initQAModels();
+    const runs = qaRunModel.list(opts.plan);
+    if (runs.length === 0) {
+      output(runs, 'No QA runs found.');
+      return;
+    }
+    output(runs, runs.map(r =>
+      `${r.id}  ${r.status.padEnd(10)}  risk:${r.risk_score.toFixed(2)}  ${r.passed_scenarios}/${r.total_scenarios} passed  ${r.created_at}`
+    ).join('\n'));
+  }));
+
+qaRun
+  .command('show')
+  .argument('<run_id>', 'QA Run ID')
+  .description('Show QA run details with scenarios and findings')
+  .action((runId: string) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaScenario, qaFinding } = initQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    const summary = qaRunModel.getSummary(runId);
+    const scenarios = qaScenario.listByRun(runId);
+    const findings = qaFinding.list({ runId });
+    output({ run, summary, scenarios, findings }, [
+      `QA Run: ${run.id} (${run.status})`,
+      `Plan: ${run.plan_id} | Trigger: ${run.trigger} | Risk: ${run.risk_score.toFixed(2)}`,
+      `Scenarios: ${run.passed_scenarios}/${run.total_scenarios} passed, ${run.failed_scenarios} failed`,
+      findings.length > 0 ? `Findings: ${findings.length} total` : 'Findings: none',
+      run.summary ? `Summary: ${run.summary}` : '',
+    ].filter(Boolean).join('\n'));
+  }));
+
+// qa scenario
+const qaScenarioCmd = qa.command('scenario').description('Manage QA scenarios');
+
+qaScenarioCmd
+  .command('create')
+  .argument('<run_id>', 'QA Run ID')
+  .requiredOption('--title <title>', 'Scenario title')
+  .requiredOption('--description <desc>', 'Scenario description')
+  .requiredOption('--category <cat>', 'Category (functional, integration, flow, regression, edge_case)')
+  .option('--priority <p>', 'Priority (critical, high, medium, low)', 'medium')
+  .option('--related-tasks <ids>', 'Comma-separated related task IDs')
+  .option('--agent <name>', 'Assigned agent name')
+  .description('Create a QA scenario')
+  .action((runId: string, opts: { title: string; description: string; category: string; priority: string; relatedTasks?: string; agent?: string }) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaScenario } = initQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    if (run.status !== 'pending' && run.status !== 'running') {
+      return outputError(`Cannot add scenarios to ${run.status} run`);
+    }
+    const scenario = qaScenario.create(runId, {
+      category: opts.category as QAScenarioCategory,
+      title: opts.title,
+      description: opts.description,
+      priority: opts.priority as QAScenarioPriority,
+      related_tasks: opts.relatedTasks ? JSON.stringify(opts.relatedTasks.split(',').map(s => s.trim())) : undefined,
+    });
+    output(scenario, `Created scenario: ${scenario.id} [${scenario.category}] ${scenario.title}`);
+  }));
+
+qaScenarioCmd
+  .command('update')
+  .argument('<id>', 'Scenario ID')
+  .requiredOption('--status <status>', 'Status (pending, running, pass, fail, skip, warn)')
+  .option('--evidence <text>', 'Evidence text')
+  .description('Update scenario status')
+  .action((id: string, opts: { status: string; evidence?: string }) => withErrorHandler(() => {
+    const { qaScenario } = initQAModels();
+    const existing = qaScenario.get(id);
+    if (!existing) return outputError(`Scenario not found: ${id}`);
+    qaScenario.updateStatus(id, opts.status as QAScenarioStatus, opts.evidence);
+    const updated = qaScenario.get(id)!;
+    output(updated, `Updated scenario ${id}: ${updated.status}`);
+  }));
+
+qaScenarioCmd
+  .command('list')
+  .argument('<run_id>', 'QA Run ID')
+  .option('--category <cat>', 'Filter by category')
+  .option('--status <status>', 'Filter by status')
+  .description('List scenarios for a QA run')
+  .action((runId: string, opts: { category?: string; status?: string }) => withErrorHandler(() => {
+    const { qaScenario } = initQAModels();
+    const scenarios = qaScenario.listByRun(runId, {
+      category: opts.category,
+      status: opts.status,
+    });
+    if (scenarios.length === 0) {
+      output(scenarios, 'No scenarios found.');
+      return;
+    }
+    output(scenarios, scenarios.map(s =>
+      `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  ${s.title}`
+    ).join('\n'));
+  }));
+
+// qa finding
+const qaFindingCmd = qa.command('finding').description('Manage QA findings');
+
+qaFindingCmd
+  .command('create')
+  .argument('<run_id>', 'QA Run ID')
+  .requiredOption('--title <title>', 'Finding title')
+  .requiredOption('--description <desc>', 'Finding description')
+  .requiredOption('--severity <s>', 'Severity (critical, high, medium, low)')
+  .requiredOption('--category <cat>', 'Category (bug, regression, missing_feature, inconsistency, performance, security, ux_issue, spec_gap)')
+  .option('--scenario-id <id>', 'Related scenario ID')
+  .option('--affected-files <files>', 'Comma-separated affected files')
+  .option('--related-task-id <id>', 'Related task ID')
+  .option('--fix-suggestion <text>', 'Fix suggestion')
+  .description('Create a QA finding')
+  .action((runId: string, opts: { title: string; description: string; severity: string; category: string; scenarioId?: string; affectedFiles?: string; relatedTaskId?: string; fixSuggestion?: string }) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaFinding } = initQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    const finding = qaFinding.create(runId, {
+      scenario_id: opts.scenarioId,
+      severity: opts.severity as QAFindingSeverity,
+      category: opts.category as QAFindingCategory,
+      title: opts.title,
+      description: opts.description,
+      affected_files: opts.affectedFiles ? JSON.stringify(opts.affectedFiles.split(',').map(s => s.trim())) : undefined,
+      related_task_id: opts.relatedTaskId,
+      fix_suggestion: opts.fixSuggestion,
+    });
+    output(finding, `Created finding: ${finding.id} [${finding.severity}] ${finding.title}`);
+  }));
+
+qaFindingCmd
+  .command('update')
+  .argument('<id>', 'Finding ID')
+  .requiredOption('--status <status>', 'Status (open, planned, fixed, wontfix, duplicate)')
+  .option('--fix-plan-id <id>', 'Fix plan ID')
+  .description('Update finding status')
+  .action((id: string, opts: { status: string; fixPlanId?: string }) => withErrorHandler(() => {
+    const { qaFinding } = initQAModels();
+    const existing = qaFinding.get(id);
+    if (!existing) return outputError(`Finding not found: ${id}`);
+    qaFinding.updateStatus(id, opts.status as QAFindingStatus, opts.fixPlanId);
+    const updated = qaFinding.get(id)!;
+    output(updated, `Updated finding ${id}: ${updated.status}`);
+  }));
+
+qaFindingCmd
+  .command('list')
+  .option('--run <run_id>', 'Filter by QA run ID')
+  .option('--severity <s>', 'Filter by severity')
+  .option('--status <s>', 'Filter by status')
+  .option('--category <cat>', 'Filter by category')
+  .description('List QA findings')
+  .action((opts: { run?: string; severity?: string; status?: string; category?: string }) => withErrorHandler(() => {
+    const { qaFinding } = initQAModels();
+    const findings = qaFinding.list({
+      runId: opts.run,
+      severity: opts.severity,
+      status: opts.status,
+      category: opts.category,
+    });
+    if (findings.length === 0) {
+      output(findings, 'No findings found.');
+      return;
+    }
+    output(findings, findings.map(f =>
+      `${f.id}  [${f.severity}]  ${f.status.padEnd(9)}  ${f.category.padEnd(16)}  ${f.title}`
+    ).join('\n'));
+  }));
+
+// qa stats
+qa
+  .command('stats')
+  .option('--plan <plan_id>', 'Filter by plan ID')
+  .description('Show QA statistics')
+  .action((opts: { plan?: string }) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaFinding } = initQAModels();
+    const runs = qaRunModel.list(opts.plan);
+    const completedRuns = runs.filter(r => r.status === 'completed');
+    const avgRisk = completedRuns.length > 0
+      ? completedRuns.reduce((sum, r) => sum + r.risk_score, 0) / completedRuns.length
+      : 0;
+    const allFindings = opts.plan
+      ? qaFinding.list({ runId: runs[0]?.id })
+      : qaFinding.list();
+    const openFindings = allFindings.filter(f => f.status === 'open');
+
+    const statsData = {
+      total_runs: runs.length,
+      completed_runs: completedRuns.length,
+      avg_risk_score: Math.round(avgRisk * 100) / 100,
+      total_findings: allFindings.length,
+      open_findings: openFindings.length,
+      findings_by_severity: {
+        critical: openFindings.filter(f => f.severity === 'critical').length,
+        high: openFindings.filter(f => f.severity === 'high').length,
+        medium: openFindings.filter(f => f.severity === 'medium').length,
+        low: openFindings.filter(f => f.severity === 'low').length,
+      },
+    };
+
+    output(statsData, [
+      `QA Statistics${opts.plan ? ` (plan: ${opts.plan})` : ''}`,
+      `Runs: ${statsData.total_runs} total, ${statsData.completed_runs} completed`,
+      `Avg Risk Score: ${statsData.avg_risk_score}`,
+      `Findings: ${statsData.total_findings} total, ${statsData.open_findings} open`,
+      `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`,
+    ].join('\n'));
+  }));
 
 program.parse();

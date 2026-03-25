@@ -1,0 +1,67 @@
+import type Database from 'better-sqlite3';
+import type { QARun, QARunStatus, QARunSummary, QARunTrigger } from '../types.js';
+import { generateId } from '../utils.js';
+
+export class QARunModel {
+  private db: Database.Database;
+
+  constructor(db: Database.Database) {
+    this.db = db;
+  }
+
+  create(planId: string, trigger: QARunTrigger): QARun {
+    const id = generateId();
+    this.db.prepare(
+      `INSERT INTO qa_runs (id, plan_id, trigger) VALUES (?, ?, ?)`
+    ).run(id, planId, trigger);
+    return this.get(id)!;
+  }
+
+  get(id: string): QARun | null {
+    const row = this.db.prepare(`SELECT * FROM qa_runs WHERE id = ?`).get(id) as QARun | undefined;
+    return row ?? null;
+  }
+
+  list(planId?: string): QARun[] {
+    if (planId) {
+      return this.db.prepare(
+        `SELECT * FROM qa_runs WHERE plan_id = ? ORDER BY created_at DESC`
+      ).all(planId) as QARun[];
+    }
+    return this.db.prepare(
+      `SELECT * FROM qa_runs ORDER BY created_at DESC`
+    ).all() as QARun[];
+  }
+
+  updateStatus(id: string, status: QARunStatus, summary?: string): void {
+    if (status === 'completed' || status === 'failed') {
+      this.db.prepare(
+        `UPDATE qa_runs SET status = ?, summary = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).run(status, summary ?? null, id);
+    } else {
+      this.db.prepare(
+        `UPDATE qa_runs SET status = ?, summary = ? WHERE id = ?`
+      ).run(status, summary ?? null, id);
+    }
+  }
+
+  updateScores(id: string, total: number, passed: number, failed: number, riskScore: number): void {
+    this.db.prepare(
+      `UPDATE qa_runs SET total_scenarios = ?, passed_scenarios = ?, failed_scenarios = ?, risk_score = ? WHERE id = ?`
+    ).run(total, passed, failed, riskScore, id);
+  }
+
+  getLatestByPlan(planId: string): QARun | null {
+    const row = this.db.prepare(
+      `SELECT * FROM qa_runs WHERE plan_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(planId) as QARun | undefined;
+    return row ?? null;
+  }
+
+  getSummary(id: string): QARunSummary | null {
+    const row = this.db.prepare(
+      `SELECT * FROM qa_run_summary WHERE id = ?`
+    ).get(id) as QARunSummary | undefined;
+    return row ?? null;
+  }
+}

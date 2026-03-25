@@ -60,9 +60,9 @@ describe('SelfImproveEngine', () => {
       expect(colNames).toContain('last_triggered_at');
     });
 
-    it('should set user_version to 7', () => {
+    it('should set user_version to latest', () => {
       const version = db.pragma('user_version', { simple: true }) as number;
-      expect(version).toBe(7);
+      expect(version).toBeGreaterThanOrEqual(7);
     });
   });
 

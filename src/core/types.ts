@@ -207,3 +207,99 @@ export interface NewRule {
   ruleContent: string;
 }
 
+// QA types
+export type QARunTrigger = 'manual' | 'auto' | 'milestone';
+export type QARunStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type QAScenarioCategory = 'functional' | 'integration' | 'flow' | 'regression' | 'edge_case';
+export type QAScenarioPriority = 'critical' | 'high' | 'medium' | 'low';
+export type QAScenarioStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip' | 'warn';
+export type QAFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type QAFindingCategory =
+  | 'bug'
+  | 'regression'
+  | 'missing_feature'
+  | 'inconsistency'
+  | 'performance'
+  | 'security'
+  | 'ux_issue'
+  | 'spec_gap';
+export type QAFindingStatus = 'open' | 'planned' | 'fixed' | 'wontfix' | 'duplicate';
+
+export interface QARun {
+  id: string;
+  plan_id: string;
+  trigger: QARunTrigger;
+  status: QARunStatus;
+  summary: string | null;
+  total_scenarios: number;
+  passed_scenarios: number;
+  failed_scenarios: number;
+  risk_score: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface QAScenario {
+  id: string;
+  run_id: string;
+  category: QAScenarioCategory;
+  title: string;
+  description: string;
+  priority: QAScenarioPriority;
+  related_tasks: string | null;
+  status: QAScenarioStatus;
+  agent: string | null;
+  evidence: string | null;
+  created_at: string;
+}
+
+export interface QAFinding {
+  id: string;
+  run_id: string;
+  scenario_id: string | null;
+  severity: QAFindingSeverity;
+  category: QAFindingCategory;
+  title: string;
+  description: string;
+  affected_files: string | null;
+  related_task_id: string | null;
+  fix_suggestion: string | null;
+  status: QAFindingStatus;
+  fix_plan_id: string | null;
+  created_at: string;
+}
+
+export interface QARunSummary {
+  id: string;
+  plan_id: string;
+  status: QARunStatus;
+  risk_score: number;
+  created_at: string;
+  total_scenarios: number;
+  passed: number;
+  failed: number;
+  warned: number;
+  total_findings: number;
+  critical_findings: number;
+  high_findings: number;
+}
+
+export interface NewQAScenario {
+  category: QAScenarioCategory;
+  title: string;
+  description: string;
+  priority: QAScenarioPriority;
+  related_tasks?: string;
+}
+
+export interface NewQAFinding {
+  scenario_id?: string;
+  severity: QAFindingSeverity;
+  category: QAFindingCategory;
+  title: string;
+  description: string;
+  affected_files?: string;
+  related_task_id?: string;
+  fix_suggestion?: string;
+}
+
