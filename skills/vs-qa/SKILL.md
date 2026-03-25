@@ -59,11 +59,22 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
        - label: "Standard (권장)", description: "표준 시나리오 (medium까지) — 균형 잡힌 검증"
        - label: "Thorough", description: "심층 시나리오 (low까지) — 완전한 검증"
 
-5. **QA Run 생성**
+5. **리뷰 모드 선택**
+   - `AskUserQuestion`으로 리뷰 모드 선택:
+     - question: "시나리오를 실행 전에 리뷰하시겠습니까?"
+     - header: "리뷰 모드"
+     - multiSelect: false
+     - 선택지:
+       - label: "리뷰 후 실행 (권장)", description: "생성된 시나리오를 확인하고 추가/제외한 뒤 실행합니다"
+       - label: "바로 실행", description: "시나리오 리뷰 없이 바로 QA를 실행합니다"
+   - "리뷰 후 실행" → review_mode: `review`
+   - "바로 실행" → review_mode: `auto`
+
+6. **QA Run 생성**
    - Bash 도구로 `vs --json qa run create <plan_id>` 명령을 실행하세요
    - 생성된 run_id를 기록하세요
 
-6. **qa-coordinator 에이전트 디스패치**
+7. **qa-coordinator 에이전트 디스패치**
    - Agent 도구를 사용하여 qa-coordinator 에이전트를 디스패치하세요:
      - `subagent_type`: 없음 (일반 에이전트)
      - `run_in_background`: false
@@ -76,17 +87,18 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
        - run_id: {run_id}
        - mode: {full|incremental|targeted}
        - depth: {quick|standard|thorough}
+       - review_mode: {review|auto}
        - target_tasks: {targeted 모드 시 태스크 ID 목록}
 
        agents/qa-coordinator.md의 Execution Process를 따라 실행하세요.
        ```
    - coordinator가 내부적으로 qa-func-tester, qa-flow-tester, qa-reporter를 디스패치합니다
 
-7. **결과 대기 & 리포트 표시**
+8. **결과 대기 & 리포트 표시**
    - coordinator의 최종 리포트를 사용자에게 표시하세요
    - `vs --json qa run show <run_id>`로 최종 상태를 확인하세요
 
-8. **후속 조치 안내**
+9. **후속 조치 안내**
    - `AskUserQuestion`으로 다음 단계 선택:
      - question: "다음으로 무엇을 하시겠습니까?"
      - header: "다음 단계"
