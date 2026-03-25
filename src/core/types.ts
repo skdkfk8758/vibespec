@@ -1,6 +1,6 @@
 export type PlanStatus = 'draft' | 'active' | 'approved' | 'completed' | 'archived';
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'skipped';
-export type AlertType = 'stale' | 'blocked' | 'completable' | 'forgotten';
+export type AlertType = 'stale' | 'blocked' | 'completable' | 'forgotten' | 'qa_risk_high' | 'qa_findings_open' | 'qa_stale' | 'qa_fix_blocked';
 export type EntityType = 'plan' | 'task';
 export type EventType = 'created' | 'updated' | 'status_changed' | 'activated' | 'completed' | 'approved' | 'archived' | 'deleted' | 'blocked_reason';
 

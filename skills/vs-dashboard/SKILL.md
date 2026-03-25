@@ -90,7 +90,35 @@ invocation: user
 
    - 플랜별 속도는 Step 2의 프로그레스 바에 이미 포함됨
 
-7. **스킬 사용량 요약**
+7. **QA 현황 렌더링**
+
+   각 활성 플랜에 대해 QA 데이터를 조회하고 렌더링하세요:
+   - `vs --json qa run list --plan <plan_id>`로 최근 QA Run 조회
+   - QA Run이 있으면 `vs --json qa finding list --run <run_id> --status open`으로 미해결 이슈 조회
+
+   **QA Run이 있는 경우:**
+   ```
+   🔬 QA Status: [GREEN|YELLOW|ORANGE|RED] (risk: {score})
+   ├─ 최근 QA Run: #{run_id} ({날짜}) — {passed}/{total} 시나리오 통과
+   ├─ 미해결 이슈: 🔴 critical: {N}  🟠 high: {N}  🟡 medium: {N}
+   └─ 수정 플랜: "{플랜 제목}" ({done}/{total} tasks)
+   ```
+
+   리스크 스코어 색상 매핑:
+   - 0.0 ~ 0.2: 🟢 GREEN (안전)
+   - 0.2 ~ 0.5: 🟡 YELLOW (주의)
+   - 0.5 ~ 0.8: 🟠 ORANGE (위험)
+   - 0.8 ~ 1.0: 🔴 RED (심각)
+
+   **QA Run이 없는 경우:**
+   ```
+   🔬 QA: 미실행 — /vs-qa로 QA를 시작하세요
+   ```
+
+   - 수정 플랜이 있으면 해당 플랜의 진행률도 표시
+   - 미해결 이슈가 0건이면 "미해결 이슈: 없음" 표시
+
+8. **스킬 사용량 요약**
 
    `skill_usage` 데이터가 있으면:
    ```
@@ -113,8 +141,11 @@ invocation: user
 
    | 조건 | 선택지 | 설명 |
    |------|--------|------|
+   | open critical/high QA findings | "QA 이슈 수정" | QA fix plan의 태스크 실행 → `/vs-next` |
    | blocked 태스크 있음 | "차단 태스크 해소" | blocked 태스크를 확인하고 해결합니다 → 해당 태스크 상세 표시 |
+   | completable + QA 미통과 | "QA 먼저 실행" | 플랜 완료 전 QA 검증 → `/vs-qa` |
    | completable 플랜 있음 | "플랜 완료 처리" | 모든 태스크가 done인 플랜을 완료합니다 → `/vs-release` 안내 |
+   | QA 미실행 + 플랜 50%+ 완료 | "QA 실행" | `/vs-qa`로 QA 수행 |
    | stale 태스크 있음 | "정체 태스크 리뷰" | 오래 진행 중인 태스크를 점검합니다 → `/vs-review` 안내 |
    | forgotten 플랜 있음 | "방치된 플랜 정리" | 아카이브하거나 작업을 재개합니다 |
    | in_progress 태스크 있음 | "진행 중 태스크 이어서 작업" | 현재 작업 중인 태스크를 계속합니다 → `/vs-next` |

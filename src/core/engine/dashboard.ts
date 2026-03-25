@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { PlanProgress, SkillStats } from '../types.js';
+import type { PlanProgress, QARunSummary, SkillStats } from '../types.js';
 import type { SkillUsageModel } from '../models/skill-usage.js';
 
 export interface DashboardOverview {
@@ -40,5 +40,44 @@ export class DashboardEngine {
       .prepare('SELECT * FROM plan_progress WHERE id = ?')
       .get(planId) as PlanProgress | undefined;
     return row ?? null;
+  }
+
+  getQASummary(planId: string): QARunSummary | null {
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT * FROM qa_run_summary
+           WHERE plan_id = ?
+           ORDER BY created_at DESC LIMIT 1`
+        )
+        .get(planId) as QARunSummary | undefined;
+      return row ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  getOpenFindings(planId: string): { critical: number; high: number; medium: number; low: number } {
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT qf.severity, COUNT(*) AS count
+           FROM qa_findings qf
+           JOIN qa_runs qr ON qr.id = qf.run_id
+           WHERE qr.plan_id = ? AND qf.status = 'open'
+           GROUP BY qf.severity`
+        )
+        .all(planId) as Array<{ severity: string; count: number }>;
+
+      const result = { critical: 0, high: 0, medium: 0, low: 0 };
+      for (const row of rows) {
+        if (row.severity in result) {
+          result[row.severity as keyof typeof result] = row.count;
+        }
+      }
+      return result;
+    } catch {
+      return { critical: 0, high: 0, medium: 0, low: 0 };
+    }
   }
 }
