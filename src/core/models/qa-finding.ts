@@ -58,15 +58,11 @@ export class QAFindingModel {
   }
 
   updateStatus(id: string, status: QAFindingStatus, fixPlanId?: string): void {
-    if (fixPlanId !== undefined) {
-      this.db.prepare(
-        `UPDATE qa_findings SET status = ?, fix_plan_id = ? WHERE id = ?`
-      ).run(status, fixPlanId, id);
-    } else {
-      this.db.prepare(
-        `UPDATE qa_findings SET status = ? WHERE id = ?`
-      ).run(status, id);
-    }
+    this.db.prepare(
+      `UPDATE qa_findings SET status = ?,
+       fix_plan_id = CASE WHEN ? IS NOT NULL THEN ? ELSE fix_plan_id END
+       WHERE id = ?`
+    ).run(status, fixPlanId ?? null, fixPlanId ?? null, id);
   }
 
   getOpenByPlan(planId: string): QAFinding[] {

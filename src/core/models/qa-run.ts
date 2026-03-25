@@ -34,15 +34,11 @@ export class QARunModel {
   }
 
   updateStatus(id: string, status: QARunStatus, summary?: string): void {
-    if (status === 'completed' || status === 'failed') {
-      this.db.prepare(
-        `UPDATE qa_runs SET status = ?, summary = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?`
-      ).run(status, summary ?? null, id);
-    } else {
-      this.db.prepare(
-        `UPDATE qa_runs SET status = ?, summary = ? WHERE id = ?`
-      ).run(status, summary ?? null, id);
-    }
+    this.db.prepare(
+      `UPDATE qa_runs SET status = ?, summary = ?,
+       completed_at = CASE WHEN ? IN ('completed', 'failed') THEN CURRENT_TIMESTAMP ELSE completed_at END
+       WHERE id = ?`
+    ).run(status, summary ?? null, status, id);
   }
 
   updateScores(id: string, total: number, passed: number, failed: number, riskScore: number): void {

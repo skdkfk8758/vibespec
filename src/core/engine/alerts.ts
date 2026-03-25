@@ -58,87 +58,94 @@ export class AlertsEngine {
 
   private getQAAlerts(progress: PlanProgress[]): Alert[] {
     const qaAlerts: Alert[] = [];
+    if (progress.length === 0) return qaAlerts;
 
     try {
-      // Check if qa_runs table exists
-      const tables = this.db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='qa_runs'"
-      ).all();
-      if (tables.length === 0) return qaAlerts;
+      const planMap = new Map(progress.map(p => [p.id, p]));
 
-      for (const plan of progress) {
-        // qa_risk_high: risk_score >= 0.5
-        const highRiskRun = this.db.prepare(
-          `SELECT id, risk_score FROM qa_runs
-           WHERE plan_id = ? AND status = 'completed' AND risk_score >= 0.5
-           ORDER BY created_at DESC LIMIT 1`
-        ).get(plan.id) as { id: string; risk_score: number } | undefined;
+      // Batch: high risk runs (one query for all plans)
+      const highRiskRuns = this.db.prepare(
+        `SELECT plan_id, risk_score FROM qa_runs
+         WHERE status = 'completed' AND risk_score >= 0.5
+         AND created_at = (SELECT MAX(created_at) FROM qa_runs qr2 WHERE qr2.plan_id = qa_runs.plan_id AND qr2.status = 'completed')
+         GROUP BY plan_id`
+      ).all() as Array<{ plan_id: string; risk_score: number }>;
 
-        if (highRiskRun) {
+      for (const row of highRiskRuns) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: 'qa_risk_high',
             entity_type: 'plan',
-            entity_id: plan.id,
-            message: `Plan "${plan.title}"의 QA 리스크가 높습니다 (risk: ${highRiskRun.risk_score.toFixed(2)})`,
+            entity_id: row.plan_id,
+            message: `Plan "${plan.title}"의 QA 리스크가 높습니다 (risk: ${row.risk_score.toFixed(2)})`,
           });
         }
+      }
 
-        // qa_findings_open: open critical/high findings
-        const openFindings = this.db.prepare(
-          `SELECT COUNT(*) AS count FROM qa_findings qf
-           JOIN qa_runs qr ON qr.id = qf.run_id
-           WHERE qr.plan_id = ? AND qf.status = 'open' AND qf.severity IN ('critical', 'high')`
-        ).get(plan.id) as { count: number };
+      // Batch: open critical/high findings per plan
+      const openFindings = this.db.prepare(
+        `SELECT qr.plan_id, COUNT(*) AS count FROM qa_findings qf
+         JOIN qa_runs qr ON qr.id = qf.run_id
+         WHERE qf.status = 'open' AND qf.severity IN ('critical', 'high')
+         GROUP BY qr.plan_id`
+      ).all() as Array<{ plan_id: string; count: number }>;
 
-        if (openFindings.count > 0) {
+      for (const row of openFindings) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: 'qa_findings_open',
             entity_type: 'plan',
-            entity_id: plan.id,
-            message: `Plan "${plan.title}"에 미해결 critical/high QA 이슈가 ${openFindings.count}건 있습니다`,
+            entity_id: row.plan_id,
+            message: `Plan "${plan.title}"에 미해결 critical/high QA 이슈가 ${row.count}건 있습니다`,
           });
         }
+      }
 
-        // qa_stale: last QA run > 7 days ago
-        const lastRun = this.db.prepare(
-          `SELECT CAST(JULIANDAY('now') - JULIANDAY(MAX(created_at)) AS INTEGER) AS days_since
-           FROM qa_runs WHERE plan_id = ? AND status = 'completed'`
-        ).get(plan.id) as { days_since: number | null } | undefined;
+      // Batch: stale QA runs (last completed > 7 days ago)
+      const staleRuns = this.db.prepare(
+        `SELECT plan_id, CAST(JULIANDAY('now') - JULIANDAY(MAX(created_at)) AS INTEGER) AS days_since
+         FROM qa_runs WHERE status = 'completed'
+         GROUP BY plan_id
+         HAVING days_since > 7`
+      ).all() as Array<{ plan_id: string; days_since: number }>;
 
-        if (lastRun?.days_since && lastRun.days_since > 7) {
+      for (const row of staleRuns) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: 'qa_stale',
             entity_type: 'plan',
-            entity_id: plan.id,
-            message: `Plan "${plan.title}"의 마지막 QA가 ${lastRun.days_since}일 전입니다`,
+            entity_id: row.plan_id,
+            message: `Plan "${plan.title}"의 마지막 QA가 ${row.days_since}일 전입니다`,
           });
         }
+      }
 
-        // qa_fix_blocked: QA fix plan has blocked tasks
-        const fixPlans = this.db.prepare(
-          `SELECT DISTINCT qf.fix_plan_id FROM qa_findings qf
-           JOIN qa_runs qr ON qr.id = qf.run_id
-           WHERE qr.plan_id = ? AND qf.fix_plan_id IS NOT NULL`
-        ).all(plan.id) as Array<{ fix_plan_id: string }>;
+      // Batch: fix plans with blocked tasks
+      const blockedFixPlans = this.db.prepare(
+        `SELECT DISTINCT qr.plan_id, COUNT(t.id) AS blocked_count
+         FROM qa_findings qf
+         JOIN qa_runs qr ON qr.id = qf.run_id
+         JOIN tasks t ON t.plan_id = qf.fix_plan_id AND t.status = 'blocked'
+         WHERE qf.fix_plan_id IS NOT NULL
+         GROUP BY qr.plan_id`
+      ).all() as Array<{ plan_id: string; blocked_count: number }>;
 
-        for (const fp of fixPlans) {
-          const blockedTasks = this.db.prepare(
-            `SELECT COUNT(*) AS count FROM tasks WHERE plan_id = ? AND status = 'blocked'`
-          ).get(fp.fix_plan_id) as { count: number };
-
-          if (blockedTasks.count > 0) {
-            qaAlerts.push({
-              type: 'qa_fix_blocked',
-              entity_type: 'plan',
-              entity_id: plan.id,
-              message: `QA 수정 플랜에 차단된 태스크가 ${blockedTasks.count}건 있습니다`,
-            });
-            break;
-          }
+      for (const row of blockedFixPlans) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
+          qaAlerts.push({
+            type: 'qa_fix_blocked',
+            entity_type: 'plan',
+            entity_id: row.plan_id,
+            message: `QA 수정 플랜에 차단된 태스크가 ${row.blocked_count}건 있습니다`,
+          });
         }
       }
     } catch {
-      // QA tables may not exist yet — silently skip
+      // QA tables may not exist yet
     }
 
     return qaAlerts;
