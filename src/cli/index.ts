@@ -24,7 +24,7 @@ import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlan
 import { importFromGithub, importFromFile, importFromSlack } from './importers.js';
 import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus, ContextLog } from '../core/types.js';
 import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus } from '../core/types.js';
-import { VALID_PLAN_STATUSES, VALID_BACKLOG_PRIORITIES, VALID_BACKLOG_CATEGORIES, VALID_BACKLOG_COMPLEXITIES, VALID_BACKLOG_STATUSES } from '../core/types.js';
+import { VALID_PLAN_STATUSES, VALID_BACKLOG_PRIORITIES, VALID_BACKLOG_CATEGORIES, VALID_BACKLOG_COMPLEXITIES, VALID_BACKLOG_STATUSES, VALID_QA_RUN_TERMINAL_STATUSES } from '../core/types.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -949,6 +949,28 @@ qaRun
       findings.length > 0 ? `Findings: ${findings.length} total` : 'Findings: none',
       run.summary ? `Summary: ${run.summary}` : '',
     ].filter(Boolean).join('\n'));
+  }));
+
+qaRun
+  .command('complete')
+  .argument('<run_id>', 'QA Run ID')
+  .option('--summary <text>', 'Summary of the QA run results')
+  .option('--status <status>', 'Final status (completed, failed)', 'completed')
+  .description('Complete a QA run and set its final status')
+  .action((runId: string, opts: { summary?: string; status?: string }) => withErrorHandler(() => {
+    const statusInput = opts.status!;
+    if (!VALID_QA_RUN_TERMINAL_STATUSES.includes(statusInput as typeof VALID_QA_RUN_TERMINAL_STATUSES[number])) {
+      return outputError(`Invalid status: ${statusInput}. Must be one of: ${VALID_QA_RUN_TERMINAL_STATUSES.join(', ')}`);
+    }
+    const status = statusInput as typeof VALID_QA_RUN_TERMINAL_STATUSES[number];
+    const { qaRun: qaRunModel } = getQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    if ((VALID_QA_RUN_TERMINAL_STATUSES as readonly string[]).includes(run.status)) {
+      return outputError(`QA run ${runId} is already ${run.status}`);
+    }
+    const updated = qaRunModel.updateStatus(runId, status, opts.summary);
+    output(updated, `QA run ${runId} marked as ${status}${opts.summary ? ` — ${opts.summary}` : ''}`);
   }));
 
 // qa scenario

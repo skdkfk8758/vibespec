@@ -2103,6 +2103,7 @@ var QARunModel = class {
        completed_at = CASE WHEN ? IN ('completed', 'failed') THEN CURRENT_TIMESTAMP ELSE completed_at END
        WHERE id = ?`
     ).run(status, summary ?? null, status, id);
+    return this.get(id);
   }
   updateScores(id, total, passed, failed, riskScore) {
     this.db.prepare(
@@ -2923,6 +2924,7 @@ function importFromSlack(channel, _options) {
 
 // src/core/types.ts
 var VALID_PLAN_STATUSES = ["draft", "active", "approved", "completed", "archived"];
+var VALID_QA_RUN_TERMINAL_STATUSES = ["completed", "failed"];
 var VALID_BACKLOG_PRIORITIES = ["critical", "high", "medium", "low"];
 var VALID_BACKLOG_CATEGORIES = ["feature", "bugfix", "refactor", "chore", "idea"];
 var VALID_BACKLOG_COMPLEXITIES = ["simple", "moderate", "complex"];
@@ -3509,6 +3511,21 @@ qaRun.command("show").argument("<run_id>", "QA Run ID").description("Show QA run
     findings.length > 0 ? `Findings: ${findings.length} total` : "Findings: none",
     run.summary ? `Summary: ${run.summary}` : ""
   ].filter(Boolean).join("\n"));
+}));
+qaRun.command("complete").argument("<run_id>", "QA Run ID").option("--summary <text>", "Summary of the QA run results").option("--status <status>", "Final status (completed, failed)", "completed").description("Complete a QA run and set its final status").action((runId, opts) => withErrorHandler(() => {
+  const statusInput = opts.status;
+  if (!VALID_QA_RUN_TERMINAL_STATUSES.includes(statusInput)) {
+    return outputError(`Invalid status: ${statusInput}. Must be one of: ${VALID_QA_RUN_TERMINAL_STATUSES.join(", ")}`);
+  }
+  const status = statusInput;
+  const { qaRun: qaRunModel } = getQAModels();
+  const run = qaRunModel.get(runId);
+  if (!run) return outputError(`QA run not found: ${runId}`);
+  if (VALID_QA_RUN_TERMINAL_STATUSES.includes(run.status)) {
+    return outputError(`QA run ${runId} is already ${run.status}`);
+  }
+  const updated = qaRunModel.updateStatus(runId, status, opts.summary);
+  output(updated, `QA run ${runId} marked as ${status}${opts.summary ? ` \u2014 ${opts.summary}` : ""}`);
 }));
 var qaScenarioCmd = qa.command("scenario").description("Manage QA scenarios");
 qaScenarioCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Scenario title").requiredOption("--description <desc>", "Scenario description").requiredOption("--category <cat>", "Category (functional, integration, flow, regression, edge_case)").option("--priority <p>", "Priority (critical, high, medium, low)", "medium").option("--related-tasks <ids>", "Comma-separated related task IDs").option("--agent <name>", "Assigned agent name").description("Create a QA scenario").action((runId, opts) => withErrorHandler(() => {

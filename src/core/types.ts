@@ -210,6 +210,7 @@ export interface NewRule {
 // QA types
 export type QARunTrigger = 'manual' | 'auto' | 'milestone' | 'post_merge';
 export type QARunStatus = 'pending' | 'running' | 'completed' | 'failed';
+export const VALID_QA_RUN_TERMINAL_STATUSES = ['completed', 'failed'] as const satisfies readonly QARunStatus[];
 export type QAScenarioCategory = 'functional' | 'integration' | 'flow' | 'regression' | 'edge_case' | 'acceptance';
 export type QAScenarioPriority = 'critical' | 'high' | 'medium' | 'low';
 export type QAScenarioStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip' | 'warn';

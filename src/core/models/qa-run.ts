@@ -33,12 +33,13 @@ export class QARunModel {
     ).all() as QARun[];
   }
 
-  updateStatus(id: string, status: QARunStatus, summary?: string): void {
+  updateStatus(id: string, status: QARunStatus, summary?: string): QARun {
     this.db.prepare(
       `UPDATE qa_runs SET status = ?, summary = ?,
        completed_at = CASE WHEN ? IN ('completed', 'failed') THEN CURRENT_TIMESTAMP ELSE completed_at END
        WHERE id = ?`
     ).run(status, summary ?? null, status, id);
+    return this.get(id)!;
   }
 
   updateScores(id: string, total: number, passed: number, failed: number, riskScore: number): void {
