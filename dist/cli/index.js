@@ -3614,6 +3614,32 @@ qa.command("stats").option("--plan <plan_id>", "Filter by plan ID").description(
     `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`
   ].join("\n"));
 }));
+var ideate = program.command("ideate").description("Manage ideation records");
+ideate.command("list").description("List ideation records from context log").action(() => {
+  const { contextModel } = initModels();
+  const logs = contextModel.getLatest(100);
+  const ideations = logs.filter((l) => l.summary.includes("[ideation]"));
+  if (ideations.length === 0) {
+    output([], "ideation \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-ideate\uB85C \uC544\uC774\uB514\uC5B4\uB97C \uC815\uB9AC\uD574\uBCF4\uC138\uC694.");
+    return;
+  }
+  const formatted = ideations.map(
+    (l, i) => `${i + 1}. [#${l.id}] ${l.summary.replace("[ideation] ", "")} (${l.created_at})`
+  ).join("\n");
+  output(ideations, `## Ideation \uC774\uB825
+
+${formatted}`);
+});
+ideate.command("show").argument("<id>", "Context log ID").description("Show ideation detail").action((id) => {
+  const { db } = initModels();
+  const log = db.prepare("SELECT * FROM context_log WHERE id = ?").get(parseInt(id, 10));
+  if (!log) return outputError(`Ideation not found: ${id}`);
+  output(log, `## Ideation #${log.id}
+
+**Created**: ${log.created_at}
+
+${log.summary}`);
+});
 var backlog = program.command("backlog").description("Manage backlog items");
 backlog.command("add").description("Add a backlog item").requiredOption("--title <title>", "Item title").option("--description <desc>", "Item description").option("--priority <priority>", "Priority: critical|high|medium|low", "medium").option("--category <category>", "Category: feature|bugfix|refactor|chore|idea").option("--tags <tags>", "Comma-separated tags").option("--complexity <complexity>", "Complexity hint: simple|moderate|complex").option("--source <source>", "Source of the item").action((opts) => withErrorHandler(() => {
   const { backlogModel } = initModels();
