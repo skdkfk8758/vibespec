@@ -5,10 +5,10 @@ set -euo pipefail
 
 trap 'exit 0' ERR
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+source "$(dirname "$0")/lib/read-config.sh"
 
-CAREFUL=$(node "$PLUGIN_ROOT/dist/cli/index.js" --json config get careful.enabled 2>/dev/null | jq -r '.value // "false"' 2>/dev/null || echo "false")
-FREEZE=$(node "$PLUGIN_ROOT/dist/cli/index.js" --json config get freeze.path 2>/dev/null | jq -r '.value // empty' 2>/dev/null || echo "")
+CAREFUL=$(vs_config_get "careful.enabled" "false")
+FREEZE=$(vs_config_get "freeze.path" "")
 
 STATUS=""
 

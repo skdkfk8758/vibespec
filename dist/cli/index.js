@@ -1954,6 +1954,14 @@ var ContextModel = class {
     );
     return stmt.get(sessionId) ?? null;
   }
+  getById(id) {
+    return this.db.prepare("SELECT * FROM context_log WHERE id = ?").get(id) ?? null;
+  }
+  search(tag, limit = 100) {
+    return this.db.prepare(
+      `SELECT * FROM context_log WHERE summary LIKE ? ORDER BY created_at DESC, id DESC LIMIT ?`
+    ).all(`%${tag}%`, limit);
+  }
 };
 
 // src/core/models/task-metrics.ts
@@ -3259,42 +3267,41 @@ config.command("delete").argument("<key>", "Config key").description("Delete a c
   deleteConfig(db, key);
   output({ deleted: true, key }, `Deleted: ${key}`);
 });
-var careful = program.command("careful").description("Manage careful mode (destructive command guard)");
-careful.command("on").description("Enable careful mode").action(() => {
+function initDb() {
   const db = getDb();
   initSchema(db);
+  return db;
+}
+var careful = program.command("careful").description("Manage careful mode (destructive command guard)");
+careful.command("on").description("Enable careful mode").action(() => {
+  const db = initDb();
   setConfig(db, "careful.enabled", "true");
   output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
 });
 careful.command("off").description("Disable careful mode").action(() => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   setConfig(db, "careful.enabled", "false");
   output({ careful: false }, "careful \uBAA8\uB4DC \uBE44\uD65C\uC131\uD654\uB428.");
 });
 careful.command("status").description("Show careful mode status").action(() => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   const enabled = getConfig(db, "careful.enabled") === "true";
   output({ careful: enabled }, enabled ? "\u26A0\uFE0F careful \uBAA8\uB4DC: \uD65C\uC131\uD654" : "careful \uBAA8\uB4DC: \uBE44\uD65C\uC131\uD654");
 });
 var freeze = program.command("freeze").description("Manage freeze boundary (edit scope restriction)");
 freeze.command("set").argument("<path>", "Directory path to restrict edits to").description("Set freeze boundary").action((inputPath) => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   const absPath = resolve2(inputPath);
   setConfig(db, "freeze.path", absPath);
   output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
 });
 freeze.command("off").description("Remove freeze boundary").action(() => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   deleteConfig(db, "freeze.path");
   output({ freeze: null }, "freeze \uBE44\uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704 \uC81C\uD55C \uD574\uC81C.");
 });
 freeze.command("status").description("Show freeze boundary status").action(() => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   const freezePath = getConfig(db, "freeze.path");
   output(
     { freeze: freezePath },
@@ -3303,8 +3310,7 @@ freeze.command("status").description("Show freeze boundary status").action(() =>
 });
 var guard = program.command("guard").description("Enable/disable careful + freeze combined");
 guard.command("on").argument("<path>", "Directory path to restrict edits to").description("Enable careful mode and set freeze boundary").action((inputPath) => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   const absPath = resolve2(inputPath);
   setConfig(db, "careful.enabled", "true");
   setConfig(db, "freeze.path", absPath);
@@ -3314,15 +3320,13 @@ guard.command("on").argument("<path>", "Directory path to restrict edits to").de
   );
 });
 guard.command("off").description("Disable both careful mode and freeze boundary").action(() => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   setConfig(db, "careful.enabled", "false");
   deleteConfig(db, "freeze.path");
   output({ careful: false, freeze: null }, "guard \uBE44\uD65C\uC131\uD654\uB428 \u2014 careful + freeze \uBAA8\uB450 \uD574\uC81C.");
 });
 guard.command("status").description("Show guard status").action(() => {
-  const db = getDb();
-  initSchema(db);
+  const db = initDb();
   const carefulEnabled = getConfig(db, "careful.enabled") === "true";
   const freezePath = getConfig(db, "freeze.path");
   output(
@@ -3617,8 +3621,7 @@ qa.command("stats").option("--plan <plan_id>", "Filter by plan ID").description(
 var ideate = program.command("ideate").description("Manage ideation records");
 ideate.command("list").description("List ideation records from context log").action(() => {
   const { contextModel } = initModels();
-  const logs = contextModel.getLatest(100);
-  const ideations = logs.filter((l) => l.summary.includes("[ideation]"));
+  const ideations = contextModel.search("[ideation]");
   if (ideations.length === 0) {
     output([], "ideation \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-ideate\uB85C \uC544\uC774\uB514\uC5B4\uB97C \uC815\uB9AC\uD574\uBCF4\uC138\uC694.");
     return;
@@ -3631,14 +3634,16 @@ ideate.command("list").description("List ideation records from context log").act
 ${formatted}`);
 });
 ideate.command("show").argument("<id>", "Context log ID").description("Show ideation detail").action((id) => {
-  const { db } = initModels();
-  const log = db.prepare("SELECT * FROM context_log WHERE id = ?").get(parseInt(id, 10));
-  if (!log) return outputError(`Ideation not found: ${id}`);
-  output(log, `## Ideation #${log.id}
+  withErrorHandler(() => {
+    const { contextModel } = initModels();
+    const log = contextModel.getById(parseInt(id, 10));
+    if (!log) return outputError(`Ideation not found: ${id}`);
+    output(log, `## Ideation #${log.id}
 
 **Created**: ${log.created_at}
 
 ${log.summary}`);
+  });
 });
 var deploy = program.command("deploy").description("Manage deployment pipeline");
 deploy.command("setup").description("Guide to set up deployment configuration").action(() => {
@@ -3683,10 +3688,9 @@ var canary = program.command("canary").description("Manage canary health checks"
 canary.command("status").description("Show latest deploy/canary events").action(() => {
   withErrorHandler(() => {
     const { contextModel } = initModels();
-    const logs = contextModel.getLatest(100);
-    const deployEvents = logs.filter(
-      (l) => l.summary.includes("[deploy]") || l.summary.includes("[canary]")
-    );
+    const deployLogs = contextModel.search("[deploy]");
+    const canaryLogs = contextModel.search("[canary]");
+    const deployEvents = [...deployLogs, ...canaryLogs].sort((a, b) => b.id - a.id);
     if (deployEvents.length === 0) {
       output([], "\uBC30\uD3EC/\uCE74\uB098\uB9AC \uC774\uBCA4\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
       return;

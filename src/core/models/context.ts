@@ -47,4 +47,14 @@ export class ContextModel {
     );
     return (stmt.get(sessionId) as ContextLog) ?? null;
   }
+
+  getById(id: number): ContextLog | null {
+    return (this.db.prepare('SELECT * FROM context_log WHERE id = ?').get(id) as ContextLog) ?? null;
+  }
+
+  search(tag: string, limit: number = 100): ContextLog[] {
+    return this.db.prepare(
+      `SELECT * FROM context_log WHERE summary LIKE ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+    ).all(`%${tag}%`, limit) as ContextLog[];
+  }
 }

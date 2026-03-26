@@ -559,14 +559,20 @@ config
 
 import { resolve } from 'node:path';
 
+/** Lightweight DB init without model allocation — for pure config read/write commands */
+function initDb() {
+  const db = getDb();
+  initSchema(db);
+  return db;
+}
+
 const careful = program.command('careful').description('Manage careful mode (destructive command guard)');
 
 careful
   .command('on')
   .description('Enable careful mode')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     setConfig(db, 'careful.enabled', 'true');
     output({ careful: true }, '⚠️ careful 모드 활성화됨 — 파괴적 명령이 차단됩니다.');
   });
@@ -575,8 +581,7 @@ careful
   .command('off')
   .description('Disable careful mode')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     setConfig(db, 'careful.enabled', 'false');
     output({ careful: false }, 'careful 모드 비활성화됨.');
   });
@@ -585,8 +590,7 @@ careful
   .command('status')
   .description('Show careful mode status')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     const enabled = getConfig(db, 'careful.enabled') === 'true';
     output({ careful: enabled }, enabled ? '⚠️ careful 모드: 활성화' : 'careful 모드: 비활성화');
   });
@@ -598,8 +602,7 @@ freeze
   .argument('<path>', 'Directory path to restrict edits to')
   .description('Set freeze boundary')
   .action((inputPath: string) => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     const absPath = resolve(inputPath);
     setConfig(db, 'freeze.path', absPath);
     output({ freeze: absPath }, `🔒 freeze 활성화됨 — 편집 범위: ${absPath}`);
@@ -609,8 +612,7 @@ freeze
   .command('off')
   .description('Remove freeze boundary')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     deleteConfig(db, 'freeze.path');
     output({ freeze: null }, 'freeze 비활성화됨 — 편집 범위 제한 해제.');
   });
@@ -619,8 +621,7 @@ freeze
   .command('status')
   .description('Show freeze boundary status')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     const freezePath = getConfig(db, 'freeze.path');
     output(
       { freeze: freezePath },
@@ -635,8 +636,7 @@ guard
   .argument('<path>', 'Directory path to restrict edits to')
   .description('Enable careful mode and set freeze boundary')
   .action((inputPath: string) => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     const absPath = resolve(inputPath);
     setConfig(db, 'careful.enabled', 'true');
     setConfig(db, 'freeze.path', absPath);
@@ -650,8 +650,7 @@ guard
   .command('off')
   .description('Disable both careful mode and freeze boundary')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     setConfig(db, 'careful.enabled', 'false');
     deleteConfig(db, 'freeze.path');
     output({ careful: false, freeze: null }, 'guard 비활성화됨 — careful + freeze 모두 해제.');
@@ -661,8 +660,7 @@ guard
   .command('status')
   .description('Show guard status')
   .action(() => {
-    const db = getDb();
-    initSchema(db);
+    const db = initDb();
     const carefulEnabled = getConfig(db, 'careful.enabled') === 'true';
     const freezePath = getConfig(db, 'freeze.path');
     output(
@@ -1139,8 +1137,7 @@ ideate
   .description('List ideation records from context log')
   .action(() => {
     const { contextModel } = initModels();
-    const logs = contextModel.getLatest(100);
-    const ideations = logs.filter((l) => l.summary.includes('[ideation]'));
+    const ideations = contextModel.search('[ideation]');
     if (ideations.length === 0) {
       output([], 'ideation 기록이 없습니다. /vs-ideate로 아이디어를 정리해보세요.');
       return;
@@ -1156,10 +1153,12 @@ ideate
   .argument('<id>', 'Context log ID')
   .description('Show ideation detail')
   .action((id: string) => {
-    const { db } = initModels();
-    const log = db.prepare('SELECT * FROM context_log WHERE id = ?').get(parseInt(id, 10)) as ContextLog | undefined;
-    if (!log) return outputError(`Ideation not found: ${id}`);
-    output(log, `## Ideation #${log.id}\n\n**Created**: ${log.created_at}\n\n${log.summary}`);
+    withErrorHandler(() => {
+      const { contextModel } = initModels();
+      const log = contextModel.getById(parseInt(id, 10));
+      if (!log) return outputError(`Ideation not found: ${id}`);
+      output(log, `## Ideation #${log.id}\n\n**Created**: ${log.created_at}\n\n${log.summary}`);
+    });
   });
 
 // ── deploy ────────────────────────────────────────────────────────────
@@ -1225,10 +1224,10 @@ canary
   .action(() => {
     withErrorHandler(() => {
       const { contextModel } = initModels();
-      const logs = contextModel.getLatest(100);
-      const deployEvents = logs.filter((l: ContextLog) =>
-        l.summary.includes('[deploy]') || l.summary.includes('[canary]')
-      );
+      const deployLogs = contextModel.search('[deploy]');
+      const canaryLogs = contextModel.search('[canary]');
+      const deployEvents = [...deployLogs, ...canaryLogs]
+        .sort((a, b) => b.id - a.id);
 
       if (deployEvents.length === 0) {
         output([], '배포/카나리 이벤트가 없습니다.');
