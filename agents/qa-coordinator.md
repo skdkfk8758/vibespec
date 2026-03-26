@@ -90,6 +90,40 @@ Description:
    - 추론 기반: 빈 입력, null, 경계값, 대량 데이터, 동시성
    - Error KB에서 발견된 과거 패턴 기반
 
+6. **Design Verification** — 디자인 검증 시나리오 (조건부 생성)
+
+   **자동 트리거 조건** — 아래 중 하나라도 해당되면 이 카테고리의 시나리오를 생성하세요:
+   - done 태스크의 `allowed_files`에 `.css`, `.scss`, `.tsx`, `.vue`, `.svelte` 확장자 파일이 포함된 경우
+   - 태스크 spec 또는 title에 UI/레이아웃/스타일 관련 키워드가 포함된 경우:
+     `UI`, `layout`, `style`, `디자인`, `레이아웃`, `스타일`, `CSS`, `반응형`, `responsive`, `컴포넌트`, `component`, `페이지`, `page`, `화면`, `view`, `theme`, `dark mode`
+   - 트리거 조건에 해당하지 않으면 이 카테고리를 건너뛰세요
+
+   **생성할 시나리오 유형:**
+   - **시각적 일관성 검증**: 변경된 UI 컴포넌트의 간격/정렬/폰트/색상 일관성 확인
+     - Given: {변경된 컴포넌트/페이지}가 렌더링된 상태
+     - When: 페이지를 시각적으로 검사
+     - Then: spacing, font, color가 프로젝트 디자인 시스템과 일관적이어야 함
+   - **반응형 레이아웃 검증**: 변경된 페이지의 반응형 동작 확인
+     - Given: {변경된 페이지}가 렌더링된 상태
+     - When: 뷰포트를 desktop/tablet/mobile로 변경
+     - Then: 레이아웃이 깨지지 않고, overflow/겹침 없어야 함
+   - **AI Slop 탐지**: 변경된 스타일에서 AI 생성 코드 특유의 패턴 탐지
+     - Given: {변경된 CSS/컴포넌트 파일} 분석
+     - When: AI slop 패턴을 검사 (과도한 그라디언트, 제네릭 아이콘, 불일치 spacing)
+     - Then: AI slop 패턴이 발견되지 않아야 함
+   - **DESIGN.md 준수 검증** (DESIGN.md 파일이 프로젝트에 존재하는 경우에만):
+     - Given: DESIGN.md의 디자인 가이드가 존재
+     - When: 변경된 UI 코드와 DESIGN.md 규칙을 대조
+     - Then: 색상 팔레트, 타이포그래피, 컴포넌트 스타일이 가이드를 준수해야 함
+
+   **priority 배정:**
+   - 레이아웃 깨짐 가능성 → critical
+   - 시각적 일관성 → high
+   - AI slop → medium
+   - DESIGN.md 준수 → medium
+
+   **에이전트 배정:** design verification 시나리오는 `acceptance` 카테고리로 등록하여 **qa-acceptance-tester**에게 배정하세요
+
 **depth에 따른 시나리오 수:**
 - `quick`: critical/high priority만 생성 (최대 ~10개)
 - `standard`: medium까지 포함 (최대 ~20개)
@@ -183,7 +217,22 @@ Description:
 1. **에이전트 배정**
    - functional + integration + regression 시나리오 → **qa-func-tester** 에이전트
    - flow + edge_case 시나리오 → **qa-flow-tester** 에이전트
-   - acceptance 시나리오 → **qa-acceptance-tester** 에이전트 (**visual 모드에서만**)
+   - acceptance 시나리오 (design verification 포함) → **qa-acceptance-tester** 에이전트 (**visual 모드이거나 design verification 시나리오가 자동 생성된 경우**)
+   - security 시나리오 → **qa-security-auditor** 에이전트 (**보안 관련 변경 감지 시**)
+
+   **Security Auditor 디스패치 조건:**
+   - 변경된 파일(done 태스크의 allowed_files)에서 보안 키워드를 검색하세요:
+     - 키워드: `auth`, `login`, `password`, `token`, `session`, `crypto`, `sql`, `inject`
+   - 파일명 또는 파일 내용에 위 키워드가 하나라도 포함되면 security-auditor를 디스패치하세요
+   - 보안 관련 변경이 감지되지 않으면 security-auditor 디스패치를 **건너뛰세요**
+   - 디스패치 시 Phase 2에서 `security` 카테고리 시나리오를 추가 생성하세요:
+     - OWASP Top 10 기반 보안 점검 시나리오
+     - STRIDE 위협 모델링 시나리오
+     - priority: 변경 범위에 따라 critical(인증/결제) 또는 high(기타 보안)
+   - qa-security-auditor에 전달할 추가 정보:
+     ```
+     - changed_files: 보안 키워드가 감지된 변경 파일 목록
+     ```
 
    **Visual 모드 추가 동작:**
    - mode가 `visual`이면 Phase 2에서 `acceptance` 카테고리 시나리오도 생성하세요:
@@ -195,6 +244,12 @@ Description:
      - project_info에 웹 프로젝트 여부 포함
      ```
    - visual 모드가 아니면 acceptance 시나리오와 qa-acceptance-tester 배정을 건너뛰세요
+
+   **Design Verification 자동 트리거:**
+   - mode에 관계없이, Phase 2에서 design verification 시나리오가 자동 생성된 경우 (카테고리 6번 조건 충족):
+     - 해당 시나리오를 `acceptance` 카테고리로 등록
+     - qa-acceptance-tester를 추가 디스패치하세요 (visual 모드가 아니어도)
+     - 기본 2개 에이전트 + qa-acceptance-tester = 최대 3개 병렬 디스패치
 
 2. **디스패치 정보 구성**
    각 에이전트에 전달할 정보:
@@ -208,7 +263,9 @@ Description:
 3. **병렬 디스패치**
    - Agent 도구를 사용하여 에이전트를 **동시에** 디스패치하세요:
      - 기본: qa-func-tester + qa-flow-tester (2개 병렬)
+     - 보안 변경 감지 시: qa-func-tester + qa-flow-tester + qa-security-auditor (3개 병렬)
      - visual 모드: qa-func-tester + qa-flow-tester + qa-acceptance-tester (3개 병렬)
+     - visual + 보안 변경: qa-func-tester + qa-flow-tester + qa-acceptance-tester + qa-security-auditor (4개 병렬)
    - `run_in_background: false`로 결과를 대기하세요
    - 한 에이전트가 실패해도 다른 에이전트의 결과는 유효합니다
 

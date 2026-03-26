@@ -49,8 +49,10 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
        - label: "증분 (Incremental)", description: "마지막 QA 이후 변경분만 재검증"
        - label: "타겟 (Targeted)", description: "특정 태스크만 대상으로 QA 수행"
        - label: "Visual", description: "browser-control 기반 시각/기능 검증 포함 — 기존 QA + acceptance 테스터 병렬 실행"
+       - label: "디자인 검증 (Design Verification)", description: "UI 변경 파일 대상 디자인 일관성/AI slop/반응형/DESIGN.md 준수 검증 — acceptance 테스터의 디자인 체크리스트 실행"
    - targeted 선택 시 추가 질문: 대상 태스크 선택
    - visual 선택 시: mode를 `visual`로 설정. coordinator가 기존 func/flow 테스터와 함께 qa-acceptance-tester도 디스패치합니다
+   - design-verification 선택 시: mode를 `design-verification`으로 설정. coordinator가 design verification 시나리오만 생성하여 qa-acceptance-tester에게 위임합니다. func/flow 테스터는 디스패치하지 않습니다
 
 4. **QA 깊이 선택**
    - `AskUserQuestion`으로 깊이 선택:
@@ -87,7 +89,7 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 
        - plan_id: {plan_id}
        - run_id: {run_id}
-       - mode: {full|incremental|targeted}
+       - mode: {full|incremental|targeted|visual|design-verification}
        - depth: {quick|standard|thorough}
        - review_mode: {review|auto}
        - target_tasks: {targeted 모드 시 태스크 ID 목록}
