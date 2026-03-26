@@ -253,6 +253,25 @@ function initSchema(db) {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS backlog_items (
+      id               TEXT PRIMARY KEY,
+      title            TEXT NOT NULL,
+      description      TEXT,
+      priority         TEXT NOT NULL CHECK(priority IN ('critical','high','medium','low')) DEFAULT 'medium',
+      category         TEXT CHECK(category IN ('feature','bugfix','refactor','chore','idea')),
+      tags             TEXT,
+      complexity_hint  TEXT CHECK(complexity_hint IN ('simple','moderate','complex')),
+      source           TEXT,
+      status           TEXT NOT NULL CHECK(status IN ('open','planned','done','dropped')) DEFAULT 'open',
+      plan_id          TEXT REFERENCES plans(id) ON DELETE SET NULL,
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_items(status);
+    CREATE INDEX IF NOT EXISTS idx_backlog_priority ON backlog_items(priority);
+    CREATE INDEX IF NOT EXISTS idx_backlog_plan ON backlog_items(plan_id);
   `);
   applyMigrations(db);
 }
@@ -443,6 +462,29 @@ function applyMigrations(db) {
       CREATE INDEX IF NOT EXISTS idx_qa_findings_status ON qa_findings(status);
     `);
     db.pragma("user_version = 8");
+  }
+  if (version < 9) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS backlog_items (
+        id               TEXT PRIMARY KEY,
+        title            TEXT NOT NULL,
+        description      TEXT,
+        priority         TEXT NOT NULL CHECK(priority IN ('critical','high','medium','low')) DEFAULT 'medium',
+        category         TEXT CHECK(category IN ('feature','bugfix','refactor','chore','idea')),
+        tags             TEXT,
+        complexity_hint  TEXT CHECK(complexity_hint IN ('simple','moderate','complex')),
+        source           TEXT,
+        status           TEXT NOT NULL CHECK(status IN ('open','planned','done','dropped')) DEFAULT 'open',
+        plan_id          TEXT REFERENCES plans(id) ON DELETE SET NULL,
+        created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_items(status);
+      CREATE INDEX IF NOT EXISTS idx_backlog_priority ON backlog_items(priority);
+      CREATE INDEX IF NOT EXISTS idx_backlog_plan ON backlog_items(plan_id);
+    `);
+    db.pragma("user_version = 9");
   }
 }
 
@@ -2173,6 +2215,129 @@ var QAFindingModel = class {
   }
 };
 
+// src/core/models/backlog.ts
+var BacklogModel = class {
+  db;
+  events;
+  constructor(db, events) {
+    this.db = db;
+    this.events = events;
+  }
+  create(item) {
+    const id = generateId();
+    const tags = item.tags ? JSON.stringify(item.tags) : null;
+    this.db.prepare(`
+      INSERT INTO backlog_items (id, title, description, priority, category, tags, complexity_hint, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      item.title,
+      item.description ?? null,
+      item.priority ?? "medium",
+      item.category ?? null,
+      tags,
+      item.complexity_hint ?? null,
+      item.source ?? null
+    );
+    const created = this.requireById(id);
+    this.events?.record("backlog", id, "created", null, JSON.stringify({ title: item.title }));
+    return created;
+  }
+  getById(id) {
+    const row = this.db.prepare("SELECT * FROM backlog_items WHERE id = ?").get(id);
+    return row ?? null;
+  }
+  requireById(id) {
+    const item = this.getById(id);
+    if (!item) throw new Error(`Backlog item not found: ${id}`);
+    return item;
+  }
+  list(filter) {
+    const conditions = [];
+    const params = [];
+    if (filter?.status) {
+      conditions.push("b.status = ?");
+      params.push(filter.status);
+    }
+    if (filter?.priority) {
+      conditions.push("b.priority = ?");
+      params.push(filter.priority);
+    }
+    if (filter?.category) {
+      conditions.push("b.category = ?");
+      params.push(filter.category);
+    }
+    let sql;
+    if (filter?.tag) {
+      conditions.push("EXISTS (SELECT 1 FROM json_each(b.tags) WHERE json_each.value = ?)");
+      params.push(filter.tag);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const priorityOrder = "CASE b.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END";
+    sql = `SELECT b.* FROM backlog_items b ${where} ORDER BY ${priorityOrder}, b.created_at DESC`;
+    return this.db.prepare(sql).all(...params);
+  }
+  update(id, fields) {
+    const item = this.requireById(id);
+    const dbFields = { ...fields, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+    const query = buildUpdateQuery("backlog_items", id, dbFields);
+    if (!query) return item;
+    const oldFields = {};
+    const newFields = {};
+    for (const key of Object.keys(fields)) {
+      if (fields[key] !== void 0) {
+        oldFields[key] = item[key];
+        newFields[key] = fields[key];
+      }
+    }
+    this.db.prepare(query.sql).run(...query.params);
+    if (fields.status && fields.status !== item.status) {
+      this.events?.record("backlog", id, "status_changed", JSON.stringify({ status: item.status }), JSON.stringify({ status: fields.status }));
+    } else {
+      this.events?.record("backlog", id, "updated", JSON.stringify(oldFields), JSON.stringify(newFields));
+    }
+    return this.requireById(id);
+  }
+  promote(id, planId) {
+    const item = this.requireById(id);
+    if (item.status !== "open") {
+      throw new Error(`Only open backlog items can be promoted. Current status: ${item.status}`);
+    }
+    this.db.prepare(
+      "UPDATE backlog_items SET status = ?, plan_id = ?, updated_at = ? WHERE id = ?"
+    ).run("planned", planId, (/* @__PURE__ */ new Date()).toISOString(), id);
+    this.events?.record(
+      "backlog",
+      id,
+      "status_changed",
+      JSON.stringify({ status: "open" }),
+      JSON.stringify({ status: "planned", plan_id: planId })
+    );
+    return this.requireById(id);
+  }
+  delete(id) {
+    this.requireById(id);
+    this.db.prepare("DELETE FROM events WHERE entity_type = ? AND entity_id = ?").run("backlog", id);
+    this.db.prepare("DELETE FROM backlog_items WHERE id = ?").run(id);
+  }
+  getStats() {
+    const items = this.db.prepare("SELECT priority, category, status FROM backlog_items").all();
+    const stats = {
+      total: items.length,
+      by_priority: { critical: 0, high: 0, medium: 0, low: 0 },
+      by_category: {},
+      by_status: { open: 0, planned: 0, done: 0, dropped: 0 }
+    };
+    for (const item of items) {
+      stats.by_priority[item.priority]++;
+      stats.by_status[item.status]++;
+      const cat = item.category ?? "uncategorized";
+      stats.by_category[cat] = (stats.by_category[cat] ?? 0) + 1;
+    }
+    return stats;
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -2453,9 +2618,83 @@ function formatSkillUsage(skillStats) {
   }
   return lines.join("\n");
 }
+var PRIORITY_ICONS = {
+  critical: "!!!!",
+  high: "!!! ",
+  medium: "!!  ",
+  low: "!   "
+};
+var STATUS_LABELS = {
+  open: "open",
+  planned: "planned",
+  done: "done",
+  dropped: "dropped"
+};
+function formatBacklogList(items) {
+  if (items.length === 0) return "No backlog items found.";
+  const lines = [];
+  const header = `${padRight("ID", 14)}${padRight("Pri", 6)}${padRight("Category", 12)}${padRight("Status", 10)}Title`;
+  lines.push(header);
+  for (const item of items) {
+    const pri = PRIORITY_ICONS[item.priority] ?? "    ";
+    const cat = padRight(item.category ?? "-", 12);
+    const status = padRight(STATUS_LABELS[item.status] ?? item.status, 10);
+    lines.push(`${padRight(item.id, 14)}${padRight(pri, 6)}${cat}${status}${item.title}`);
+  }
+  return lines.join("\n");
+}
+function formatBacklogDetail(item) {
+  const tags = item.tags ? JSON.parse(item.tags).join(", ") : "(none)";
+  const lines = [
+    `ID:          ${item.id}`,
+    `Title:       ${item.title}`,
+    `Priority:    ${item.priority}`,
+    `Category:    ${item.category ?? "-"}`,
+    `Tags:        ${tags}`,
+    `Complexity:  ${item.complexity_hint ?? "-"}`,
+    `Source:      ${item.source ?? "-"}`,
+    `Status:      ${item.status}`,
+    `Plan:        ${item.plan_id ?? "-"}`,
+    `Created:     ${item.created_at}`,
+    `Updated:     ${item.updated_at}`
+  ];
+  if (item.description) {
+    lines.push("");
+    lines.push(item.description);
+  }
+  return lines.join("\n");
+}
+function formatBacklogStats(stats) {
+  const lines = [];
+  lines.push(`Total: ${stats.total}`);
+  lines.push("");
+  lines.push("By Priority:");
+  lines.push(`  critical: ${stats.by_priority.critical}`);
+  lines.push(`  high:     ${stats.by_priority.high}`);
+  lines.push(`  medium:   ${stats.by_priority.medium}`);
+  lines.push(`  low:      ${stats.by_priority.low}`);
+  lines.push("");
+  lines.push("By Status:");
+  lines.push(`  open:     ${stats.by_status.open}`);
+  lines.push(`  planned:  ${stats.by_status.planned}`);
+  lines.push(`  done:     ${stats.by_status.done}`);
+  lines.push(`  dropped:  ${stats.by_status.dropped}`);
+  if (Object.keys(stats.by_category).length > 0) {
+    lines.push("");
+    lines.push("By Category:");
+    for (const [cat, count] of Object.entries(stats.by_category)) {
+      lines.push(`  ${padRight(cat + ":", 16)}${count}`);
+    }
+  }
+  return lines.join("\n");
+}
 
 // src/core/types.ts
 var VALID_PLAN_STATUSES = ["draft", "active", "approved", "completed", "archived"];
+var VALID_BACKLOG_PRIORITIES = ["critical", "high", "medium", "low"];
+var VALID_BACKLOG_CATEGORIES = ["feature", "bugfix", "refactor", "chore", "idea"];
+var VALID_BACKLOG_COMPLEXITIES = ["simple", "moderate", "complex"];
+var VALID_BACKLOG_STATUSES = ["open", "planned", "done", "dropped"];
 
 // src/cli/index.ts
 var require2 = createRequire(import.meta.url);
@@ -2500,7 +2739,8 @@ function initModels() {
   const qaRunModel = new QARunModel(db);
   const qaScenarioModel = new QAScenarioModel(db);
   const qaFindingModel = new QAFindingModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel };
+  const backlogModel = new BacklogModel(db, events);
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel };
 }
 var program = new Command();
 program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
@@ -3077,6 +3317,95 @@ qa.command("stats").option("--plan <plan_id>", "Filter by plan ID").description(
     `Findings: ${statsData.total_findings} total, ${statsData.open_findings} open`,
     `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`
   ].join("\n"));
+}));
+var backlog = program.command("backlog").description("Manage backlog items");
+backlog.command("add").description("Add a backlog item").requiredOption("--title <title>", "Item title").option("--description <desc>", "Item description").option("--priority <priority>", "Priority: critical|high|medium|low", "medium").option("--category <category>", "Category: feature|bugfix|refactor|chore|idea").option("--tags <tags>", "Comma-separated tags").option("--complexity <complexity>", "Complexity hint: simple|moderate|complex").option("--source <source>", "Source of the item").action((opts) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  if (opts.priority && !VALID_BACKLOG_PRIORITIES.includes(opts.priority)) {
+    outputError(`Invalid priority: ${opts.priority}. Must be one of: ${VALID_BACKLOG_PRIORITIES.join(", ")}`);
+  }
+  if (opts.category && !VALID_BACKLOG_CATEGORIES.includes(opts.category)) {
+    outputError(`Invalid category: ${opts.category}. Must be one of: ${VALID_BACKLOG_CATEGORIES.join(", ")}`);
+  }
+  if (opts.complexity && !VALID_BACKLOG_COMPLEXITIES.includes(opts.complexity)) {
+    outputError(`Invalid complexity: ${opts.complexity}. Must be one of: ${VALID_BACKLOG_COMPLEXITIES.join(", ")}`);
+  }
+  const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : void 0;
+  const item = backlogModel.create({
+    title: opts.title,
+    description: opts.description,
+    priority: opts.priority,
+    category: opts.category,
+    tags,
+    complexity_hint: opts.complexity,
+    source: opts.source
+  });
+  output(item, `Created backlog item: ${item.id} \u2014 ${item.title}`);
+}));
+backlog.command("list").description("List backlog items").option("--status <status>", "Filter by status").option("--priority <priority>", "Filter by priority").option("--category <category>", "Filter by category").option("--tag <tag>", "Filter by tag").action((opts) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  const items = backlogModel.list({
+    status: opts.status,
+    priority: opts.priority,
+    category: opts.category,
+    tag: opts.tag
+  });
+  output(items, formatBacklogList(items));
+}));
+backlog.command("show").description("Show backlog item details").argument("<id>", "Backlog item ID").action((id) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  const item = backlogModel.getById(id);
+  if (!item) outputError(`Backlog item not found: ${id}`);
+  output(item, formatBacklogDetail(item));
+}));
+backlog.command("update").description("Update a backlog item").argument("<id>", "Backlog item ID").option("--title <title>", "New title").option("--description <desc>", "New description").option("--priority <priority>", "New priority").option("--category <category>", "New category").option("--tags <tags>", "New comma-separated tags").option("--complexity <complexity>", "New complexity hint").option("--source <source>", "New source").option("--status <status>", "New status").action((id, opts) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  const fields = {};
+  if (opts.title) fields.title = opts.title;
+  if (opts.description) fields.description = opts.description;
+  if (opts.priority) {
+    if (!VALID_BACKLOG_PRIORITIES.includes(opts.priority)) {
+      outputError(`Invalid priority: ${opts.priority}`);
+    }
+    fields.priority = opts.priority;
+  }
+  if (opts.category) {
+    if (!VALID_BACKLOG_CATEGORIES.includes(opts.category)) {
+      outputError(`Invalid category: ${opts.category}`);
+    }
+    fields.category = opts.category;
+  }
+  if (opts.tags) fields.tags = JSON.stringify(opts.tags.split(",").map((t) => t.trim()));
+  if (opts.complexity) {
+    if (!VALID_BACKLOG_COMPLEXITIES.includes(opts.complexity)) {
+      outputError(`Invalid complexity: ${opts.complexity}`);
+    }
+    fields.complexity_hint = opts.complexity;
+  }
+  if (opts.source) fields.source = opts.source;
+  if (opts.status) {
+    if (!VALID_BACKLOG_STATUSES.includes(opts.status)) {
+      outputError(`Invalid status: ${opts.status}`);
+    }
+    fields.status = opts.status;
+  }
+  const item = backlogModel.update(id, fields);
+  output(item, formatBacklogDetail(item));
+}));
+backlog.command("delete").description("Delete a backlog item").argument("<id>", "Backlog item ID").action((id) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  backlogModel.delete(id);
+  output({ deleted: id }, `Deleted backlog item: ${id}`);
+}));
+backlog.command("promote").description("Promote a backlog item to a plan").argument("<id>", "Backlog item ID").requiredOption("--plan <planId>", "Plan ID to link").action((id, opts) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  const item = backlogModel.promote(id, opts.plan);
+  output(item, `Promoted backlog item ${item.id} \u2192 plan ${opts.plan}`);
+}));
+backlog.command("stats").description("Show backlog statistics").action(() => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  const stats = backlogModel.getStats();
+  output(stats, formatBacklogStats(stats));
 }));
 program.parse();
 //# sourceMappingURL=index.js.map
