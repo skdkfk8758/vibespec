@@ -1115,7 +1115,7 @@ ${newEntry.solution}
   }
   listErrorFiles() {
     if (!fs.existsSync(this.errorsDir)) return [];
-    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).map((f) => path.join(this.errorsDir, f));
+    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && f !== "_index.md").map((f) => path.join(this.errorsDir, f));
   }
   updateIndex() {
     const stats = this.getStats();
@@ -2381,7 +2381,7 @@ function formatPlanList(plans) {
   const header = `${padRight("ID", 14)}${padRight("Title", 26)}${padRight("Status", 12)}Created`;
   lines.push(header);
   for (const plan2 of plans) {
-    const created = plan2.created_at.split("T")[0] ?? plan2.created_at.slice(0, 10);
+    const created = plan2.created_at?.split("T")[0] ?? "unknown";
     lines.push(
       `${padRight(plan2.id, 14)}${padRight(plan2.title, 26)}${padRight(plan2.status, 12)}${created}`
     );
