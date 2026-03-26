@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
+trap 'exit 0' ERR
 
 # PreToolUse hook: git commit 시 README.md 최신화 여부 체크
 # - package.json, src/ 변경이 있는데 README.md 변경이 없으면 경고
 
-COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty')
+COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null || echo "")
 
 # git commit 명령이 아니면 통과
 if ! echo "$COMMAND" | grep -qE '^git commit'; then

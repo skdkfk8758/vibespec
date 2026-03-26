@@ -3,21 +3,24 @@
 # PostToolUse hook: fix/hotfix/debug 커밋 감지 → pending 파일 생성
 # self-improve 파이프라인의 신호 수집 단계
 
-COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null || echo "")
 
 # git commit 명령이 아니면 통과
 if ! echo "$COMMAND" | grep -qE '^git commit'; then
   exit 0
 fi
 
-# 커밋 성공 여부 확인
-TOOL_EXIT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.exitCode // 0' 2>/dev/null)
-if [ "$TOOL_EXIT" != "0" ]; then
-  exit 0
+# CLAUDE_TOOL_OUTPUT에서 출력 추출 (JSON 또는 raw text 모두 처리)
+OUTPUT=""
+if echo "$CLAUDE_TOOL_OUTPUT" | jq -e . >/dev/null 2>&1; then
+  TOOL_EXIT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.exitCode // 0' 2>/dev/null || echo "0")
+  if [ "$TOOL_EXIT" != "0" ]; then
+    exit 0
+  fi
+  OUTPUT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.stdout // empty' 2>/dev/null || echo "")
+else
+  OUTPUT="${CLAUDE_TOOL_OUTPUT:-}"
 fi
-
-# 커밋 메시지 추출
-OUTPUT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.stdout // empty' 2>/dev/null || echo "")
 COMMIT_MSG=$(echo "$OUTPUT" | head -5)
 
 # fix:/hotfix:/debug: 타입만 감지 — 일반 커밋(feat:/chore: 등)은 무시

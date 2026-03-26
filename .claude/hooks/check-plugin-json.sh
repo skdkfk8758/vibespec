@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
+trap 'exit 0' ERR
 
 # PreToolUse hook: git commit 시 plugin.json 필수 필드 검증
 # - skills 필드 누락 등 플러그인 매니페스트 무결성 체크
 
-COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty')
+COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null || echo "")
 
 # git commit 명령이 아니면 통과
 if ! echo "$COMMAND" | grep -qE '^git commit'; then

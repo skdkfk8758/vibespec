@@ -3,14 +3,21 @@
 # PostToolUse hook: Bash 실행 결과에서 에러 패턴 감지 → KB 검색 제안
 # 테스트 실패, 빌드 에러, 런타임 에러를 감지하면 additionalContext로 제안
 
+# CLAUDE_TOOL_OUTPUT에서 출력 추출 (JSON 또는 raw text 모두 처리)
+TOOL_EXIT="0"
+OUTPUT=""
+if echo "$CLAUDE_TOOL_OUTPUT" | jq -e . >/dev/null 2>&1; then
+  TOOL_EXIT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.exitCode // 0' 2>/dev/null || echo "0")
+  OUTPUT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.stdout // empty, .stderr // empty' 2>/dev/null | head -50)
+else
+  OUTPUT=$(echo "${CLAUDE_TOOL_OUTPUT:-}" | head -50)
+  TOOL_EXIT="1"
+fi
+
 # 성공한 명령은 무시
-TOOL_EXIT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.exitCode // 0' 2>/dev/null)
 if [ "$TOOL_EXIT" = "0" ]; then
   exit 0
 fi
-
-# 출력에서 첫 50줄만 파싱 (대량 출력 방지)
-OUTPUT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.stdout // empty, .stderr // empty' 2>/dev/null | head -50)
 
 if [ -z "$OUTPUT" ]; then
   exit 0
