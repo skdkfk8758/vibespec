@@ -183,6 +183,18 @@ Description:
 1. **에이전트 배정**
    - functional + integration + regression 시나리오 → **qa-func-tester** 에이전트
    - flow + edge_case 시나리오 → **qa-flow-tester** 에이전트
+   - acceptance 시나리오 → **qa-acceptance-tester** 에이전트 (**visual 모드에서만**)
+
+   **Visual 모드 추가 동작:**
+   - mode가 `visual`이면 Phase 2에서 `acceptance` 카테고리 시나리오도 생성하세요:
+     - 각 done 태스크의 acceptance criteria에서 UI/기능 검증 시나리오 추출
+     - 시나리오에 dev_server_url 정보를 포함하세요
+   - qa-acceptance-tester에 전달할 추가 정보:
+     ```
+     - dev_server_url: package.json의 dev script 기반 추정 또는 사용자 지정
+     - project_info에 웹 프로젝트 여부 포함
+     ```
+   - visual 모드가 아니면 acceptance 시나리오와 qa-acceptance-tester 배정을 건너뛰세요
 
 2. **디스패치 정보 구성**
    각 에이전트에 전달할 정보:
@@ -194,7 +206,9 @@ Description:
    ```
 
 3. **병렬 디스패치**
-   - Agent 도구를 사용하여 두 에이전트를 **동시에** 디스패치하세요
+   - Agent 도구를 사용하여 에이전트를 **동시에** 디스패치하세요:
+     - 기본: qa-func-tester + qa-flow-tester (2개 병렬)
+     - visual 모드: qa-func-tester + qa-flow-tester + qa-acceptance-tester (3개 병렬)
    - `run_in_background: false`로 결과를 대기하세요
    - 한 에이전트가 실패해도 다른 에이전트의 결과는 유효합니다
 

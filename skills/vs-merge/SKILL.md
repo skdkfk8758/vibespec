@@ -79,6 +79,50 @@ argument-hint: "[target-branch]"
      > "⚠️ 타겟 브랜치에 워크트리 분기 이후 새로운 커밋이 있습니다. 통합 충돌 가능성이 있으므로 워크트리에서 rebase 후 테스트를 먼저 실행하는 것을 권장합니다. 계속 진행하시겠습니까? (Phase 4.5에서 통합 검증이 실행됩니다)"
    - 사용자가 중단을 선택하면 머지를 진행하지 않습니다
 
+6. **충돌 사전 분석 (Dry-Run)**
+
+   머지를 실행하기 전에 예상 충돌을 미리 파악합니다:
+
+   ```bash
+   git -C <original-repo> merge-tree $(git -C <original-repo> merge-base <target> <worktree-branch>) <target> <worktree-branch>
+   ```
+
+   - 출력에서 `CONFLICT` 패턴을 파싱하여 충돌 파일과 영역 수를 집계하세요
+   - `merge-tree` 명령이 실패하면 (구 Git 버전) **SKIP** 처리하고 기존 방식대로 진행하세요
+   - 충돌 0개 → "충돌 없음 — 안전하게 머지 진행합니다" 메시지 출력 후 Phase 4로 직행
+
+   **충돌이 있으면** 아래 **충돌 맵 개요**를 생성하여 표시하세요:
+
+   ```
+   ## 충돌 사전 분석
+
+   예상 충돌: {N}개 파일, {M}개 영역
+
+   | 파일 | 충돌 영역 | 관련 모듈 |
+   |------|----------|-----------|
+   | src/core/types.ts | 1 hunk | 타입 정의 |
+   | src/core/models/plan.ts | 3 hunks | PlanModel |
+   | src/cli/index.ts | 2 hunks | CLI 명령 |
+
+   ### 의존관계 기반 추천 해결 순서
+   1. src/core/types.ts (다른 파일이 import)
+   2. src/core/models/plan.ts (types에 의존, cli가 import)
+   3. src/cli/index.ts (plan에 의존)
+   ```
+
+   의존관계 분석 방법:
+   - 충돌 파일들 간의 `import`/`require` 관계를 파싱하세요
+   - import되는 쪽(하위 모듈)을 먼저 해결하도록 순서를 추천하세요
+   - 순환 import가 있으면 경고하고 사용자에게 순서를 선택받으세요
+
+   **체크포인트**: `AskUserQuestion`으로 진행 여부를 확인하세요:
+   - question: "충돌 {N}개가 예상됩니다. 어떻게 진행할까요?"
+   - header: "충돌 사전 분석"
+   - 선택지:
+     - label: "추천 순서로 머지 진행", description: "위 순서대로 충돌을 해결하며 머지합니다"
+     - label: "워크트리에서 rebase 먼저", description: "머지를 중단하고 워크트리에서 rebase 후 재시도합니다"
+     - label: "그대로 머지 진행", description: "순서 추천 없이 기존 방식대로 진행합니다"
+
 ### Phase 4: Squash Merge
 
 1. **타겟 브랜치 체크아웃**:
@@ -181,22 +225,45 @@ argument-hint: "[target-branch]"
             - 충돌 원인: {양쪽이 왜 충돌하는지 — 예: "같은 함수 선언부를 양쪽에서 다르게 수정"}
             ```
 
-         c. **`AskUserQuestion`으로 선택지 제시**:
+         c. **AI 추천 병합 코드 생성**:
+            - base, ours, theirs 코드를 모두 분석하세요
+            - **양쪽의 의도를 모두 살린 통합 코드**를 생성하세요:
+              - ours의 변경 의도 (예: 파라미터 추가)와 theirs의 변경 의도 (예: 반환 타입 변경)를 모두 반영
+              - 단순 concatenation이 아니라, 구문적으로 올바르고 의미적으로 양쪽을 통합한 코드
+            - 통합이 불가능한 경우 (양쪽이 동일 로직을 완전히 다르게 재작성) → AI 추천을 건너뛰고 "이 충돌은 AI 병합이 어렵습니다. 수동 선택을 권장합니다." 메시지 표시
+
+         d. **`AskUserQuestion`으로 선택지 제시**:
             - header: "충돌 #{N}: {파일명} (line {start}-{end})"
             - 선택지:
+              - label: "AI 추천 (병합)", description: "양쪽 의도를 통합한 코드를 적용합니다", preview: "{생성된 통합 코드}"
               - label: "ours (타겟)", description: "{ours 의미 요약} — {타겟 브랜치} 쪽 코드를 유지합니다"
               - label: "theirs (워크트리)", description: "{theirs 의미 요약} — 워크트리에서 작업한 코드를 유지합니다"
-              - label: "양쪽 모두 (ours 먼저)", description: "ours 코드 다음에 theirs 코드를 이어붙입니다"
-              - label: "양쪽 모두 (theirs 먼저)", description: "theirs 코드 다음에 ours 코드를 이어붙입니다"
               - label: "수동 편집", description: "직접 내용을 지정합니다"
+            - AI 추천 생성에 실패한 경우 "AI 추천 (병합)" 선택지를 제외하세요
 
-         d. **선택에 따른 처리**:
+         e. **선택에 따른 처리**:
+            - **AI 추천**: `Edit`으로 충돌 마커 영역 전체를 생성된 통합 코드로 교체합니다
             - **ours/theirs** (파일에 충돌이 1개일 때): `git -C <original-repo> checkout --ours <file>` 또는 `--theirs <file>` 실행
             - **ours/theirs** (파일에 충돌이 2개 이상일 때): `Edit`으로 해당 충돌 영역의 마커를 제거하고 선택된 쪽 내용만 남깁니다
-            - **양쪽 모두**: `Edit`으로 충돌 마커를 제거하고 선택된 순서로 양쪽 내용을 이어붙입니다
             - **수동 편집**: 사용자에게 원하는 내용을 물어보고 `Edit`으로 충돌 마커를 제거하며 반영
 
-      4. **모든 hunk 해결 후 파일 staging**: `git -C <original-repo> add <file>`
+      4. **모든 hunk 해결 후 파일 구문 검증**:
+         - `git -C <original-repo> add <file>`로 staging
+         - **TypeScript 파일**인 경우 (`.ts`, `.tsx`):
+           ```bash
+           npx tsc --noEmit --pretty <file> 2>&1
+           ```
+           - 에러가 있으면:
+             ```
+             ⚠️ 구문 검증 실패: {file}
+             {에러 메시지}
+             ```
+             → `AskUserQuestion`으로 대응 선택:
+               - label: "해당 hunk 재수정", description: "에러가 발생한 영역을 다시 인터뷰합니다"
+               - label: "무시하고 계속", description: "구문 에러를 무시하고 다음 파일로 진행합니다"
+             → "재수정" 선택 시: `git -C <original-repo> checkout -m <file>`로 충돌 상태 복원 후 해당 파일의 Step 3부터 재시작
+           - 에러가 없으면: "✅ 구문 검증 통과" 표시
+         - **비 TypeScript 파일**: 구문 검증을 건너뛰세요
 
       5. **파일 해결 완료 확인**: 해결된 파일 내용을 간략히 보여주고 다음 파일로 진행합니다
 
@@ -272,6 +339,39 @@ git -C <original-repo> reset --hard HEAD
 > 2. 충돌 또는 호환성 문제 수정
 > 3. 빌드/테스트 통과 확인 후 `/vs-merge` 재실행
 
+### Phase 4.7: Post-Merge Acceptance (선택적)
+
+Integration Gate를 통과한 후, 커밋 전에 **실제 동작 검증**을 수행합니다.
+squash merge는 아직 커밋되지 않은 staged 상태이므로, 실패 시 Phase 4.5와 동일하게 롤백 가능합니다.
+
+**체크포인트**: `AskUserQuestion`으로 검증 여부를 확인하세요:
+- question: "빌드/테스트가 통과했습니다. 실제 동작 검증을 실행할까요?"
+- header: "Acceptance Testing"
+- 선택지:
+  - label: "vs-acceptance 실행 (권장)", description: "browser-control + 코드 분석으로 실제 기능 동작을 검증합니다"
+  - label: "건너뛰고 커밋", description: "빌드/테스트 통과로 충분하다고 판단하고 커밋합니다"
+
+**"vs-acceptance 실행" 선택 시:**
+
+1. `/vs-acceptance` 스킬을 실행하세요
+   - plan_id: 활성 플랜이 있으면 해당 ID 전달
+   - scope: 이번 머지에서 변경된 파일 목록 전달
+
+2. **결과 처리:**
+   - **PASS** → Phase 5 커밋으로 진행. `acceptance: PASS` 결과를 기록하세요
+   - **WARN** → Phase 5 커밋으로 진행. `acceptance: WARN` 결과를 기록하세요
+   - **FAIL** → 롤백 절차를 실행하세요:
+     ```bash
+     git -C <original-repo> reset --hard HEAD
+     ```
+     사용자에게 실패 리포트를 보여주고 원인 수정을 안내하세요
+
+3. **결과 기록**: Phase 4.5의 결과 변수에 추가:
+   - `acceptance: PASS/WARN/FAIL/SKIP`
+
+**"건너뛰고 커밋" 선택 시:**
+- `acceptance: SKIP` 기록 후 Phase 5로 진행
+
 ### Phase 5: Commit
 
 #### VibeSpec 태스크 컨텍스트 조회
@@ -292,7 +392,7 @@ Changes:
 - <변경사항 그룹별 불릿 포인트>
 - <관련 항목은 서브 불릿으로>
 
-Verified: build ✅ test ✅ (N passed) lint ✅|⚠️|skip
+Verified: build ✅ test ✅ (N passed) lint ✅|⚠️|skip acceptance ✅|⚠️|skip
 Task: #T-<task_id>
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
@@ -303,7 +403,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - 설명: 한글, 명령형, 마침표 없음, 72자 이내
 - body: 한글, WHY에 집중
 - Changes: 중요한 것부터, 관련 항목 그룹화
-- `Verified:` 라인: Phase 4.5 결과를 항상 포함. 각 항목은 ✅(통과), ⚠️(경고), `skip`(미실행) 중 하나
+- `Verified:` 라인: Phase 4.5 + Phase 4.7 결과를 항상 포함. 각 항목은 ✅(통과), ⚠️(경고), `skip`(미실행) 중 하나
 - `Task:` 라인: in_progress 태스크가 있을 때만 포함
 - `Co-Authored-By`: 항상 포함
 
