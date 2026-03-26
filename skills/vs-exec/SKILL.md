@@ -40,7 +40,14 @@ vs-next/vs-pick은 태스크마다 tdd-implementer, verifier 에이전트를 디
    - 워크트리 밖이면 (경로에 `/worktrees/`가 없으면):
      → "메인 브랜치에서 직접 작업하게 됩니다. `/vs-worktree`로 격리 환경을 먼저 세팅하시겠습니까?"라고 안내하세요
 
-2. **활성 플랜 확인**
+2. **가드레일 활성화 제안**
+   - Bash 도구로 `vs careful status` 명령을 실행하세요
+   - careful이 비활성화 상태이면 `AskUserQuestion`으로 안내하세요:
+     - "배치 실행 전 파괴적 명령 차단(careful 모드)을 활성화하시겠습니까?"
+     - 선택지: "활성화" (→ `vs careful on`), "건너뛰기"
+   - 이 제안은 선택적이며, 사용자가 건너뛰면 바로 다음 단계로 진행합니다
+
+3. **활성 플랜 확인**
    - Bash 도구로 `vs plan list --json` 명령을 실행하세요. active/approved 플랜을 조회하세요
    - 여러 개면 `AskUserQuestion`으로 선택받으세요
    - 없으면 `/vs-plan`으로 안내하세요

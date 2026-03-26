@@ -555,6 +555,122 @@ config
     output({ deleted: true, key }, `Deleted: ${key}`);
   });
 
+// ── careful / freeze / guard ─────────────────────────────────────────
+
+import { resolve } from 'node:path';
+
+const careful = program.command('careful').description('Manage careful mode (destructive command guard)');
+
+careful
+  .command('on')
+  .description('Enable careful mode')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    setConfig(db, 'careful.enabled', 'true');
+    output({ careful: true }, '⚠️ careful 모드 활성화됨 — 파괴적 명령이 차단됩니다.');
+  });
+
+careful
+  .command('off')
+  .description('Disable careful mode')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    setConfig(db, 'careful.enabled', 'false');
+    output({ careful: false }, 'careful 모드 비활성화됨.');
+  });
+
+careful
+  .command('status')
+  .description('Show careful mode status')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    const enabled = getConfig(db, 'careful.enabled') === 'true';
+    output({ careful: enabled }, enabled ? '⚠️ careful 모드: 활성화' : 'careful 모드: 비활성화');
+  });
+
+const freeze = program.command('freeze').description('Manage freeze boundary (edit scope restriction)');
+
+freeze
+  .command('set')
+  .argument('<path>', 'Directory path to restrict edits to')
+  .description('Set freeze boundary')
+  .action((inputPath: string) => {
+    const db = getDb();
+    initSchema(db);
+    const absPath = resolve(inputPath);
+    setConfig(db, 'freeze.path', absPath);
+    output({ freeze: absPath }, `🔒 freeze 활성화됨 — 편집 범위: ${absPath}`);
+  });
+
+freeze
+  .command('off')
+  .description('Remove freeze boundary')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    deleteConfig(db, 'freeze.path');
+    output({ freeze: null }, 'freeze 비활성화됨 — 편집 범위 제한 해제.');
+  });
+
+freeze
+  .command('status')
+  .description('Show freeze boundary status')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    const freezePath = getConfig(db, 'freeze.path');
+    output(
+      { freeze: freezePath },
+      freezePath ? `🔒 freeze: ${freezePath}` : 'freeze: 비활성화'
+    );
+  });
+
+const guard = program.command('guard').description('Enable/disable careful + freeze combined');
+
+guard
+  .command('on')
+  .argument('<path>', 'Directory path to restrict edits to')
+  .description('Enable careful mode and set freeze boundary')
+  .action((inputPath: string) => {
+    const db = getDb();
+    initSchema(db);
+    const absPath = resolve(inputPath);
+    setConfig(db, 'careful.enabled', 'true');
+    setConfig(db, 'freeze.path', absPath);
+    output(
+      { careful: true, freeze: absPath },
+      `🛡️ guard 활성화됨 — careful + freeze: ${absPath}`
+    );
+  });
+
+guard
+  .command('off')
+  .description('Disable both careful mode and freeze boundary')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    setConfig(db, 'careful.enabled', 'false');
+    deleteConfig(db, 'freeze.path');
+    output({ careful: false, freeze: null }, 'guard 비활성화됨 — careful + freeze 모두 해제.');
+  });
+
+guard
+  .command('status')
+  .description('Show guard status')
+  .action(() => {
+    const db = getDb();
+    initSchema(db);
+    const carefulEnabled = getConfig(db, 'careful.enabled') === 'true';
+    const freezePath = getConfig(db, 'freeze.path');
+    output(
+      { careful: carefulEnabled, freeze: freezePath },
+      `🛡️ guard: careful=${carefulEnabled ? '활성화' : '비활성화'}, freeze=${freezePath ?? '비활성화'}`
+    );
+  });
+
 // ── error-kb ──────────────────────────────────────────────────────────
 
 const errorKb = program.command('error-kb').description('Manage error knowledge base');
