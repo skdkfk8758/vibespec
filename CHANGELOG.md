@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.28.0] - 2026-03-27
+
+### 새 기능
+- **qa-cli**: QA run complete CLI 명령 추가 (ba0a6c2)
+- **opportunistic**: 구현 중 백로그/크로스플랜 융통성 추가 (26ebc19)
+- **design**: 디자인 시스템 통합 기능 추가 — vs-design-init, vs-design-review (d302515)
+- **security**: 보안 감사 기능 추가 — vs-security (05c7c64)
+- **deploy**: 배포 파이프라인 기능 추가 — vs-deploy, vs-deploy-setup, vs-canary (8d23f91)
+- **qa-visual**: 브라우저 기반 시각적 QA 기능 추가 — vs-acceptance, vs-browse (6dc5d71)
+- **ideate**: 아이디어 검증 기능 추가 — vs-ideate (68a3c17)
+- **guardrail**: 안전 가드레일 기능 추가 — vs-careful, vs-freeze, vs-guard (5df303e)
+- **backlog**: Backlog 모델, CLI, 타입 확장 + 대시보드 연동 + 외부 import (e5f7969, 3f7ad21)
+- **merge**: vs-merge 충돌 해결 고도화 + Post-Merge Acceptance Testing (628ecb2)
+
+### 버그 수정
+- **security**: read-config.sh SQL injection 방지 (fc50b1b)
+
+### 리팩토링
+- **guardrail**: simplify-loop R1 — 코드 품질 개선 6건 (135d5f9)
+
+### 기타
+- **build**: 빌드 산출물 갱신 (8cde274, e396c57, e2d46f8, 16219db)
+- **hooks**: hooks 스크립트 업데이트 (0381665)
+
 ## [0.27.1] - 2026-03-26
 
 ### 버그 수정
