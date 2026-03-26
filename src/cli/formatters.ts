@@ -194,7 +194,7 @@ export function formatPlanList(plans: Plan[]): string {
   lines.push(header);
 
   for (const plan of plans) {
-    const created = plan.created_at.split('T')[0] ?? plan.created_at.slice(0, 10);
+    const created = plan.created_at?.split('T')[0] ?? 'unknown';
     lines.push(
       `${padRight(plan.id, 14)}${padRight(plan.title, 26)}${padRight(plan.status, 12)}${created}`,
     );

@@ -210,8 +210,6 @@ describe('ErrorKBEngine', () => {
         tags: ['recur'],
       });
 
-      const originalLastSeen = engine.show(added.id)!.last_seen;
-
       // Small delay to ensure different timestamp
       engine.recordOccurrence(added.id, 'Happened again in module X');
 
@@ -240,16 +238,22 @@ describe('ErrorKBEngine', () => {
 
   describe('getStats', () => {
     it('should return statistics across all error entries', () => {
-      engine.add({ title: 'Error 1', severity: 'critical', tags: ['a'] });
-      engine.add({ title: 'Error 2', severity: 'high', tags: ['b'] });
-      engine.add({ title: 'Error 3', severity: 'high', tags: ['c'] });
-      engine.add({ title: 'Error 4', severity: 'low', tags: ['d'] });
+      const e1 = engine.add({ title: 'Error 1', severity: 'critical', tags: ['a'] });
+      const e2 = engine.add({ title: 'Error 2', severity: 'high', tags: ['b'] });
+      const e3 = engine.add({ title: 'Error 3', severity: 'high', tags: ['c'] });
+      const e4 = engine.add({ title: 'Error 4', severity: 'low', tags: ['d'] });
+
+      // Verify all 4 entries were created with unique IDs
+      const ids = new Set([e1.id, e2.id, e3.id, e4.id]);
+      expect(ids.size).toBe(4);
+
+      // Verify all 4 files exist on disk
+      const files = engine.listErrorFiles();
+      expect(files).toHaveLength(4);
 
       // Make Error 1 recurring
-      const entries = engine.search('');
-      const error1 = entries.find((e) => e.title === 'Error 1')!;
-      engine.recordOccurrence(error1.id, 'Again 1');
-      engine.recordOccurrence(error1.id, 'Again 2');
+      engine.recordOccurrence(e1.id, 'Again 1');
+      engine.recordOccurrence(e1.id, 'Again 2');
 
       const stats = engine.getStats();
       expect(stats.total).toBe(4);

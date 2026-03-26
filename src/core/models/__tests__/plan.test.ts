@@ -106,6 +106,29 @@ describe('PlanModel', () => {
       expect(archived.status).toBe('archived');
     });
 
+    it('should transition active → approved', () => {
+      const plan = model.create('Approve Plan');
+      model.activate(plan.id);
+
+      const approved = model.approve(plan.id);
+      expect(approved.status).toBe('approved');
+    });
+
+    it('should list approved plans by status filter', () => {
+      const plan = model.create('Filterable Plan');
+      model.activate(plan.id);
+      model.approve(plan.id);
+
+      const approved = model.list({ status: 'approved' });
+      expect(approved).toHaveLength(1);
+      expect(approved[0].title).toBe('Filterable Plan');
+    });
+
+    it('approve should throw for non-active plan', () => {
+      const plan = model.create('Draft Plan');
+      expect(() => model.approve(plan.id)).toThrow('Only active plans can be approved');
+    });
+
     it('activate should throw for non-existent plan', () => {
       expect(() => model.activate('nonexistent')).toThrow('Plan not found');
     });

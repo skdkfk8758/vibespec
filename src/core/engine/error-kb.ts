@@ -301,7 +301,7 @@ export class ErrorKBEngine {
     if (!fs.existsSync(this.errorsDir)) return [];
     return fs
       .readdirSync(this.errorsDir)
-      .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
+      .filter((f) => f.endsWith('.md') && f !== '_index.md')
       .map((f) => path.join(this.errorsDir, f));
   }
 
