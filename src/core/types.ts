@@ -1,7 +1,7 @@
 export type PlanStatus = 'draft' | 'active' | 'approved' | 'completed' | 'archived';
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'skipped';
 export type AlertType = 'stale' | 'blocked' | 'completable' | 'forgotten' | 'qa_risk_high' | 'qa_findings_open' | 'qa_stale' | 'qa_fix_blocked';
-export type EntityType = 'plan' | 'task';
+export type EntityType = 'plan' | 'task' | 'backlog';
 export type EventType = 'created' | 'updated' | 'status_changed' | 'activated' | 'completed' | 'approved' | 'archived' | 'deleted' | 'blocked_reason';
 
 export const VALID_PLAN_STATUSES: readonly PlanStatus[] = ['draft', 'active', 'approved', 'completed', 'archived'] as const;
@@ -208,9 +208,9 @@ export interface NewRule {
 }
 
 // QA types
-export type QARunTrigger = 'manual' | 'auto' | 'milestone';
+export type QARunTrigger = 'manual' | 'auto' | 'milestone' | 'post_merge';
 export type QARunStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type QAScenarioCategory = 'functional' | 'integration' | 'flow' | 'regression' | 'edge_case';
+export type QAScenarioCategory = 'functional' | 'integration' | 'flow' | 'regression' | 'edge_case' | 'acceptance';
 export type QAScenarioPriority = 'critical' | 'high' | 'medium' | 'low';
 export type QAScenarioStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip' | 'warn';
 export type QAFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -301,5 +301,41 @@ export interface NewQAFinding {
   affected_files?: string;
   related_task_id?: string;
   fix_suggestion?: string;
+}
+
+// Backlog types
+export type BacklogPriority = 'critical' | 'high' | 'medium' | 'low';
+export type BacklogCategory = 'feature' | 'bugfix' | 'refactor' | 'chore' | 'idea';
+export type BacklogComplexity = 'simple' | 'moderate' | 'complex';
+export type BacklogStatus = 'open' | 'planned' | 'done' | 'dropped';
+
+export const VALID_BACKLOG_PRIORITIES: readonly BacklogPriority[] = ['critical', 'high', 'medium', 'low'] as const;
+export const VALID_BACKLOG_CATEGORIES: readonly BacklogCategory[] = ['feature', 'bugfix', 'refactor', 'chore', 'idea'] as const;
+export const VALID_BACKLOG_COMPLEXITIES: readonly BacklogComplexity[] = ['simple', 'moderate', 'complex'] as const;
+export const VALID_BACKLOG_STATUSES: readonly BacklogStatus[] = ['open', 'planned', 'done', 'dropped'] as const;
+
+export interface BacklogItem {
+  id: string;
+  title: string;
+  description: string | null;
+  priority: BacklogPriority;
+  category: BacklogCategory | null;
+  tags: string | null;
+  complexity_hint: BacklogComplexity | null;
+  source: string | null;
+  status: BacklogStatus;
+  plan_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NewBacklogItem {
+  title: string;
+  description?: string;
+  priority?: BacklogPriority;
+  category?: BacklogCategory;
+  tags?: string[];
+  complexity_hint?: BacklogComplexity;
+  source?: string;
 }
 

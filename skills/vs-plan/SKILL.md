@@ -195,10 +195,38 @@ invocation: user
    - scope 규칙이 정의된 태스크는 `--allowed-files "파일1,파일2"` 및 `--forbidden-patterns "패턴1,패턴2"` 옵션을 추가하세요
    - spec과 acceptance를 반드시 포함하세요
 
-8. **결과 확인**
+8. **워크트리 추천**
+
+   태스크 생성이 완료되면 작업 환경의 격리 필요성을 판단하세요.
+
+   **추천 조건** — 아래 중 하나라도 해당하면 워크트리를 추천하세요:
+   - 복잡도 점수 ≥ 2점 (Step 1b에서 계산)
+   - 생성된 태스크 수 ≥ 4개
+   - `allowed_files`에서 파악한 변경 대상 파일이 3개 이상 디렉토리/모듈에 분포
+   - 백로그에서 승격된 플랜이고 원본 항목의 `complexity_hint`가 `complex`인 경우
+     (Bash 도구로 `vs --json backlog list --status planned`를 실행하여 해당 플랜과 연결된 백로그 항목을 확인)
+
+   **추천하지 않는 경우:**
+   - 이미 워크트리 안에 있을 때 (현재 경로에 `/worktrees/`가 포함)
+   - 태스크가 2개 이하이고 단일 모듈 내 변경
+
+   해당 조건을 충족하면 `AskUserQuestion`으로 선택지를 제시하세요:
+   - header: "워크트리 추천"
+   - question: "이 플랜은 {추천 근거}. 격리된 워크트리에서 작업하시겠습니까?"
+   - multiSelect: false
+   - 선택지:
+     - label: "워크트리에서 작업", description: "/vs-worktree로 격리된 환경을 생성합니다"
+     - label: "현재 브랜치에서 작업", description: "별도 격리 없이 바로 작업을 시작합니다"
+     - label: "나중에 결정", description: "지금은 건너뛰고 나중에 /vs-worktree를 실행합니다"
+
+   - "워크트리에서 작업" 선택 시: `/vs-worktree`를 안내하세요
+   - "현재 브랜치에서 작업" 선택 시: `/vs-next`를 안내하세요
+   - "나중에 결정" 선택 시: Step 9로 진행하세요
+
+9. **결과 확인**
    - Bash 도구로 `vs --json plan show <plan_id>` 명령을 실행하여 생성된 플랜과 태스크 트리를 보여주세요
    - Bash 도구로 `vs --json context save --summary "..."` 명령을 실행하여 플랜 생성 내용을 저장하세요
-   - `/vs-next`로 바로 작업을 시작할 수 있다고 안내하세요
+   - Step 8에서 이미 다음 단계를 안내하지 않았다면, `/vs-next`로 바로 작업을 시작할 수 있다고 안내하세요
 
 ## 다음 단계
 
@@ -208,3 +236,4 @@ invocation: user
 - → `/vs-worktree`로 격리된 환경에서 작업 시작
 - → `/vs-review`로 스펙 또는 태스크 재검토
 - → `/vs-dashboard`로 전체 플랜 현황 확인
+- → `/vs-backlog`로 백로그 관리

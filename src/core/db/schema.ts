@@ -125,6 +125,25 @@ export function initSchema(db: Database.Database): void {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS backlog_items (
+      id               TEXT PRIMARY KEY,
+      title            TEXT NOT NULL,
+      description      TEXT,
+      priority         TEXT NOT NULL CHECK(priority IN ('critical','high','medium','low')) DEFAULT 'medium',
+      category         TEXT CHECK(category IN ('feature','bugfix','refactor','chore','idea')),
+      tags             TEXT,
+      complexity_hint  TEXT CHECK(complexity_hint IN ('simple','moderate','complex')),
+      source           TEXT,
+      status           TEXT NOT NULL CHECK(status IN ('open','planned','done','dropped')) DEFAULT 'open',
+      plan_id          TEXT REFERENCES plans(id) ON DELETE SET NULL,
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_items(status);
+    CREATE INDEX IF NOT EXISTS idx_backlog_priority ON backlog_items(priority);
+    CREATE INDEX IF NOT EXISTS idx_backlog_plan ON backlog_items(plan_id);
   `);
 
   applyMigrations(db);
@@ -343,5 +362,30 @@ export function applyMigrations(db: Database.Database): void {
     `);
 
     db.pragma('user_version = 8');
+  }
+
+  if (version < 9) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS backlog_items (
+        id               TEXT PRIMARY KEY,
+        title            TEXT NOT NULL,
+        description      TEXT,
+        priority         TEXT NOT NULL CHECK(priority IN ('critical','high','medium','low')) DEFAULT 'medium',
+        category         TEXT CHECK(category IN ('feature','bugfix','refactor','chore','idea')),
+        tags             TEXT,
+        complexity_hint  TEXT CHECK(complexity_hint IN ('simple','moderate','complex')),
+        source           TEXT,
+        status           TEXT NOT NULL CHECK(status IN ('open','planned','done','dropped')) DEFAULT 'open',
+        plan_id          TEXT REFERENCES plans(id) ON DELETE SET NULL,
+        created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_items(status);
+      CREATE INDEX IF NOT EXISTS idx_backlog_priority ON backlog_items(priority);
+      CREATE INDEX IF NOT EXISTS idx_backlog_plan ON backlog_items(plan_id);
+    `);
+
+    db.pragma('user_version = 9');
   }
 }

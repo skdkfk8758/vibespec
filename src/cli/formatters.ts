@@ -1,4 +1,5 @@
-import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats, SkillStats } from '../core/types.js';
+import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats, SkillStats, BacklogItem } from '../core/types.js';
+import type { BacklogStats } from '../core/models/backlog.js';
 import type { DashboardOverview } from '../core/engine/dashboard.js';
 import type { VelocityResult, EstimatedCompletionResult, TimelineEntry } from '../core/engine/stats.js';
 
@@ -279,6 +280,91 @@ export function formatSkillUsage(skillStats: SkillStats[]): string {
     const s = skillStats[i];
     const label = s.count === 1 ? '1 time' : `${s.count} times`;
     lines.push(`  ${numCircle(i + 1)} ${s.skill_name} (${label})`);
+  }
+
+  return lines.join('\n');
+}
+
+// ── Backlog formatters ──────────────────────────────────────────────────
+
+const PRIORITY_ICONS: Record<string, string> = {
+  critical: '!!!!',
+  high: '!!! ',
+  medium: '!!  ',
+  low: '!   ',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  open: 'open',
+  planned: 'planned',
+  done: 'done',
+  dropped: 'dropped',
+};
+
+export function formatBacklogList(items: BacklogItem[]): string {
+  if (items.length === 0) return 'No backlog items found.';
+
+  const lines: string[] = [];
+  const header = `${padRight('ID', 14)}${padRight('Pri', 6)}${padRight('Category', 12)}${padRight('Status', 10)}Title`;
+  lines.push(header);
+
+  for (const item of items) {
+    const pri = PRIORITY_ICONS[item.priority] ?? '    ';
+    const cat = padRight(item.category ?? '-', 12);
+    const status = padRight(STATUS_LABELS[item.status] ?? item.status, 10);
+    lines.push(`${padRight(item.id, 14)}${padRight(pri, 6)}${cat}${status}${item.title}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatBacklogDetail(item: BacklogItem): string {
+  const tags = item.tags ? JSON.parse(item.tags).join(', ') : '(none)';
+  const lines: string[] = [
+    `ID:          ${item.id}`,
+    `Title:       ${item.title}`,
+    `Priority:    ${item.priority}`,
+    `Category:    ${item.category ?? '-'}`,
+    `Tags:        ${tags}`,
+    `Complexity:  ${item.complexity_hint ?? '-'}`,
+    `Source:      ${item.source ?? '-'}`,
+    `Status:      ${item.status}`,
+    `Plan:        ${item.plan_id ?? '-'}`,
+    `Created:     ${item.created_at}`,
+    `Updated:     ${item.updated_at}`,
+  ];
+
+  if (item.description) {
+    lines.push('');
+    lines.push(item.description);
+  }
+
+  return lines.join('\n');
+}
+
+export function formatBacklogStats(stats: BacklogStats): string {
+  const lines: string[] = [];
+
+  lines.push(`Total: ${stats.total}`);
+  lines.push('');
+  lines.push('By Priority:');
+  lines.push(`  critical: ${stats.by_priority.critical}`);
+  lines.push(`  high:     ${stats.by_priority.high}`);
+  lines.push(`  medium:   ${stats.by_priority.medium}`);
+  lines.push(`  low:      ${stats.by_priority.low}`);
+  lines.push('');
+  lines.push('By Status:');
+  lines.push(`  open:     ${stats.by_status.open}`);
+  lines.push(`  planned:  ${stats.by_status.planned}`);
+  lines.push(`  done:     ${stats.by_status.done}`);
+  lines.push(`  dropped:  ${stats.by_status.dropped}`);
+
+  if (Object.keys(stats.by_category).length > 0) {
+    lines.push('');
+    lines.push('By Category:');
+    for (const [cat, count] of Object.entries(stats.by_category)) {
+      lines.push(`  ${padRight(cat + ':', 16)}${count}`);
+    }
   }
 
   return lines.join('\n');
