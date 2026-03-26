@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.27.1] - 2026-03-26
+
+### 버그 수정
+- **error-kb**: `listErrorFiles`에서 underscore로 시작하는 nanoid가 `_index.md` 필터에 의해 누락되던 버그 수정 (1c08388)
+- **formatters**: `formatPlanList`에서 `created_at` null 방어 추가 (1c08388)
+
+### 리팩토링
+- **workflow**: codex-review 스킬 제거 및 전체 참조 정리 — verifier 단독 판정으로 단순화 (91f973d)
+- **workflow**: vs-commit에 Phase 0 (simplify-loop 선택적 게이트) 및 Phase 7 (플랜 완료 감지) 추가 (91f973d)
+- **workflow**: vs-next에 플랜 완료 시 vs-qa → vs-plan-verify 검증 흐름 추가 (91f973d)
+
+### 테스트
+- **plan**: approved 상태 테스트 3건 추가 — approve, list filter, guard (1c08388)
+- **error-kb**: getStats 테스트 디버깅 assertion 보강 (1c08388)
+
 ## [0.27.0] - 2026-03-25
 
 ### 새 기능
