@@ -105,10 +105,11 @@ node "$PLUGIN_DIR/dist/cli/index.js" dashboard --json
 
 셋업이 완료되면 사용자에게 아래 워크플로우 요약과 각 경로를 안내하세요:
 
-> **VibeSpec 워크플로우**: Spec → Plan → Tasks → Implementation → Commit
+> **VibeSpec 워크플로우**: Ideate → Spec → Plan → Tasks → Implementation → Commit → Release → Deploy
 
 | 경로 | 설명 | 추천 상황 |
 |------|------|----------|
+| `/vs-ideate` | 아이디어를 구조화하고 SDD 스펙 초안을 생성합니다 | 아이디어는 있지만 요구사항이 아직 정리 안 됐을 때 |
 | `/vs-plan` | 스펙을 작성하고 태스크로 분해합니다 | 새로운 기능을 시작할 때 |
 | `/vs-next` | 다음 태스크를 자동으로 가져옵니다 | 이미 플랜이 있고 순서대로 진행할 때 |
 | `/vs-pick` | 특정 태스크를 골라 작업합니다 | 우선순위가 높은 태스크를 먼저 처리할 때 |

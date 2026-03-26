@@ -22,7 +22,7 @@ import { BacklogModel } from '../core/models/backlog.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage, formatBacklogList, formatBacklogDetail, formatBacklogStats, formatBacklogBoard, formatImportPreview } from './formatters.js';
 import { importFromGithub, importFromFile, importFromSlack } from './importers.js';
-import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus } from '../core/types.js';
+import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus, ContextLog } from '../core/types.js';
 import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus } from '../core/types.js';
 import { VALID_PLAN_STATUSES, VALID_BACKLOG_PRIORITIES, VALID_BACKLOG_CATEGORIES, VALID_BACKLOG_COMPLEXITIES, VALID_BACKLOG_STATUSES } from '../core/types.js';
 
@@ -1129,6 +1129,38 @@ qa
       `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`,
     ].join('\n'));
   }));
+
+// ── ideate ────────────────────────────────────────────────────────────
+
+const ideate = program.command('ideate').description('Manage ideation records');
+
+ideate
+  .command('list')
+  .description('List ideation records from context log')
+  .action(() => {
+    const { contextModel } = initModels();
+    const logs = contextModel.getLatest(100);
+    const ideations = logs.filter((l) => l.summary.includes('[ideation]'));
+    if (ideations.length === 0) {
+      output([], 'ideation 기록이 없습니다. /vs-ideate로 아이디어를 정리해보세요.');
+      return;
+    }
+    const formatted = ideations.map((l, i) =>
+      `${i + 1}. [#${l.id}] ${l.summary.replace('[ideation] ', '')} (${l.created_at})`
+    ).join('\n');
+    output(ideations, `## Ideation 이력\n\n${formatted}`);
+  });
+
+ideate
+  .command('show')
+  .argument('<id>', 'Context log ID')
+  .description('Show ideation detail')
+  .action((id: string) => {
+    const { db } = initModels();
+    const log = db.prepare('SELECT * FROM context_log WHERE id = ?').get(parseInt(id, 10)) as ContextLog | undefined;
+    if (!log) return outputError(`Ideation not found: ${id}`);
+    output(log, `## Ideation #${log.id}\n\n**Created**: ${log.created_at}\n\n${log.summary}`);
+  });
 
 // ── backlog ───────────────────────────────────────────────────────────
 
