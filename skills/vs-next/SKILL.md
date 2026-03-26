@@ -104,16 +104,10 @@ invocation: user
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
      → `verifier` 에이전트를 디스패치하세요 (전달 정보: 태스크, 플랜 컨텍스트, impl_report, scope)
-     → verifier 완료 후 `codex-review` 스킬을 실행하세요 (전달 정보: 현재 태스크 정보, impl_report)
-     → codex-review가 SKIP을 반환하면 (Codex CLI 미설치 등) verification 결과만으로 판정
-     → **종합 판정 규칙:**
-       - codex-review SKIP → verification 결과만으로 판정
-       - 둘 다 PASS → **PASS**
-       - 하나라도 WARN (나머지 PASS 또는 SKIP) → **WARN**
-       - 하나라도 FAIL → **FAIL**
-     → **종합 리포트**를 다음 형식으로 출력하세요:
+     → **판정:** verifier 결과를 그대로 사용합니다 (PASS / WARN / FAIL)
+     → **검증 리포트**를 다음 형식으로 출력하세요:
        ```
-       ## 종합 검증 리포트
+       ## 검증 리포트
 
        ### 최종 판정: [PASS | WARN | FAIL]
 
@@ -123,10 +117,6 @@ invocation: user
        ### Scope Verification (범위 검증)
        [scope 리포트 요약 — verdict, 범위 내/외 파일 수, 위반 상세]
        (scope 미지정인 경우: "Scope 규칙 미지정 — SKIP")
-
-       ### Codex Review (코드 리뷰)
-       [codex-review 리포트 요약 — verdict, 주요 발견사항]
-       (SKIP인 경우: "Codex 리뷰를 건너뛰었습니다: {사유}")
        ```
      → done 처리 시 verifier 리포트에서 `changed_files_detail`과 `scope_violations` JSON을 추출하여 옵션으로 전달하세요
      → PASS: `vs --json task update <id> done`
@@ -135,16 +125,26 @@ invocation: user
      → FAIL (배치 모드): `debugger` 에이전트를 자동 디스패치하세요 (Step 8의 자동 재시도 정책 참조)
    - Bash 도구로 `vs --json context save --summary "..." --plan-id <plan_id>` 명령을 실행하여 완료 내용을 저장하세요
 
+   **플랜 완료 감지**: 태스크 done 처리 후 `vs --json task next <plan_id>`를 실행하세요.
+   - 남은 todo 태스크가 없으면 (모든 태스크가 done/skipped/blocked):
+     → 다음 체크포인트에서 "플랜 검증" 선택지를 **우선 표시**하세요
+   - 남은 태스크가 있으면 일반 체크포인트를 표시하세요
+
    **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - question: "다음으로 무엇을 하시겠습니까?"
    - header: "다음 작업"
    - multiSelect: false
-   - 선택지:
+   - 선택지 (남은 태스크가 없을 때 — **플랜 완료 흐름**):
+     - label: "플랜 검증 (권장)", description: "vs-qa → vs-plan-verify 순서로 플랜 전체를 검증합니다"
+     - label: "커밋 정리", description: "현재까지의 변경사항을 먼저 커밋합니다"
+     - label: "대시보드", description: "진행률을 확인합니다"
+   - 선택지 (남은 태스크가 있을 때 — **일반 흐름**):
      - label: "다음 태스크", description: "다음 1개 태스크를 실행합니다"
      - label: "배치 실행", description: "남은 태스크를 자동으로 연속 실행합니다 (서브에이전트 기반 병렬 + 자동 재시도)"
      - label: "커밋 정리", description: "현재까지의 변경사항을 커밋합니다"
      - label: "대시보드", description: "진행률을 확인합니다"
 
+   - "플랜 검증" → `/vs-qa` 실행 후 → `/vs-plan-verify` 실행
    - "다음 태스크" → Step 3부터 반복
    - "배치 실행" → Step 8로 진행
    - "커밋 정리" → `/vs-commit`
@@ -167,8 +167,8 @@ invocation: user
    - **의존성 자동 관리**: `vs --json task next <plan_id>`가 `depends_on` 기반으로 실행 가능한 태스크만 반환하므로, Wave 정보와 함께 사용하면 최적 병렬화 달성
    - 각 태스크마다 Step 6(구현) + Step 7(완료 처리)를 동일하게 적용하세요
      - tdd-implementer 디스패치 또는 직접 구현 판단
-     - verifier 에이전트 → codex-review 순차 리뷰
-     - 종합 판정 (PASS/WARN/FAIL)
+     - verifier 에이전트 검증
+     - 판정 (PASS/WARN/FAIL)
 
    #### 자동 재시도 정책 (debugger 에이전트 연동)
    - **PASS**: 다음 태스크 진행

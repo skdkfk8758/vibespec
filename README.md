@@ -89,7 +89,6 @@ cp -r skills/* ~/.gemini/skills/
 | Skill | Description |
 |-------|-------------|
 | `verification` | 태스크 완료 검증 — acceptance criteria + 테스트/빌드/lint 체크 |
-| `codex-review` | Codex CLI 크로스 리뷰 — 크로스 모델 코드 품질/버그/설계 검증 |
 | `sdd-methodology` | SDD 원칙, 스펙 구조, 품질 체크리스트 |
 | `tdd-principles` | RED-GREEN-REFACTOR, AAA 패턴, TDD 적합성 판단 |
 | `task-decomposition` | 15-30분 분해, INVEST 원칙, AC 작성법 |
@@ -205,7 +204,6 @@ vibespec/
 │   ├── vs-plan-verify/SKILL.md # /vs-plan-verify
 │   ├── vs-update/SKILL.md      # /vs-update
 │   ├── verification/SKILL.md         # 도메인: 태스크 완료 검증
-│   ├── codex-review/SKILL.md        # 도메인: Codex CLI 크로스 리뷰
 │   ├── sdd-methodology/SKILL.md   # 도메인: SDD 원칙
 │   ├── tdd-principles/SKILL.md    # 도메인: TDD 원칙
 │   ├── task-decomposition/SKILL.md # 도메인: 태스크 분해

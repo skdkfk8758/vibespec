@@ -542,7 +542,7 @@ effectiveness: 0.4    # prevented / (prevented + post_occurrences)
 |------|----------|------|
 | **잘못된 규칙 생성** | AI가 근본 원인을 오판 | 규칙에 effectiveness 추적, 낮으면 자동 제안으로 삭제 |
 | **과도한 규칙** | 모든 에러에 규칙 생성 | 3회+ 반복만 승격, 상한 30개 |
-| **Self-Challenge 맹점** | AI가 못 찾는 문제 유형 | 외부 검증 유지 (codex-review) |
+| **Self-Challenge 맹점** | AI가 못 찾는 문제 유형 | 외부 검증 유지 (simplify-loop, vs-qa) |
 | **규칙 충돌** | 두 규칙이 상반된 지시 | self-improve-review에서 충돌 감지 |
 | **Context pollution** | 규칙이 너무 많아 성능 저하 | T1(rules/) 30개 상한, 나머지는 T2(KB) |
 

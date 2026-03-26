@@ -17,6 +17,21 @@ invocation: user
 
 ## Process
 
+### Phase 0: 코드 정리 (선택적 게이트)
+
+커밋 전에 코드 품질을 높이기 위한 선택적 단계입니다.
+
+**체크포인트**: `AskUserQuestion`으로 코드 정리 여부를 확인하세요:
+- question: "커밋 전에 코드 정리를 실행할까요?"
+- header: "코드 정리"
+- multiSelect: false
+- 선택지:
+  - label: "simplify-loop 실행", description: "3개 리뷰 에이전트(재사용/품질/효율)가 코드를 검토하고 개선점 0까지 반복합니다"
+  - label: "건너뛰고 바로 커밋", description: "코드 정리 없이 커밋을 진행합니다"
+
+- "simplify-loop 실행" → `/simplify-loop`을 실행하세요. 완료 후 Phase 1로 진행합니다.
+- "건너뛰고 바로 커밋" → Phase 1로 바로 진행합니다.
+
 ### Phase 1: 변경사항 수집
 
 ```bash
@@ -107,6 +122,21 @@ EOF
 | 2 | def5678 | chore(config): eslint 설정 추가 | - |
 ```
 
+### Phase 7: 플랜 완료 감지
+
+커밋 완료 후, 활성 플랜이 있으면 남은 태스크를 확인하세요:
+- `vs --json task next <plan_id>`를 Bash 도구로 실행하세요
+- 남은 todo 태스크가 없으면 (모든 태스크가 done/skipped/blocked):
+  → **체크포인트**: `AskUserQuestion`으로 플랜 완료 흐름을 제시하세요:
+  - question: "모든 태스크가 완료되었습니다. 플랜 검증을 진행할까요?"
+  - header: "플랜 완료 감지"
+  - multiSelect: false
+  - 선택지:
+    - label: "플랜 검증 (권장)", description: "vs-qa → vs-plan-verify 순서로 플랜 전체를 검증합니다"
+    - label: "나중에", description: "플랜 검증 없이 종료합니다"
+  - "플랜 검증" → `/vs-qa` 실행 후 → `/vs-plan-verify` 실행
+- 남은 태스크가 있으면 이 Phase를 건너뛰세요
+
 ## 커밋 메시지 규칙
 
 - **type(scope)**: 영문 — `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`, `perf`
@@ -147,4 +177,5 @@ EOF
 
 - → `/vs-next`로 다음 태스크 진행
 - → `/vs-dashboard`로 진행률 확인
-- 플랜 완료 근접 시 → `/vs-release`로 릴리즈 준비
+- → `/vs-qa` + `/vs-plan-verify`로 플랜 검증
+- 플랜 완료 시 → `/vs-release`로 릴리즈 준비
