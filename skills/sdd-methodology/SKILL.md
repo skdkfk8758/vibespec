@@ -94,6 +94,49 @@ MoSCoW 우선순위로 분류한다:
 - **정성적 기준**: 기존 API와의 일관성, 코드 가독성 등 판단이 필요한 것
 - 정량적 기준이 최소 1개 이상 있어야 한다
 
+### 7. Security Considerations (SHOULD — 선택)
+
+보안 관련 기능이 포함된 경우 작성한다. 인증, 데이터 보호, 입력 검증, 세션 관리 등 보안 측면을 명시한다.
+
+> **작성 기준**: 기능이 인증, 결제, 개인정보, API 키, 세션 등 보안 민감 영역을 다루면 이 섹션을 포함한다 (SHOULD). 보안과 무관한 순수 UI 변경이나 문서 작업이면 생략할 수 있다.
+
+다음 4가지 항목을 검토하고 해당 사항을 기술한다:
+
+| 항목 | 검토 내용 | 예시 |
+|------|-----------|------|
+| **Authentication / Authorization** | 인증 방식, 권한 모델, 역할 기반 접근 제어 | "JWT 토큰 인증, RBAC으로 admin/user 역할 구분" |
+| **Data Protection** | 민감 데이터 암호화, 저장/전송 보호, 시크릿 관리 | "비밀번호는 bcrypt로 해싱, API 키는 환경변수로 관리" |
+| **Input Validation** | 사용자 입력 검증, SQL 인젝션/XSS 방어, 새니타이즈 | "모든 사용자 입력을 zod 스키마로 검증, SQL 파라미터 바인딩 사용" |
+| **Session Management** | 세션 만료, 갱신, 동시 세션 제어 | "세션 TTL 24시간, 리프레시 토큰으로 갱신, 동시 세션 최대 3개" |
+
+각 항목에 대해:
+- 현재 구현 방식 또는 계획을 기술한다
+- 해당 사항이 없으면 "N/A — {사유}"로 명시한다
+- 보안 요구사항이 있으면 MUST/SHOULD로 우선순위를 명시한다
+
+### 8. UI/UX Design (Optional — SHOULD)
+
+> UI 컴포넌트를 포함하는 기능에만 해당한다. 백엔드 전용 스펙에서는 이 섹션을 생략한다.
+
+UI가 포함된 기능의 경우, 디자인 의도를 코드로 정확히 옮기기 위해 다음 항목을 정의한다.
+
+| 항목 | 정의 내용 | 예시 |
+|------|-----------|------|
+| **Layout Structure** | 화면/컴포넌트의 구조. 주요 영역, 배치 방식(flex/grid), 중첩 구조 | "2-column grid: 좌측 사이드바(240px fixed) + 우측 메인 콘텐츠(fluid)" |
+| **Core Interactions** | 사용자와의 핵심 인터랙션. 클릭, 호버, 입력, 스크롤 등 주요 동작과 UI 반응 | "버튼 hover 시 background-color transition 150ms, 폼 제출 시 로딩 스피너 표시" |
+| **Responsive Requirements** | 반응형 요구사항. 지원할 브레이크포인트, 각 브레이크포인트에서의 레이아웃 변화 | "mobile(< 768px): single column, tablet(768-1024px): 2-column, desktop(> 1024px): 3-column" |
+| **Accessibility Requirements** | 접근성 요구사항. 키보드 네비게이션, 스크린 리더 지원, 색상 대비, ARIA 속성 | "모든 인터랙티브 요소에 focus-visible, 색상 대비 WCAG AA 이상, form에 aria-label" |
+| **DESIGN.md Reference** | 프로젝트 DESIGN.md에 정의된 디자인 토큰(색상, 타이포, 간격, 컴포넌트 스타일) 참조 | "Primary: --color-primary, Spacing: 8px 기반, Border Radius: medium(8px)" |
+
+각 항목에 대해:
+- 구체적인 수치와 동작을 기술한다
+- DESIGN.md가 있으면 해당 토큰을 참조한다
+- DESIGN.md가 없으면 `/vs-design-init`으로 먼저 생성할 것을 권장한다
+- 해당 사항이 없으면 "N/A — {사유}"로 명시한다
+
+**나쁜 예**: "깔끔한 디자인으로 구현한다"
+**좋은 예**: "DESIGN.md의 Modern 방향성에 따라, 8px 간격 시스템 기반 2-column grid 레이아웃. 모바일(< 768px)에서 single column으로 전환. 모든 인터랙티브 요소에 focus-visible 스타일 적용."
+
 ## 스펙 품질 체크리스트
 
 스펙 작성 완료 후, 다음을 점검한다:
@@ -104,6 +147,8 @@ MoSCoW 우선순위로 분류한다:
 - [ ] API/Interface에 에러 케이스와 입출력 예시가 포함되어 있는가
 - [ ] Edge case가 최소 3개 이상 식별되었는가
 - [ ] Success Criteria에 정량적 기준이 최소 1개 이상 있는가
+- [ ] 보안 민감 기능이면 Security Considerations 섹션이 포함되어 있는가 (SHOULD)
+- [ ] UI 포함 기능이면 UI/UX Design 섹션이 포함되어 있는가 (SHOULD)
 - [ ] 모든 기술 용어가 초등학생도 이해할 수준으로 풀어쓰여 있는가
 
 ## 참고자료

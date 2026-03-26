@@ -104,7 +104,59 @@ invocation: user
    - 인터뷰 내용과 실제 코드 사이에 차이가 있으면 사용자에게 확인하세요
    - 이 단계의 결과를 스펙의 Data Model, API/Interface 섹션에 반영하세요
 
-3. **SDD 스펙 작성**
+3. **디자인 리뷰 체크포인트** (UI/프론트엔드 관련 플랜인 경우)
+
+   Step 2에서 탐색한 코드와 요구사항을 기반으로, 이 플랜이 UI/프론트엔드 관련인지 판단하세요.
+
+   **UI 관련 판단 기준** -- 아래 중 하나라도 해당하면 UI 관련 플랜입니다:
+   - 변경 대상 파일 확장자: `.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.html`
+   - 요구사항 키워드: UI, 화면, 페이지, 컴포넌트, 레이아웃, 스타일, 디자인, 폼, 버튼, 모달, 대시보드, 반응형
+
+   **UI 관련 플랜인 경우:**
+
+   a. **DESIGN.md 존재 확인**: 프로젝트 루트에 DESIGN.md가 있는지 확인하세요.
+      - **없는 경우**: `AskUserQuestion`으로 안내하세요:
+        - question: "이 플랜은 UI 작업을 포함하지만 DESIGN.md가 없습니다. 디자인 시스템을 먼저 정의할까요?"
+        - header: "디자인 시스템 미설정"
+        - multiSelect: false
+        - 선택지:
+          - label: "디자인 시스템 먼저 정의", description: "/vs-design-init으로 DESIGN.md를 생성합니다"
+          - label: "없이 진행", description: "디자인 시스템 없이 스펙 작성을 계속합니다"
+        - "디자인 시스템 먼저 정의" 선택 시: `/vs-design-init`을 안내하고, 완료 후 이 단계로 돌아오세요
+      - **있는 경우**: DESIGN.md를 읽어 디자인 토큰을 파악하세요
+
+   b. **스펙에 UI/UX Requirements 섹션 추가 제안**: Step 4의 SDD 스펙 작성 시 "UI/UX Design" 섹션을 포함하도록 하세요. 이 섹션에는 DESIGN.md 참조, 레이아웃 구조, 반응형 요구사항을 기술합니다.
+
+   c. **태스크 분해 시 디자인 검증 태스크 추가**: Step 6에서 태스크를 분해할 때, 마지막에 "디자인 시스템 검증" 태스크를 포함하세요. 이 태스크는 `/vs-design-review`를 실행하여 구현이 DESIGN.md와 일치하는지 확인합니다.
+
+   **UI 관련 플랜이 아닌 경우:** 이 단계를 건너뛰고 Step 3a로 진행하세요.
+
+3a. **보안 키워드 감지** (자동)
+
+   요구사항 인터뷰(Step 1)와 코드베이스 탐색(Step 2) 결과에서 보안 키워드를 자동으로 감지합니다.
+
+   **보안 키워드 목록:**
+   - `auth`, `login`, `password`, `payment`, `token`, `session`, `encrypt`, `API key`
+   - `oauth`, `jwt`, `credential`, `secret`, `certificate`, `permission`, `role`
+
+   **감지 방법:**
+   - 사용자의 요구사항 설명에서 위 키워드 포함 여부를 확인하세요
+   - Step 2에서 탐색한 관련 파일명/코드에서 키워드를 검색하세요
+
+   **보안 키워드가 감지된 경우:**
+   - Step 4의 SDD 스펙에 **Security Considerations** 섹션을 포함하도록 제안하세요
+   - sdd-methodology의 "7. Security Considerations" 구조를 참조하세요
+   - `AskUserQuestion`으로 제안하세요:
+     - question: "이 플랜에서 보안 관련 키워드({detected keywords})가 감지되었습니다. 스펙에 Security Considerations 섹션을 포함할까요?"
+     - header: "보안 섹션 추가 제안"
+     - multiSelect: false
+     - 선택지:
+       - label: "포함", description: "Security Considerations 섹션을 스펙에 추가합니다"
+       - label: "건너뛰기", description: "보안 섹션 없이 진행합니다"
+
+   **보안 키워드가 감지되지 않은 경우:** 이 단계를 건너뛰고 Step 4로 진행하세요.
+
+4. **SDD 스펙 작성**
    다음 구조로 스펙을 작성하세요:
 
    ```
@@ -129,6 +181,12 @@ invocation: user
    - 이 기능이 성공했다고 판단할 수 있는 구체적 지표
    - 정량적 기준 (응답시간, 에러율, 커버리지 등)
    - 정성적 기준 (사용자 경험, 코드 품질 등)
+
+   ## Security Considerations (Step 3a에서 보안 키워드 감지 + 사용자 승인 시 포함)
+   - Authentication / Authorization
+   - Data Protection
+   - Input Validation
+   - Session Management
    ```
 
    **스펙 품질 체크리스트** — 작성 후 아래 항목을 자가 검증하세요:
@@ -148,7 +206,7 @@ invocation: user
      - label: "수정 요청", description: "피드백을 반영하여 스펙을 수정합니다"
      - label: "처음부터 재작성", description: "스펙을 처음부터 다시 작성합니다"
 
-4. **플랜 생성**
+5. **플랜 생성**
    - 승인된 스펙으로 Bash 도구로 `vs --json plan create --title "기능명" --spec "작성한 스펙 전문"` 명령을 실행하세요
    - 스펙이 길면 heredoc을 사용하세요:
      ```bash
@@ -158,7 +216,7 @@ invocation: user
      )"
      ```
 
-5. **태스크 분해**
+6. **태스크 분해**
    스펙을 태스크로 분해하세요. 각 태스크는:
    - 한 세션(15~30분)에 완료 가능한 크기
    - 명확한 spec (구현 상세)
@@ -175,7 +233,18 @@ invocation: user
      forbidden_patterns: src/core/*, src/config/*, migrations/*
      ```
 
-6. **플랜 리뷰**
+   **보안 감사 태스크 추가** (Step 3a에서 보안 키워드가 감지된 경우):
+   - 태스크 분해 시 마지막에 "보안 감사" 태스크를 추가하는 것을 제안하세요
+   - 이 태스크는 `/vs-security` 스킬을 실행하여 구현된 코드의 보안 취약점을 점검합니다
+   - 보안 감사 태스크 예시:
+     ```
+     title: "보안 감사 — OWASP Top 10 점검"
+     spec: "vs-security 스킬을 사용하여 변경된 파일에 대해 OWASP Top 10 보안 점검을 수행합니다. A01(접근 제어), A02(암호화), A03(인젝션), A07(인증), A09(보안 로깅) 카테고리를 검사합니다."
+     acceptance: "critical/high 심각도 취약점이 0건이어야 합니다. medium 이하는 리포트에 기록합니다."
+     depends_on: [모든 구현 태스크]
+     ```
+
+7. **플랜 리뷰**
    태스크 분해 결과를 아래 관점으로 직접 비판적 검토하세요:
    - **태스크 누락**: 스펙의 모든 요구사항이 태스크로 커버되는가?
    - **의존성 순서**: 태스크 간 선후관계가 올바른가? 순환 의존은 없는가?
@@ -192,14 +261,14 @@ invocation: user
      - label: "재분류", description: "태스크를 처음부터 다시 분해합니다"
    개선점을 반영했으면 최종 태스크 목록을 다시 보여주고 승인을 받으세요.
 
-7. **태스크 생성**
+8. **태스크 생성**
    - 승인된 각 태스크를 Bash 도구로 `vs --json task create --plan <id> --title "..." --spec "..." --acceptance "..."` 명령을 실행하여 생성하세요
    - 복합 태스크는 `--parent <id>` 옵션을 사용하여 서브태스크로 구성하세요
    - 의존성이 있는 태스크는 `--depends-on "id1,id2"` 옵션을 추가하세요
    - scope 규칙이 정의된 태스크는 `--allowed-files "파일1,파일2"` 및 `--forbidden-patterns "패턴1,패턴2"` 옵션을 추가하세요
    - spec과 acceptance를 반드시 포함하세요
 
-8. **워크트리 추천**
+9. **워크트리 추천**
 
    태스크 생성이 완료되면 작업 환경의 격리 필요성을 판단하세요.
 
@@ -225,12 +294,12 @@ invocation: user
 
    - "워크트리에서 작업" 선택 시: `/vs-worktree`를 안내하세요
    - "현재 브랜치에서 작업" 선택 시: `/vs-next`를 안내하세요
-   - "나중에 결정" 선택 시: Step 9로 진행하세요
+   - "나중에 결정" 선택 시: Step 10으로 진행하세요
 
-9. **결과 확인**
+10. **결과 확인**
    - Bash 도구로 `vs --json plan show <plan_id>` 명령을 실행하여 생성된 플랜과 태스크 트리를 보여주세요
    - Bash 도구로 `vs --json context save --summary "..."` 명령을 실행하여 플랜 생성 내용을 저장하세요
-   - Step 8에서 이미 다음 단계를 안내하지 않았다면, `/vs-next`로 바로 작업을 시작할 수 있다고 안내하세요
+   - Step 9에서 이미 다음 단계를 안내하지 않았다면, `/vs-next`로 바로 작업을 시작할 수 있다고 안내하세요
 
 ## 다음 단계
 
