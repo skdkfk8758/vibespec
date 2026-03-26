@@ -3640,6 +3640,65 @@ ideate.command("show").argument("<id>", "Context log ID").description("Show idea
 
 ${log.summary}`);
 });
+var deploy = program.command("deploy").description("Manage deployment pipeline");
+deploy.command("setup").description("Guide to set up deployment configuration").action(() => {
+  withErrorHandler(() => {
+    output(
+      { guide: "Use /vs-deploy-setup skill to configure deployment" },
+      "\uBC30\uD3EC \uC124\uC815\uC744 \uAD6C\uC131\uD558\uB824\uBA74 /vs-deploy-setup \uC2A4\uD0AC\uC744 \uC0AC\uC6A9\uD558\uC138\uC694.\n\n\uC0AC\uC6A9\uBC95: /vs-deploy-setup\n\n\uC790\uB3D9 \uAC10\uC9C0 \uC9C0\uC6D0 \uD50C\uB7AB\uD3FC: Fly.io, Vercel, Netlify, Docker, GCP, Heroku"
+    );
+  });
+});
+deploy.command("status").description("Show current deployment configuration").action(() => {
+  withErrorHandler(() => {
+    const { db } = initModels();
+    const platform = getConfig(db, "deploy.platform");
+    const command = getConfig(db, "deploy.command");
+    const url = getConfig(db, "deploy.url");
+    const healthUrl = getConfig(db, "deploy.health_url");
+    const config2 = {
+      platform: platform ?? null,
+      command: command ?? null,
+      url: url ?? null,
+      health_url: healthUrl ?? null
+    };
+    if (!platform && !command) {
+      output(config2, "\uBC30\uD3EC \uC124\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-deploy-setup\uC73C\uB85C \uC124\uC815\uD558\uC138\uC694.");
+      return;
+    }
+    const lines = [
+      "## \uBC30\uD3EC \uC124\uC815 \uD604\uD669",
+      "",
+      "| \uD56D\uBAA9 | \uAC12 |",
+      "|------|-----|",
+      `| \uD50C\uB7AB\uD3FC | ${platform ?? "\uBBF8\uC124\uC815"} |`,
+      `| \uBC30\uD3EC \uBA85\uB839 | ${command ?? "\uBBF8\uC124\uC815"} |`,
+      `| \uBC30\uD3EC URL | ${url ?? "\uBBF8\uC124\uC815"} |`,
+      `| \uD5EC\uC2A4\uCCB4\uD06C URL | ${healthUrl ?? "\uBBF8\uC124\uC815"} |`
+    ];
+    output(config2, lines.join("\n"));
+  });
+});
+var canary = program.command("canary").description("Manage canary health checks");
+canary.command("status").description("Show latest deploy/canary events").action(() => {
+  withErrorHandler(() => {
+    const { contextModel } = initModels();
+    const logs = contextModel.getLatest(100);
+    const deployEvents = logs.filter(
+      (l) => l.summary.includes("[deploy]") || l.summary.includes("[canary]")
+    );
+    if (deployEvents.length === 0) {
+      output([], "\uBC30\uD3EC/\uCE74\uB098\uB9AC \uC774\uBCA4\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+    const formatted = deployEvents.map(
+      (l, i) => `${i + 1}. [#${l.id}] ${l.summary} (${l.created_at})`
+    ).join("\n");
+    output(deployEvents, `## \uBC30\uD3EC/\uCE74\uB098\uB9AC \uC774\uBCA4\uD2B8 \uC774\uB825
+
+${formatted}`);
+  });
+});
 var backlog = program.command("backlog").description("Manage backlog items");
 backlog.command("add").description("Add a backlog item").requiredOption("--title <title>", "Item title").option("--description <desc>", "Item description").option("--priority <priority>", "Priority: critical|high|medium|low", "medium").option("--category <category>", "Category: feature|bugfix|refactor|chore|idea").option("--tags <tags>", "Comma-separated tags").option("--complexity <complexity>", "Complexity hint: simple|moderate|complex").option("--source <source>", "Source of the item").action((opts) => withErrorHandler(() => {
   const { backlogModel } = initModels();
