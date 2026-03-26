@@ -53,7 +53,9 @@ vs_config_get() {
   fi
 
   local value
-  value=$(sqlite3 "$db_path" "SELECT value FROM vs_config WHERE key='$key' LIMIT 1;" 2>/dev/null || echo "")
+  # key를 이스케이프하여 SQL injection 방지 (single quote 이중화)
+  local safe_key="${key//\'/\'\'}"
+  value=$(sqlite3 "$db_path" "SELECT value FROM vs_config WHERE key='$safe_key' LIMIT 1;" 2>/dev/null || echo "")
 
   if [ -z "$value" ]; then
     echo "$default"
