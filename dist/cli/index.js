@@ -1874,9 +1874,9 @@ var PlanModel = class {
     this.events?.record("plan", id, "updated", JSON.stringify(oldFields), JSON.stringify(newFields));
     return this.requireById(id);
   }
-  transitionStatus(id, newStatus, eventType, guard, extra) {
+  transitionStatus(id, newStatus, eventType, guard2, extra) {
     const plan2 = this.requireById(id);
-    if (guard) guard(plan2);
+    if (guard2) guard2(plan2);
     const oldStatus = plan2.status;
     const sql = extra ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?` : `UPDATE plans SET status = ? WHERE id = ?`;
     this.db.prepare(sql).run(newStatus, id);
@@ -2921,6 +2921,7 @@ var VALID_BACKLOG_COMPLEXITIES = ["simple", "moderate", "complex"];
 var VALID_BACKLOG_STATUSES = ["open", "planned", "done", "dropped"];
 
 // src/cli/index.ts
+import { resolve as resolve2 } from "path";
 var require2 = createRequire(import.meta.url);
 var pkg = require2("../../package.json");
 var jsonMode = false;
@@ -3257,6 +3258,77 @@ config.command("delete").argument("<key>", "Config key").description("Delete a c
   initSchema(db);
   deleteConfig(db, key);
   output({ deleted: true, key }, `Deleted: ${key}`);
+});
+var careful = program.command("careful").description("Manage careful mode (destructive command guard)");
+careful.command("on").description("Enable careful mode").action(() => {
+  const db = getDb();
+  initSchema(db);
+  setConfig(db, "careful.enabled", "true");
+  output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
+});
+careful.command("off").description("Disable careful mode").action(() => {
+  const db = getDb();
+  initSchema(db);
+  setConfig(db, "careful.enabled", "false");
+  output({ careful: false }, "careful \uBAA8\uB4DC \uBE44\uD65C\uC131\uD654\uB428.");
+});
+careful.command("status").description("Show careful mode status").action(() => {
+  const db = getDb();
+  initSchema(db);
+  const enabled = getConfig(db, "careful.enabled") === "true";
+  output({ careful: enabled }, enabled ? "\u26A0\uFE0F careful \uBAA8\uB4DC: \uD65C\uC131\uD654" : "careful \uBAA8\uB4DC: \uBE44\uD65C\uC131\uD654");
+});
+var freeze = program.command("freeze").description("Manage freeze boundary (edit scope restriction)");
+freeze.command("set").argument("<path>", "Directory path to restrict edits to").description("Set freeze boundary").action((inputPath) => {
+  const db = getDb();
+  initSchema(db);
+  const absPath = resolve2(inputPath);
+  setConfig(db, "freeze.path", absPath);
+  output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
+});
+freeze.command("off").description("Remove freeze boundary").action(() => {
+  const db = getDb();
+  initSchema(db);
+  deleteConfig(db, "freeze.path");
+  output({ freeze: null }, "freeze \uBE44\uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704 \uC81C\uD55C \uD574\uC81C.");
+});
+freeze.command("status").description("Show freeze boundary status").action(() => {
+  const db = getDb();
+  initSchema(db);
+  const freezePath = getConfig(db, "freeze.path");
+  output(
+    { freeze: freezePath },
+    freezePath ? `\u{1F512} freeze: ${freezePath}` : "freeze: \uBE44\uD65C\uC131\uD654"
+  );
+});
+var guard = program.command("guard").description("Enable/disable careful + freeze combined");
+guard.command("on").argument("<path>", "Directory path to restrict edits to").description("Enable careful mode and set freeze boundary").action((inputPath) => {
+  const db = getDb();
+  initSchema(db);
+  const absPath = resolve2(inputPath);
+  setConfig(db, "careful.enabled", "true");
+  setConfig(db, "freeze.path", absPath);
+  output(
+    { careful: true, freeze: absPath },
+    `\u{1F6E1}\uFE0F guard \uD65C\uC131\uD654\uB428 \u2014 careful + freeze: ${absPath}`
+  );
+});
+guard.command("off").description("Disable both careful mode and freeze boundary").action(() => {
+  const db = getDb();
+  initSchema(db);
+  setConfig(db, "careful.enabled", "false");
+  deleteConfig(db, "freeze.path");
+  output({ careful: false, freeze: null }, "guard \uBE44\uD65C\uC131\uD654\uB428 \u2014 careful + freeze \uBAA8\uB450 \uD574\uC81C.");
+});
+guard.command("status").description("Show guard status").action(() => {
+  const db = getDb();
+  initSchema(db);
+  const carefulEnabled = getConfig(db, "careful.enabled") === "true";
+  const freezePath = getConfig(db, "freeze.path");
+  output(
+    { careful: carefulEnabled, freeze: freezePath },
+    `\u{1F6E1}\uFE0F guard: careful=${carefulEnabled ? "\uD65C\uC131\uD654" : "\uBE44\uD65C\uC131\uD654"}, freeze=${freezePath ?? "\uBE44\uD65C\uC131\uD654"}`
+  );
 });
 var errorKb = program.command("error-kb").description("Manage error knowledge base");
 function getErrorKBEngine() {
