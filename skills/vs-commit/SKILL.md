@@ -122,6 +122,21 @@ EOF
 | 2 | def5678 | chore(config): eslint 설정 추가 | - |
 ```
 
+### Phase 6.5: 백로그 자동 매칭
+
+커밋된 파일과 관련된 백로그 항목이 있는지 확인하세요:
+
+1. 방금 커밋된 파일 목록을 수집하세요 (Phase 5에서 각 그룹의 파일 목록 활용)
+2. `vs --json backlog list --status open`으로 open 백로그를 조회하세요
+3. 각 백로그 항목의 title/description/tags에 커밋 파일명 또는 디렉토리명이 포함되면 매칭
+4. 매칭된 항목이 있으면 `AskUserQuestion`으로 제안하세요:
+   - question: "이 커밋이 백로그 항목 '{title}'을 해결한 것 같습니다. done으로 처리할까요?"
+   - header: "백로그 매칭"
+   - multiSelect: true (여러 항목 동시 선택 가능)
+   - 각 매칭 항목을 선택지로 제시
+   - 선택된 항목에 대해 `vs --json backlog update <id> --status done` 실행
+5. 매칭 항목이 없거나 open 백로그가 없으면 이 Phase를 조용히 건너뛰세요
+
 ### Phase 7: 플랜 완료 감지
 
 커밋 완료 후, 활성 플랜이 있으면 남은 태스크를 확인하세요:

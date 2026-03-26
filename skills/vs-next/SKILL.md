@@ -60,7 +60,20 @@ invocation: user
      → occurrences >= 3인 에러가 있으면: "반복 패턴입니다. patterns/ 문서 생성을 고려하세요." 추가 안내하세요
    - 결과가 없으면: 조용히 다음 단계로 진행하세요
 
-6. **구현**
+6. **크로스 플랜 파일 겹침 확인**
+   - 현재 태스크에 `allowed_files`가 설정되어 있으면:
+     1. `vs --json plan list --status active`로 다른 활성 플랜 조회
+     2. 각 플랜의 태스크 중 `allowed_files`가 설정된 태스크와 현재 태스크의 `allowed_files`를 비교
+     3. 겹치는 파일이 있으면 경고를 표시하세요:
+        ```
+        ⚠️ 크로스 플랜 겹침 감지:
+        - 플랜 "{다른 플랜 제목}"의 태스크 "{태스크 제목}"도 {겹치는 파일}을 수정합니다.
+        충돌에 주의하세요.
+        ```
+     4. **경고만 표시하고 진행은 차단하지 않습니다**
+   - `allowed_files`가 없으면 이 단계를 스킵하세요
+
+7. **구현**
    - Bash 도구로 `vs --json task update <id> in_progress` 명령을 실행하여 status를 in_progress로 변경하세요
 
    **체크포인트**: `AskUserQuestion`으로 구현 방식을 선택받으세요:
@@ -124,6 +137,20 @@ invocation: user
      → FAIL (단일 태스크 모드): 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
      → FAIL (배치 모드): `debugger` 에이전트를 자동 디스패치하세요 (Step 8의 자동 재시도 정책 참조)
    - Bash 도구로 `vs --json context save --summary "..." --plan-id <plan_id>` 명령을 실행하여 완료 내용을 저장하세요
+
+   **백로그 매칭**: 태스크 done 처리 후, 변경 파일과 관련된 백로그 항목이 있는지 확인하세요:
+   1. `git diff --name-only HEAD~1`로 변경 파일 목록을 수집하세요
+   2. `vs --json backlog list --status open`으로 open 백로그를 조회하세요
+   3. 각 백로그 항목의 title/description/tags에 변경 파일명 또는 디렉토리명이 포함되면 매칭으로 판단하세요
+   4. 매칭된 항목이 있으면 `AskUserQuestion`으로 제안하세요:
+      - question: "관련 백로그 항목이 발견되었습니다: '{title}'. 같이 처리하시겠습니까?"
+      - header: "백로그 매칭"
+      - 선택지:
+        - label: "같이 처리", description: "이 백로그 항목을 지금 바로 실행합니다"
+        - label: "나중에", description: "백로그에 남겨두고 다음 태스크로 진행합니다"
+        - label: "무시", description: "관련 없는 항목으로 판단합니다"
+      - "같이 처리" 선택 시: 해당 백로그 항목의 내용을 기반으로 즉시 작업 수행 후 `vs --json backlog update <id> --status done`
+   5. 매칭 항목이 없으면 이 단계를 조용히 건너뛰세요
 
    **플랜 완료 감지**: 태스크 done 처리 후 `vs --json task next <plan_id>`를 실행하세요.
    - 남은 todo 태스크가 없으면 (모든 태스크가 done/skipped/blocked):

@@ -122,7 +122,12 @@ vs-next/vs-pick은 태스크마다 tdd-implementer, verifier 에이전트를 디
    - 현재 태스크의 spec과 acceptance criteria만 상세하게 유지하세요
    - 이렇게 하면 컨텍스트 윈도우를 절약하고 이전 태스크의 구현 세부사항에 의한 간섭을 줄일 수 있습니다
 
-   **b. 구현**
+   **b. 크로스 플랜 겹침 확인** (태스크에 `allowed_files`가 있는 경우만)
+   - 다른 활성 플랜의 태스크와 `allowed_files` 겹침 확인
+   - 겹침 발견 시 경고만 표시, 진행은 차단하지 않음
+   - `allowed_files` 미설정 시 스킵
+
+   **c. 구현**
    - 태스크 spec과 acceptance criteria를 기반으로 직접 구현하세요
    - 컨텍스트가 누적되므로 이전 구현의 실수가 전파되지 않도록 각 태스크 시작 시 spec을 다시 읽으세요
 
@@ -183,7 +188,16 @@ vs-next/vs-pick은 태스크마다 tdd-implementer, verifier 에이전트를 디
    - WARN: 간략히 사용자에게 알리고 Bash 도구로 `vs task update <task_id> done --json --has-concerns` 명령을 실행하세요. 기록 후 계속 진행 (최종 리포트에서 모아서 보고)
    - FAIL (blocked): Bash 도구로 `vs task update <task_id> blocked --json` 명령을 실행하고 사용자에게 보고
 
-   **f. 진행 저장**
+   **f. 백로그 매칭** (PASS/WARN 후)
+   - `git diff --name-only HEAD~1`로 변경 파일 수집
+   - `vs --json backlog list --status open`으로 open 백로그 조회
+   - 백로그의 title/description/tags에 변경 파일명/디렉토리명이 포함되면 매칭
+   - 매칭 시: 사용자에게 "관련 백로그: '{title}'. 같이 처리?" 제안 (같이 처리 / 나중에 / 무시)
+   - "같이 처리" 선택 시 즉시 실행 후 `vs --json backlog update <id> --status done`
+   - 매칭 없으면 조용히 스킵
+   - **배치 실행 중이므로 매 태스크마다 하지 않고, 3개 태스크마다 또는 Phase 4 직전에 한 번만 수행**
+
+   **g. 진행 저장**
    - 3개 태스크마다 또는 FAIL 발생 시 Bash 도구로 `vs context save --json --summary "..."` 명령을 실행하세요. 진행 상황 저장
    - 플랜 크기 가이드에 따라 중간 커밋이 필요한 시점이면 사용자에게 `/vs-commit` 제안
 
