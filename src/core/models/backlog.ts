@@ -60,6 +60,15 @@ export class BacklogModel {
     return item;
   }
 
+  findByTitle(title: string, status?: string): BacklogItem | null {
+    const statusFilter = status ? 'AND status = ?' : '';
+    const params: unknown[] = status ? [title, status] : [title];
+    const row = this.db.prepare(
+      `SELECT * FROM backlog_items WHERE title = ? ${statusFilter}`
+    ).get(...params) as BacklogItem | undefined;
+    return row ?? null;
+  }
+
   list(filter?: BacklogFilter): BacklogItem[] {
     const conditions: string[] = [];
     const params: unknown[] = [];

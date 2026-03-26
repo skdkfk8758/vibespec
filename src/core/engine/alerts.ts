@@ -53,6 +53,9 @@ export class AlertsEngine {
     // QA alerts
     alerts.push(...this.getQAAlerts(progress));
 
+    // Backlog alerts
+    alerts.push(...this.getBacklogAlerts());
+
     return alerts;
   }
 
@@ -182,6 +185,48 @@ export class AlertsEngine {
         "SELECT * FROM plan_progress WHERE progress_pct = 100 AND status = 'active'",
       )
       .all() as PlanProgress[];
+  }
+
+  private getBacklogAlerts(): Alert[] {
+    const alerts: Alert[] = [];
+
+    try {
+      // backlog_stale: open items older than 7 days
+      const staleItems = this.db.prepare(
+        `SELECT id, title, CAST(JULIANDAY('now') - JULIANDAY(created_at) AS INTEGER) AS days_old
+         FROM backlog_items
+         WHERE status = 'open'
+         AND JULIANDAY('now') - JULIANDAY(created_at) > 7`
+      ).all() as Array<{ id: string; title: string; days_old: number }>;
+
+      for (const item of staleItems) {
+        alerts.push({
+          type: 'backlog_stale',
+          entity_type: 'backlog',
+          entity_id: item.id,
+          message: `백로그 "${item.title}"이 ${item.days_old}일간 미처리 상태입니다`,
+        });
+      }
+
+      // backlog_critical: open items with critical priority
+      const criticalItems = this.db.prepare(
+        `SELECT id, title FROM backlog_items
+         WHERE status = 'open' AND priority = 'critical'`
+      ).all() as Array<{ id: string; title: string }>;
+
+      for (const item of criticalItems) {
+        alerts.push({
+          type: 'backlog_critical',
+          entity_type: 'backlog',
+          entity_id: item.id,
+          message: `백로그 "${item.title}"이 critical 우선순위로 미처리 상태입니다`,
+        });
+      }
+    } catch {
+      // backlog_items table may not exist yet
+    }
+
+    return alerts;
   }
 
   getForgottenPlans(thresholdDays: number = 7): (Plan & { days_inactive: number })[] {

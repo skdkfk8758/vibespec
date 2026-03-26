@@ -1,5 +1,6 @@
 import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats, SkillStats, BacklogItem } from '../core/types.js';
 import type { BacklogStats } from '../core/models/backlog.js';
+import type { ImportResult } from './importers.js';
 import type { DashboardOverview } from '../core/engine/dashboard.js';
 import type { VelocityResult, EstimatedCompletionResult, TimelineEntry } from '../core/engine/stats.js';
 
@@ -42,6 +43,18 @@ export function formatDashboard(overview: DashboardOverview, alerts: Alert[]): s
     });
 
     lines.push(`└${'─'.repeat(inner)}┘`);
+  }
+
+  // Backlog section
+  if (overview.backlog && overview.backlog.open > 0) {
+    lines.push('');
+    const bp = overview.backlog.by_priority;
+    const priParts: string[] = [];
+    if (bp.critical > 0) priParts.push(`critical: ${bp.critical}`);
+    if (bp.high > 0) priParts.push(`high: ${bp.high}`);
+    if (bp.medium > 0) priParts.push(`medium: ${bp.medium}`);
+    if (bp.low > 0) priParts.push(`low: ${bp.low}`);
+    lines.push(`Backlog: ${overview.backlog.open} open / ${overview.backlog.total} total  (${priParts.join(' · ')})`);
   }
 
   if (alerts.length > 0) {
@@ -365,6 +378,75 @@ export function formatBacklogStats(stats: BacklogStats): string {
     for (const [cat, count] of Object.entries(stats.by_category)) {
       lines.push(`  ${padRight(cat + ':', 16)}${count}`);
     }
+  }
+
+  return lines.join('\n');
+}
+
+export function formatBacklogBoard(items: BacklogItem[]): string {
+  if (items.length === 0) return 'No backlog items found.';
+
+  const groups: Record<string, BacklogItem[]> = {};
+  for (const item of items) {
+    const cat = item.category ?? 'uncategorized';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(item);
+  }
+
+  const lines: string[] = [];
+  const categories = Object.keys(groups).sort();
+  const colWidth = 30;
+
+  lines.push(categories.map(c => padRight(`[${c}]`, colWidth)).join('  '));
+  lines.push(categories.map(() => '-'.repeat(colWidth)).join('  '));
+
+  const maxRows = Math.max(...categories.map(c => groups[c].length));
+
+  for (let row = 0; row < maxRows; row++) {
+    const cols: string[] = [];
+    for (const cat of categories) {
+      const item = groups[cat][row];
+      if (item) {
+        const pri = PRIORITY_ICONS[item.priority] ?? '    ';
+        const label = `${pri.trim()} ${item.title}`;
+        cols.push(padRight(label.length > colWidth ? label.slice(0, colWidth - 1) + '>' : label, colWidth));
+      } else {
+        cols.push(' '.repeat(colWidth));
+      }
+    }
+    lines.push(cols.join('  '));
+  }
+
+  return lines.join('\n');
+}
+
+export function formatImportPreview(result: ImportResult): string {
+  const lines: string[] = [];
+
+  if (result.errors.length > 0) {
+    for (const err of result.errors) {
+      lines.push(`Error: ${err}`);
+    }
+    if (result.items.length === 0) return lines.join('\n');
+    lines.push('');
+  }
+
+  lines.push(`Import preview (${result.source_prefix}): ${result.items.length} items`);
+  lines.push('');
+
+  if (result.items.length === 0) {
+    lines.push('No items to import.');
+    return lines.join('\n');
+  }
+
+  const header = `${padRight('#', 4)}${padRight('Priority', 10)}${padRight('Category', 12)}Title`;
+  lines.push(header);
+
+  for (let i = 0; i < result.items.length; i++) {
+    const item = result.items[i];
+    const pri = padRight(item.priority ?? 'medium', 10);
+    const cat = padRight(item.category ?? '-', 12);
+    lines.push(`${padRight(String(i + 1), 4)}${pri}${cat}${item.title}`);
   }
 
   return lines.join('\n');

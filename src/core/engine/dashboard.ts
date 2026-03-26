@@ -2,11 +2,18 @@ import type Database from 'better-sqlite3';
 import type { PlanProgress, QARunSummary, SkillStats } from '../types.js';
 import type { SkillUsageModel } from '../models/skill-usage.js';
 
+export interface BacklogOverview {
+  total: number;
+  open: number;
+  by_priority: { critical: number; high: number; medium: number; low: number };
+}
+
 export interface DashboardOverview {
   plans: PlanProgress[];
   active_count: number;
   total_tasks: number;
   done_tasks: number;
+  backlog: BacklogOverview;
 }
 
 export class DashboardEngine {
@@ -32,7 +39,39 @@ export class DashboardEngine {
     const total_tasks = plans.reduce((sum, p) => sum + p.total_tasks, 0);
     const done_tasks = plans.reduce((sum, p) => sum + p.done_tasks, 0);
 
-    return { plans, active_count, total_tasks, done_tasks };
+    const backlog = this.getBacklogSummary();
+
+    return { plans, active_count, total_tasks, done_tasks, backlog };
+  }
+
+  getBacklogSummary(): BacklogOverview {
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT priority, COUNT(*) AS count
+           FROM backlog_items
+           WHERE status = 'open'
+           GROUP BY priority`
+        )
+        .all() as Array<{ priority: string; count: number }>;
+
+      const by_priority = { critical: 0, high: 0, medium: 0, low: 0 };
+      let open = 0;
+      for (const row of rows) {
+        if (row.priority in by_priority) {
+          by_priority[row.priority as keyof typeof by_priority] = row.count;
+        }
+        open += row.count;
+      }
+
+      const totalRow = this.db
+        .prepare('SELECT COUNT(*) AS total FROM backlog_items')
+        .get() as { total: number };
+
+      return { total: totalRow.total, open, by_priority };
+    } catch {
+      return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 } };
+    }
   }
 
   getPlanSummary(planId: string): PlanProgress | null {

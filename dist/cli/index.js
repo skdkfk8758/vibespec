@@ -505,7 +505,30 @@ var DashboardEngine = class {
     const active_count = plans.filter((p) => p.status === "active").length;
     const total_tasks = plans.reduce((sum, p) => sum + p.total_tasks, 0);
     const done_tasks = plans.reduce((sum, p) => sum + p.done_tasks, 0);
-    return { plans, active_count, total_tasks, done_tasks };
+    const backlog2 = this.getBacklogSummary();
+    return { plans, active_count, total_tasks, done_tasks, backlog: backlog2 };
+  }
+  getBacklogSummary() {
+    try {
+      const rows = this.db.prepare(
+        `SELECT priority, COUNT(*) AS count
+           FROM backlog_items
+           WHERE status = 'open'
+           GROUP BY priority`
+      ).all();
+      const by_priority = { critical: 0, high: 0, medium: 0, low: 0 };
+      let open = 0;
+      for (const row of rows) {
+        if (row.priority in by_priority) {
+          by_priority[row.priority] = row.count;
+        }
+        open += row.count;
+      }
+      const totalRow = this.db.prepare("SELECT COUNT(*) AS total FROM backlog_items").get();
+      return { total: totalRow.total, open, by_priority };
+    } catch {
+      return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 } };
+    }
   }
   getPlanSummary(planId) {
     const row = this.db.prepare("SELECT * FROM plan_progress WHERE id = ?").get(planId);
@@ -587,6 +610,7 @@ var AlertsEngine = class {
       });
     }
     alerts.push(...this.getQAAlerts(progress));
+    alerts.push(...this.getBacklogAlerts());
     return alerts;
   }
   getQAAlerts(progress) {
@@ -688,6 +712,39 @@ var AlertsEngine = class {
     return this.db.prepare(
       "SELECT * FROM plan_progress WHERE progress_pct = 100 AND status = 'active'"
     ).all();
+  }
+  getBacklogAlerts() {
+    const alerts = [];
+    try {
+      const staleItems = this.db.prepare(
+        `SELECT id, title, CAST(JULIANDAY('now') - JULIANDAY(created_at) AS INTEGER) AS days_old
+         FROM backlog_items
+         WHERE status = 'open'
+         AND JULIANDAY('now') - JULIANDAY(created_at) > 7`
+      ).all();
+      for (const item of staleItems) {
+        alerts.push({
+          type: "backlog_stale",
+          entity_type: "backlog",
+          entity_id: item.id,
+          message: `\uBC31\uB85C\uADF8 "${item.title}"\uC774 ${item.days_old}\uC77C\uAC04 \uBBF8\uCC98\uB9AC \uC0C1\uD0DC\uC785\uB2C8\uB2E4`
+        });
+      }
+      const criticalItems = this.db.prepare(
+        `SELECT id, title FROM backlog_items
+         WHERE status = 'open' AND priority = 'critical'`
+      ).all();
+      for (const item of criticalItems) {
+        alerts.push({
+          type: "backlog_critical",
+          entity_type: "backlog",
+          entity_id: item.id,
+          message: `\uBC31\uB85C\uADF8 "${item.title}"\uC774 critical \uC6B0\uC120\uC21C\uC704\uB85C \uBBF8\uCC98\uB9AC \uC0C1\uD0DC\uC785\uB2C8\uB2E4`
+        });
+      }
+    } catch {
+    }
+    return alerts;
   }
   getForgottenPlans(thresholdDays = 7) {
     return this.db.prepare(
@@ -2252,6 +2309,14 @@ var BacklogModel = class {
     if (!item) throw new Error(`Backlog item not found: ${id}`);
     return item;
   }
+  findByTitle(title, status) {
+    const statusFilter = status ? "AND status = ?" : "";
+    const params = status ? [title, status] : [title];
+    const row = this.db.prepare(
+      `SELECT * FROM backlog_items WHERE title = ? ${statusFilter}`
+    ).get(...params);
+    return row ?? null;
+  }
   list(filter) {
     const conditions = [];
     const params = [];
@@ -2428,6 +2493,16 @@ function formatDashboard(overview, alerts) {
       lines.push(`\u2502${" ".repeat(inner)}\u2502`);
     });
     lines.push(`\u2514${"\u2500".repeat(inner)}\u2518`);
+  }
+  if (overview.backlog && overview.backlog.open > 0) {
+    lines.push("");
+    const bp = overview.backlog.by_priority;
+    const priParts = [];
+    if (bp.critical > 0) priParts.push(`critical: ${bp.critical}`);
+    if (bp.high > 0) priParts.push(`high: ${bp.high}`);
+    if (bp.medium > 0) priParts.push(`medium: ${bp.medium}`);
+    if (bp.low > 0) priParts.push(`low: ${bp.low}`);
+    lines.push(`Backlog: ${overview.backlog.open} open / ${overview.backlog.total} total  (${priParts.join(" \xB7 ")})`);
   }
   if (alerts.length > 0) {
     lines.push("\u26A0 Alerts:");
@@ -2687,6 +2762,155 @@ function formatBacklogStats(stats) {
     }
   }
   return lines.join("\n");
+}
+function formatBacklogBoard(items) {
+  if (items.length === 0) return "No backlog items found.";
+  const groups = {};
+  for (const item of items) {
+    const cat = item.category ?? "uncategorized";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(item);
+  }
+  const lines = [];
+  const categories = Object.keys(groups).sort();
+  const colWidth = 30;
+  lines.push(categories.map((c) => padRight(`[${c}]`, colWidth)).join("  "));
+  lines.push(categories.map(() => "-".repeat(colWidth)).join("  "));
+  const maxRows = Math.max(...categories.map((c) => groups[c].length));
+  for (let row = 0; row < maxRows; row++) {
+    const cols = [];
+    for (const cat of categories) {
+      const item = groups[cat][row];
+      if (item) {
+        const pri = PRIORITY_ICONS[item.priority] ?? "    ";
+        const label = `${pri.trim()} ${item.title}`;
+        cols.push(padRight(label.length > colWidth ? label.slice(0, colWidth - 1) + ">" : label, colWidth));
+      } else {
+        cols.push(" ".repeat(colWidth));
+      }
+    }
+    lines.push(cols.join("  "));
+  }
+  return lines.join("\n");
+}
+function formatImportPreview(result) {
+  const lines = [];
+  if (result.errors.length > 0) {
+    for (const err of result.errors) {
+      lines.push(`Error: ${err}`);
+    }
+    if (result.items.length === 0) return lines.join("\n");
+    lines.push("");
+  }
+  lines.push(`Import preview (${result.source_prefix}): ${result.items.length} items`);
+  lines.push("");
+  if (result.items.length === 0) {
+    lines.push("No items to import.");
+    return lines.join("\n");
+  }
+  const header = `${padRight("#", 4)}${padRight("Priority", 10)}${padRight("Category", 12)}Title`;
+  lines.push(header);
+  for (let i = 0; i < result.items.length; i++) {
+    const item = result.items[i];
+    const pri = padRight(item.priority ?? "medium", 10);
+    const cat = padRight(item.category ?? "-", 12);
+    lines.push(`${padRight(String(i + 1), 4)}${pri}${cat}${item.title}`);
+  }
+  return lines.join("\n");
+}
+
+// src/cli/importers.ts
+import { execSync as execSync2 } from "child_process";
+import { readFileSync as readFileSync3, existsSync as existsSync4 } from "fs";
+function importFromGithub(repo, options) {
+  const errors = [];
+  const state = options?.state ?? "open";
+  const labelArg = options?.label ? `--label "${options.label}"` : "";
+  let jsonStr;
+  try {
+    jsonStr = execSync2(
+      `gh issue list --repo ${repo} --state ${state} ${labelArg} --json number,title,body,labels --limit 50`,
+      { encoding: "utf-8", timeout: 3e4 }
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("command not found") || msg.includes("not found")) {
+      errors.push("gh CLI\uAC00 \uC124\uCE58\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. https://cli.github.com \uC5D0\uC11C \uC124\uCE58\uD558\uC138\uC694.");
+    } else {
+      errors.push(`GitHub API \uC624\uB958: ${msg.slice(0, 200)}`);
+    }
+    return { items: [], source_prefix: `github:${repo}`, errors };
+  }
+  let issues;
+  try {
+    issues = JSON.parse(jsonStr);
+  } catch {
+    errors.push("GitHub API \uC751\uB2F5\uC744 \uD30C\uC2F1\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+    return { items: [], source_prefix: `github:${repo}`, errors };
+  }
+  const items = issues.map((issue) => {
+    const labelNames = issue.labels.map((l) => l.name);
+    return {
+      title: issue.title,
+      description: issue.body?.slice(0, 500) ?? void 0,
+      priority: inferPriorityFromLabels(labelNames),
+      category: inferCategoryFromLabels(labelNames),
+      tags: labelNames.length > 0 ? labelNames : void 0,
+      source: `github:${repo}#${issue.number}`
+    };
+  });
+  return { items, source_prefix: `github:${repo}`, errors };
+}
+function inferPriorityFromLabels(labels) {
+  const lower = labels.map((l) => l.toLowerCase());
+  if (lower.some((l) => l.includes("critical") || l.includes("urgent") || l.includes("p0"))) return "critical";
+  if (lower.some((l) => l.includes("high") || l.includes("important") || l.includes("p1"))) return "high";
+  if (lower.some((l) => l.includes("low") || l.includes("minor") || l.includes("p3"))) return "low";
+  return "medium";
+}
+function inferCategoryFromLabels(labels) {
+  const lower = labels.map((l) => l.toLowerCase());
+  if (lower.some((l) => l.includes("bug") || l.includes("fix"))) return "bugfix";
+  if (lower.some((l) => l.includes("feature") || l.includes("enhancement"))) return "feature";
+  if (lower.some((l) => l.includes("refactor"))) return "refactor";
+  if (lower.some((l) => l.includes("chore") || l.includes("maintenance"))) return "chore";
+  return void 0;
+}
+function importFromFile(filepath) {
+  const errors = [];
+  if (!existsSync4(filepath)) {
+    errors.push(`\uD30C\uC77C\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${filepath}`);
+    return { items: [], source_prefix: `file:${filepath}`, errors };
+  }
+  let content;
+  try {
+    content = readFileSync3(filepath, "utf-8");
+  } catch (e) {
+    errors.push(`\uD30C\uC77C \uC77D\uAE30 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
+    return { items: [], source_prefix: `file:${filepath}`, errors };
+  }
+  const lines = content.split("\n");
+  const items = [];
+  for (const line of lines) {
+    const match = line.match(/^[\s]*-\s+\[\s\]\s+(.+)$/);
+    if (match) {
+      items.push({
+        title: match[1].trim(),
+        source: `file:${filepath}`
+      });
+    }
+  }
+  if (items.length === 0 && lines.length > 0) {
+    errors.push("\uCCB4\uD06C\uB9AC\uC2A4\uD2B8 \uD56D\uBAA9(- [ ])\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+  }
+  return { items, source_prefix: `file:${filepath}`, errors };
+}
+function importFromSlack(channel, _options) {
+  return {
+    items: [],
+    source_prefix: `slack:${channel}`,
+    errors: ["Slack import\uB294 \uC2A4\uD0AC \uBAA8\uB4DC(/vs-backlog)\uC5D0\uC11C MCP \uB3C4\uAD6C\uB97C \uD1B5\uD574 \uC2E4\uD589\uD558\uC138\uC694. CLI\uC5D0\uC11C\uB294 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."]
+  };
 }
 
 // src/core/types.ts
@@ -3406,6 +3630,69 @@ backlog.command("stats").description("Show backlog statistics").action(() => wit
   const { backlogModel } = initModels();
   const stats = backlogModel.getStats();
   output(stats, formatBacklogStats(stats));
+}));
+backlog.command("board").description("Show backlog in kanban board view").option("--category <category>", "Filter by category").option("--status <status>", "Filter by status", "open").action((opts) => withErrorHandler(() => {
+  const { backlogModel } = initModels();
+  const items = backlogModel.list({
+    status: opts.status,
+    category: opts.category
+  });
+  output(items, formatBacklogBoard(items));
+}));
+var importCmd = backlog.command("import").description("Import backlog items from external sources");
+importCmd.command("github").description("Import from GitHub Issues").requiredOption("--repo <repo>", "Repository (owner/repo)").option("--label <label>", "Filter by label").option("--state <state>", "Issue state", "open").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
+  const result = importFromGithub(opts.repo, { label: opts.label, state: opts.state });
+  if (opts.dryRun || result.items.length === 0) {
+    output(result, formatImportPreview(result));
+    return;
+  }
+  const { backlogModel } = initModels();
+  let imported = 0;
+  let skipped = 0;
+  const warnings = [];
+  for (const item of result.items) {
+    const existing = backlogModel.findByTitle(item.title, "open");
+    if (existing) {
+      warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
+      skipped++;
+      continue;
+    }
+    backlogModel.create(item);
+    imported++;
+  }
+  const summary = [`Imported ${imported} items from ${result.source_prefix}`];
+  if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
+  if (warnings.length > 0) summary.push(...warnings.map((w) => `  \u26A0 ${w}`));
+  output({ imported, skipped, warnings }, summary.join("\n"));
+}));
+importCmd.command("file").description("Import from a markdown/text file").requiredOption("--path <filepath>", "File path").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
+  const result = importFromFile(opts.path);
+  if (opts.dryRun || result.items.length === 0) {
+    output(result, formatImportPreview(result));
+    return;
+  }
+  const { backlogModel } = initModels();
+  let imported = 0;
+  let skipped = 0;
+  const warnings = [];
+  for (const item of result.items) {
+    const existing = backlogModel.findByTitle(item.title, "open");
+    if (existing) {
+      warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
+      skipped++;
+      continue;
+    }
+    backlogModel.create(item);
+    imported++;
+  }
+  const summary = [`Imported ${imported} items from ${result.source_prefix}`];
+  if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
+  if (warnings.length > 0) summary.push(...warnings.map((w) => `  \u26A0 ${w}`));
+  output({ imported, skipped, warnings }, summary.join("\n"));
+}));
+importCmd.command("slack").description("Import from Slack channel (requires MCP)").requiredOption("--channel <channel>", "Slack channel ID").option("--since <days>", "Days to look back", "7").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
+  const result = importFromSlack(opts.channel, { since: opts.since });
+  output(result, formatImportPreview(result));
 }));
 program.parse();
 //# sourceMappingURL=index.js.map

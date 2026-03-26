@@ -26,7 +26,7 @@ invocation: user
 
 1. **모드 선택**
 
-   사용자의 의도를 파악하여 아래 5가지 모드 중 적절한 것을 선택하세요.
+   사용자의 의도를 파악하여 아래 6가지 모드 중 적절한 것을 선택하세요.
    명확하지 않으면 `AskUserQuestion`으로 물어보세요:
 
    - header: "백로그 관리"
@@ -38,6 +38,7 @@ invocation: user
      - label: "플랜 승격", description: "백로그 항목을 선택하여 vs-plan으로 플래닝합니다"
      - label: "즉시 실행", description: "간단한 항목을 플래닝 없이 바로 처리합니다"
      - label: "대량 작업", description: "여러 항목을 한번에 정리합니다 (drop, 태그, 우선순위)"
+     - label: "임포트", description: "GitHub Issues, Slack, 텍스트 파일에서 백로그를 가져옵니다"
 
 ---
 
@@ -48,20 +49,31 @@ invocation: user
    사용자의 발화에서 다음을 자동 추출하세요:
    - **제목**: 핵심 내용을 한 줄로 요약
    - **카테고리**: 발화 패턴으로 추론
-     - "버그", "안 돼", "깨짐", "에러" → `bugfix`
-     - "추가", "만들어", "새로운" → `feature`
-     - "리팩토링", "정리", "개선" → `refactor`
-     - "업데이트", "설정", "의존성" → `chore`
-     - "아이디어", "나중에", "생각" → `idea`
+
+     | 패턴 키워드 | 카테고리 |
+     |-------------|----------|
+     | "버그", "안 돼", "깨짐", "에러", "오류", "크래시", "실패", "안됨" | `bugfix` |
+     | "추가", "만들어", "새로운", "구현", "개발", "기능", "넣어" | `feature` |
+     | "리팩토링", "정리", "개선", "리팩터", "클린업", "단순화", "분리" | `refactor` |
+     | "업데이트", "설정", "의존성", "버전", "마이그레이션", "CI", "배포" | `chore` |
+     | "아이디어", "나중에", "생각", "검토", "고민", "해볼까", "어떨까" | `idea` |
+
    - **우선순위**: 긴급도 표현으로 추론
-     - "급해", "지금 당장", "장애" → `critical`
-     - "중요", "빨리" → `high`
-     - 기본값 → `medium`
-     - "나중에", "언젠가" → `low`
+
+     | 패턴 키워드 | 우선순위 |
+     |-------------|----------|
+     | "급해", "지금 당장", "장애", "긴급", "프로덕션", "핫픽스", "블로커" | `critical` |
+     | "중요", "빨리", "우선", "먼저", "곧", "이번주" | `high` |
+     | (기본값 — 특별한 긴급도 표현 없을 때) | `medium` |
+     | "나중에", "언젠가", "시간될때", "여유있을때", "백로그", "낮은" | `low` |
+
    - **복잡도 힌트**: 규모 표현으로 추론
-     - "간단", "금방" → `simple`
-     - "좀 걸릴", "여러 파일" → `moderate`
-     - "큰 작업", "설계 필요" → `complex`
+
+     | 패턴 키워드 | 복잡도 |
+     |-------------|--------|
+     | "간단", "금방", "한줄", "바로", "쉬운", "작은" | `simple` |
+     | "좀 걸릴", "여러 파일", "며칠", "중간", "보통" | `moderate` |
+     | "큰 작업", "설계 필요", "아키텍처", "대규모", "복잡", "리서치" | `complex` |
 
 3. **확인 및 등록**
 
@@ -101,8 +113,13 @@ invocation: user
 
    Bash 도구로 `vs --json backlog list --status open`을 실행하여 현재 백로그를 가져오세요.
 
-   결과를 보기 좋게 정리하여 보여주세요:
+   먼저 뷰 모드를 선택받으세요:
+   - header: "보기 방식"
+   - 선택지:
+     - label: "테이블 뷰", description: "우선순위순 정렬된 목록으로 봅니다"
+     - label: "칸반 뷰", description: "카테고리별 그룹화된 보드로 봅니다"
 
+   **테이블 뷰:**
    ```
    ## 백로그 ({N}개)
 
@@ -111,6 +128,23 @@ invocation: user
    | 1 | critical | bugfix   | simple | ... |
    | 2 | high     | feature  | complex| ... |
    ```
+
+   **칸반 뷰:**
+   Bash 도구로 `vs backlog board --status open`을 실행하여 카테고리별 그룹화된 보드를 보여주세요.
+
+   **우선순위 자동 정렬 제안:**
+   조회 결과를 분석하여 다음 조건에 해당하는 항목이 있으면 승격을 제안하세요:
+   - `medium` 우선순위이고 생성 후 7일 이상 경과 → `high` 승격 제안
+   - `low` 우선순위이고 생성 후 14일 이상 경과 → `medium` 승격 제안
+   - `high` 우선순위이고 생성 후 14일 이상 경과 → `critical` 승격 제안
+
+   승격 대상이 있으면:
+   ```
+   💡 우선순위 승격 제안:
+   - "{제목}" (medium → high): 7일 이상 미처리
+   - "{제목}" (low → medium): 14일 이상 미처리
+   ```
+   `AskUserQuestion`으로 "승격 적용" / "무시" 선택을 받으세요.
 
 5. **정리 작업**
 
@@ -202,6 +236,66 @@ invocation: user
     - Drop: `vs --json backlog update <id> --status dropped`
     - 태그: `vs --json backlog update <id> --tags "기존태그,새태그"`
     - 우선순위: `vs --json backlog update <id> --priority <새우선순위>`
+
+---
+
+### Mode 6: 임포트
+
+13. **소스 선택**
+
+    `AskUserQuestion`으로 임포트 소스를 선택하게 하세요:
+    - header: "임포트 소스"
+    - 선택지:
+      - label: "GitHub Issues", description: "GitHub 리포지토리의 Issue를 가져옵니다"
+      - label: "텍스트 파일", description: "마크다운 체크리스트(- [ ])를 파싱합니다"
+      - label: "Slack 메시지", description: "Slack 채널의 메시지를 수집합니다 (MCP 필요)"
+
+14. **파라미터 입력 및 미리보기**
+
+    **GitHub Issues:**
+    - `AskUserQuestion`으로 리포지토리(owner/repo)와 선택적 라벨 필터를 입력받으세요
+    - Bash 도구로 `vs --json backlog import github --repo <repo> [--label <label>] --dry-run`을 실행하세요
+    - 미리보기 결과를 보여주세요
+
+    **텍스트 파일:**
+    - `AskUserQuestion`으로 파일 경로를 입력받으세요
+    - Bash 도구로 `vs --json backlog import file --path <filepath> --dry-run`을 실행하세요
+    - 미리보기 결과를 보여주세요
+
+    **Slack 메시지:**
+    - `AskUserQuestion`으로 채널 ID와 조회 기간(일)을 입력받으세요
+    - Slack MCP 도구 `slack_get_channel_history`를 실행하세요:
+      - channel_id: 입력받은 채널 ID
+      - limit: 50 (최대)
+    - 반환된 메시지에서 백로그 항목을 추출하세요:
+      - 메시지 text를 제목으로 사용
+      - thread reply는 건너뛰세요 (thread_ts가 있는 메시지)
+      - bot 메시지는 건너뛰세요
+      - source를 `slack:{channel_id}`로 설정
+    - 추출된 항목 목록을 미리보기로 보여주세요
+
+15. **선택적 등록**
+
+    미리보기 결과를 보여준 후 `AskUserQuestion`으로 등록 옵션을 제시하세요:
+    - header: "임포트 확인 ({N}개 항목)"
+    - multiSelect: false
+    - 선택지:
+      - label: "전체 등록", description: "모든 항목을 백로그에 추가합니다"
+      - label: "선택 등록", description: "항목을 선택하여 일부만 등록합니다"
+      - label: "취소", description: "임포트를 취소합니다"
+
+    "전체 등록" 선택 시:
+    - GitHub/파일: Bash 도구로 `vs --json backlog import github --repo <repo>` (--dry-run 없이) 실행
+    - Slack: 추출된 각 항목에 대해 `vs --json backlog add --title "..." --source "slack:..."` 실행
+
+    "선택 등록" 선택 시:
+    - `AskUserQuestion` (multiSelect: true)으로 등록할 항목을 선택하게 하세요
+    - 선택된 항목만 `vs --json backlog add` 명령으로 등록
+
+    중복 항목이 있으면 경고를 표시하세요:
+    ```
+    ⚠ 중복 건너뜀: "{제목}" (기존 항목: {id})
+    ```
 
 ---
 

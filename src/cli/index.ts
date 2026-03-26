@@ -20,7 +20,8 @@ import { QAScenarioModel } from '../core/models/qa-scenario.js';
 import { QAFindingModel } from '../core/models/qa-finding.js';
 import { BacklogModel } from '../core/models/backlog.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
-import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage, formatBacklogList, formatBacklogDetail, formatBacklogStats } from './formatters.js';
+import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage, formatBacklogList, formatBacklogDetail, formatBacklogStats, formatBacklogBoard, formatImportPreview } from './formatters.js';
+import { importFromGithub, importFromFile, importFromSlack } from './importers.js';
 import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus } from '../core/types.js';
 import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus } from '../core/types.js';
 import { VALID_PLAN_STATUSES, VALID_BACKLOG_PRIORITIES, VALID_BACKLOG_CATEGORIES, VALID_BACKLOG_COMPLEXITIES, VALID_BACKLOG_STATUSES } from '../core/types.js';
@@ -1159,6 +1160,97 @@ backlog
     const { backlogModel } = initModels();
     const stats = backlogModel.getStats();
     output(stats, formatBacklogStats(stats));
+  }));
+
+backlog
+  .command('board')
+  .description('Show backlog in kanban board view')
+  .option('--category <category>', 'Filter by category')
+  .option('--status <status>', 'Filter by status', 'open')
+  .action((opts) => withErrorHandler(() => {
+    const { backlogModel } = initModels();
+    const items = backlogModel.list({
+      status: opts.status as BacklogStatus | undefined,
+      category: opts.category as BacklogCategory | undefined,
+    });
+    output(items, formatBacklogBoard(items));
+  }));
+
+const importCmd = backlog.command('import').description('Import backlog items from external sources');
+
+importCmd
+  .command('github')
+  .description('Import from GitHub Issues')
+  .requiredOption('--repo <repo>', 'Repository (owner/repo)')
+  .option('--label <label>', 'Filter by label')
+  .option('--state <state>', 'Issue state', 'open')
+  .option('--dry-run', 'Preview without importing')
+  .action((opts) => withErrorHandler(() => {
+    const result = importFromGithub(opts.repo, { label: opts.label, state: opts.state });
+    if (opts.dryRun || result.items.length === 0) {
+      output(result, formatImportPreview(result));
+      return;
+    }
+    const { backlogModel } = initModels();
+    let imported = 0;
+    let skipped = 0;
+    const warnings: string[] = [];
+    for (const item of result.items) {
+      const existing = backlogModel.findByTitle(item.title, 'open');
+      if (existing) {
+        warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
+        skipped++;
+        continue;
+      }
+      backlogModel.create(item);
+      imported++;
+    }
+    const summary = [`Imported ${imported} items from ${result.source_prefix}`];
+    if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
+    if (warnings.length > 0) summary.push(...warnings.map(w => `  ⚠ ${w}`));
+    output({ imported, skipped, warnings }, summary.join('\n'));
+  }));
+
+importCmd
+  .command('file')
+  .description('Import from a markdown/text file')
+  .requiredOption('--path <filepath>', 'File path')
+  .option('--dry-run', 'Preview without importing')
+  .action((opts) => withErrorHandler(() => {
+    const result = importFromFile(opts.path);
+    if (opts.dryRun || result.items.length === 0) {
+      output(result, formatImportPreview(result));
+      return;
+    }
+    const { backlogModel } = initModels();
+    let imported = 0;
+    let skipped = 0;
+    const warnings: string[] = [];
+    for (const item of result.items) {
+      const existing = backlogModel.findByTitle(item.title, 'open');
+      if (existing) {
+        warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
+        skipped++;
+        continue;
+      }
+      backlogModel.create(item);
+      imported++;
+    }
+    const summary = [`Imported ${imported} items from ${result.source_prefix}`];
+    if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
+    if (warnings.length > 0) summary.push(...warnings.map(w => `  ⚠ ${w}`));
+    output({ imported, skipped, warnings }, summary.join('\n'));
+  }));
+
+importCmd
+  .command('slack')
+  .description('Import from Slack channel (requires MCP)')
+  .requiredOption('--channel <channel>', 'Slack channel ID')
+  .option('--since <days>', 'Days to look back', '7')
+  .option('--dry-run', 'Preview without importing')
+  .action((opts) => withErrorHandler(() => {
+    const result = importFromSlack(opts.channel, { since: opts.since });
+    output(result, formatImportPreview(result));
   }));
 
 program.parse();
