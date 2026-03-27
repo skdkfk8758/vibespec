@@ -50,6 +50,16 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
        - label: "타겟 (Targeted)", description: "특정 태스크만 대상으로 QA 수행"
        - label: "Visual", description: "browser-control 기반 시각/기능 검증 포함 — 기존 QA + acceptance 테스터 병렬 실행"
        - label: "디자인 검증 (Design Verification)", description: "UI 변경 파일 대상 디자인 일관성/AI slop/반응형/DESIGN.md 준수 검증 — acceptance 테스터의 디자인 체크리스트 실행"
+   - incremental 선택 시: **Diff-aware 라우트 매핑** 자동 실행:
+     1. `git diff --name-only HEAD~5` (또는 마지막 QA 이후)로 변경 파일 수집
+     2. 변경 파일에서 영향 라우트를 자동 추론:
+        - `pages/xxx.tsx` 또는 `pages/xxx/index.tsx` → `/xxx`
+        - `app/xxx/page.tsx` → `/xxx`
+        - `src/routes/xxx.tsx` → `/xxx`
+        - 컴포넌트 파일(components/)이면: `Grep`으로 해당 컴포넌트를 import하는 페이지를 역추적
+     3. 비UI 파일만 변경된 경우(`.ts`, `.json`, `.md` 등 + 라우트 미매핑): 라우트 매핑 스킵, API/로직 변경으로 분류
+     4. 추론된 라우트 목록을 coordinator에 `affected_routes`로 전달
+     5. coordinator는 해당 라우트에 집중하여 시나리오를 생성
    - targeted 선택 시 추가 질문: 대상 태스크 선택
    - visual 선택 시: mode를 `visual`로 설정. coordinator가 기존 func/flow 테스터와 함께 qa-acceptance-tester도 디스패치합니다
    - design-verification 선택 시: mode를 `design-verification`으로 설정. coordinator가 design verification 시나리오만 생성하여 qa-acceptance-tester에게 위임합니다. func/flow 테스터는 디스패치하지 않습니다
