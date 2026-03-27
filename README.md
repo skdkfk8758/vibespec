@@ -95,9 +95,7 @@ cp -r skills/* ~/.gemini/skills/
 | `/vs-careful` | 파괴적 명령 차단 (rm -rf, DROP TABLE 등) |
 | `/vs-freeze` | 편집 범위 제한 — 지정 디렉토리 외부 Edit/Write 차단 |
 | `/vs-guard` | careful + freeze 동시 활성화 |
-| `/vs-deploy-setup` | 배포 설정 — 플랫폼 자동 감지, 배포 명령/URL config 저장 |
-| `/vs-deploy` | 배포 실행 — 사전 검증 → 배포 → 사후 검증(canary) 3단계 |
-| `/vs-canary` | 배포 후 헬스체크 URL 폴링으로 HTTP 상태/응답 시간 검증 |
+| `/vs-code-review` | 코드 리뷰 — git diff 기반 버그 탐지 + 기계적 문제 자동 수정 |
 | `/vs-security` | 보안 감사 — 코드/의존성/설정 취약점 스캔 |
 | `/vs-design-init` | 디자인 시스템 생성 — 인터뷰 기반 DESIGN.md 생성 |
 | `/vs-design-review` | 디자인 감사 — UI 구현과 DESIGN.md 일치 여부 검증 |
@@ -257,9 +255,7 @@ vibespec/
 │   ├── vs-careful/          # /vs-careful — 파괴적 명령 차단
 │   ├── vs-freeze/           # /vs-freeze — 편집 범위 제한
 │   ├── vs-guard/            # /vs-guard — careful + freeze
-│   ├── vs-deploy-setup/     # /vs-deploy-setup — 배포 설정
-│   ├── vs-deploy/           # /vs-deploy — 배포 실행
-│   ├── vs-canary/           # /vs-canary — 배포 후 헬스체크
+│   ├── vs-code-review/      # /vs-code-review — 코드 리뷰
 │   ├── vs-security/         # /vs-security — 보안 감사
 │   ├── vs-design-init/      # /vs-design-init — 디자인 시스템 생성
 │   ├── vs-design-review/    # /vs-design-review — 디자인 감사

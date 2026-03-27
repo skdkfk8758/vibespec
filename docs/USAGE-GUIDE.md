@@ -90,10 +90,6 @@ claude plugin install /path/to/vibespec
   └──────┬──────┘
          │ 자동 제안
          ▼
-  ┌─────────────┐     ┌──────────────┐
-  │  🚀 Deploy  │────▶│  🐤 Canary   │
-  │  /vs-deploy │     │  /vs-canary  │  배포 후 헬스체크
-  └─────────────┘     └──────────────┘
 ```
 
 ---
@@ -262,20 +258,6 @@ claude plugin install /path/to/vibespec
 
 ---
 
-### 시나리오 G: 배포까지 완료
-
-```
-/vs-release            ← 릴리즈 (changelog + tag)
-                         자동 제안: "배포하시겠습니까?"
-/vs-deploy             ← 프로덕션 배포
-/vs-canary             ← 60초 헬스체크 모니터링
-```
-
-**사전 설정 (1회):**
-```
-/vs-deploy-setup       ← 플랫폼 자동 감지 (Vercel/Fly.io/Netlify/Docker/GCP/Heroku)
-```
-
 ---
 
 ## 5. 스킬 빠른 참조표
@@ -301,6 +283,7 @@ claude plugin install /path/to/vibespec
 |------|------|----------|
 | `/vs-qa` | QA 에이전트 팀 실행 | 종합 품질 검증 |
 | `/vs-browse` | 탐색적 브라우저 QA | UI 시각적 확인 |
+| `/vs-code-review` | 코드 리뷰 | 커밋/PR 전 버그 탐지 |
 | `/vs-security` | 보안 감사 | OWASP 기반 검사 |
 | `/vs-design-review` | 디자인 감사 | DESIGN.md 기준 검증 |
 | `/vs-acceptance` | 인수 테스트 | AC 기반 브라우저 검증 |
@@ -311,8 +294,6 @@ claude plugin install /path/to/vibespec
 | `/vs-commit` | 논리 단위 커밋 | 변경사항 정리 |
 | `/vs-merge` | 워크트리 병합 | 작업 브랜치 통합 |
 | `/vs-release` | 릴리즈 생성 | 버전 태그 + changelog |
-| `/vs-deploy` | 프로덕션 배포 | 릴리즈 후 배포 |
-| `/vs-canary` | 배포 후 모니터링 | 헬스체크 확인 |
 
 ### 안전 도구
 | 명령 | 설명 | 언제 사용 |
@@ -328,7 +309,6 @@ claude plugin install /path/to/vibespec
 | `/vs-resume` | 세션 복원 | 이전 세션 이어하기 |
 | `/vs-dashboard` | 진행 현황 | 전체 상태 확인 |
 | `/vs-design-init` | 디자인 시스템 생성 | DESIGN.md 만들기 |
-| `/vs-deploy-setup` | 배포 설정 | 배포 플랫폼 설정 |
 
 ---
 
@@ -395,9 +375,6 @@ vs freeze off                   # 해제
 vs guard on ./src               # careful + freeze 동시
 vs guard status                 # 현재 상태 확인
 
-# 배포
-vs deploy status                # 배포 설정 확인
-vs canary status                # 카나리 상태 확인
 
 # 아이디어 이력
 vs ideate list                  # ideation 이력 조회
