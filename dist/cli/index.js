@@ -2931,7 +2931,8 @@ var VALID_BACKLOG_COMPLEXITIES = ["simple", "moderate", "complex"];
 var VALID_BACKLOG_STATUSES = ["open", "planned", "done", "dropped"];
 
 // src/cli/index.ts
-import { resolve as resolve2 } from "path";
+import { resolve as resolve2, join as join3 } from "path";
+import { existsSync as existsSync5, readFileSync as readFileSync4, writeFileSync as writeFileSync3, chmodSync } from "fs";
 var require2 = createRequire(import.meta.url);
 var pkg = require2("../../package.json");
 var jsonMode = false;
@@ -3274,15 +3275,52 @@ function initDb() {
   initSchema(db);
   return db;
 }
+function manageHook(action, hookId, toolName, scriptPath) {
+  const settingsDir = join3(process.cwd(), ".claude");
+  const settingsPath = join3(settingsDir, "settings.local.json");
+  let settings = {};
+  if (existsSync5(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync4(settingsPath, "utf8"));
+    } catch {
+      settings = {};
+    }
+  }
+  if (!settings.hooks) settings.hooks = {};
+  const hooks = settings.hooks;
+  if (!hooks.PreToolUse) hooks.PreToolUse = [];
+  const preToolUse = hooks.PreToolUse;
+  if (action === "add") {
+    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
+    hooks.PreToolUse.push({
+      id: hookId,
+      type: "command",
+      matcher: toolName,
+      command: scriptPath
+    });
+    if (existsSync5(scriptPath)) {
+      try {
+        chmodSync(scriptPath, 493);
+      } catch {
+      }
+    }
+  } else {
+    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
+  }
+  writeFileSync3(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+}
 var careful = program.command("careful").description("Manage careful mode (destructive command guard)");
 careful.command("on").description("Enable careful mode").action(() => {
   const db = initDb();
   setConfig(db, "careful.enabled", "true");
+  const scriptPath = join3(process.cwd(), "bin", "check-careful.sh");
+  manageHook("add", "vs-careful", "Bash", scriptPath);
   output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
 });
 careful.command("off").description("Disable careful mode").action(() => {
   const db = initDb();
   setConfig(db, "careful.enabled", "false");
+  manageHook("remove", "vs-careful", "Bash", "");
   output({ careful: false }, "careful \uBAA8\uB4DC \uBE44\uD65C\uC131\uD654\uB428.");
 });
 careful.command("status").description("Show careful mode status").action(() => {
@@ -3295,11 +3333,16 @@ freeze.command("set").argument("<path>", "Directory path to restrict edits to").
   const db = initDb();
   const absPath = resolve2(inputPath);
   setConfig(db, "freeze.path", absPath);
+  const scriptPath = join3(process.cwd(), "bin", "check-freeze.sh");
+  manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
+  manageHook("add", "vs-freeze-write", "Write", scriptPath);
   output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
 });
 freeze.command("off").description("Remove freeze boundary").action(() => {
   const db = initDb();
   deleteConfig(db, "freeze.path");
+  manageHook("remove", "vs-freeze-edit", "Edit", "");
+  manageHook("remove", "vs-freeze-write", "Write", "");
   output({ freeze: null }, "freeze \uBE44\uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704 \uC81C\uD55C \uD574\uC81C.");
 });
 freeze.command("status").description("Show freeze boundary status").action(() => {
@@ -3316,6 +3359,11 @@ guard.command("on").argument("<path>", "Directory path to restrict edits to").de
   const absPath = resolve2(inputPath);
   setConfig(db, "careful.enabled", "true");
   setConfig(db, "freeze.path", absPath);
+  const carefulScript = join3(process.cwd(), "bin", "check-careful.sh");
+  const freezeScript = join3(process.cwd(), "bin", "check-freeze.sh");
+  manageHook("add", "vs-careful", "Bash", carefulScript);
+  manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
+  manageHook("add", "vs-freeze-write", "Write", freezeScript);
   output(
     { careful: true, freeze: absPath },
     `\u{1F6E1}\uFE0F guard \uD65C\uC131\uD654\uB428 \u2014 careful + freeze: ${absPath}`
@@ -3325,6 +3373,9 @@ guard.command("off").description("Disable both careful mode and freeze boundary"
   const db = initDb();
   setConfig(db, "careful.enabled", "false");
   deleteConfig(db, "freeze.path");
+  manageHook("remove", "vs-careful", "Bash", "");
+  manageHook("remove", "vs-freeze-edit", "Edit", "");
+  manageHook("remove", "vs-freeze-write", "Write", "");
   output({ careful: false, freeze: null }, "guard \uBE44\uD65C\uC131\uD654\uB428 \u2014 careful + freeze \uBAA8\uB450 \uD574\uC81C.");
 });
 guard.command("status").description("Show guard status").action(() => {
