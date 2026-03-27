@@ -96,6 +96,7 @@ cp -r skills/* ~/.gemini/skills/
 | `/vs-freeze` | 편집 범위 제한 — 지정 디렉토리 외부 Edit/Write 차단 |
 | `/vs-guard` | careful + freeze 동시 활성화 |
 | `/vs-code-review` | 코드 리뷰 — git diff 기반 버그 탐지 + 기계적 문제 자동 수정 |
+| `/vs-plan-design-review` | 플랜 디자인 리뷰 — 7개 차원 0-10 점수 평가, 구현 전 디자인 검증 |
 | `/vs-security` | 보안 감사 — 코드/의존성/설정 취약점 스캔 |
 | `/vs-design-init` | 디자인 시스템 생성 — 인터뷰 기반 DESIGN.md 생성 |
 | `/vs-design-review` | 디자인 감사 — UI 구현과 DESIGN.md 일치 여부 검증 |
@@ -256,6 +257,7 @@ vibespec/
 │   ├── vs-freeze/           # /vs-freeze — 편집 범위 제한
 │   ├── vs-guard/            # /vs-guard — careful + freeze
 │   ├── vs-code-review/      # /vs-code-review — 코드 리뷰
+│   ├── vs-plan-design-review/ # /vs-plan-design-review — 플랜 디자인 리뷰
 │   ├── vs-security/         # /vs-security — 보안 감사
 │   ├── vs-design-init/      # /vs-design-init — 디자인 시스템 생성
 │   ├── vs-design-review/    # /vs-design-review — 디자인 감사

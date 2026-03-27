@@ -129,6 +129,15 @@ invocation: user
 
    c. **태스크 분해 시 디자인 검증 태스크 추가**: Step 6에서 태스크를 분해할 때, 마지막에 "디자인 시스템 검증" 태스크를 포함하세요. 이 태스크는 `/vs-design-review`를 실행하여 구현이 DESIGN.md와 일치하는지 확인합니다.
 
+   d. **플랜 디자인 리뷰 제안**: `AskUserQuestion`으로 플랜 디자인 리뷰를 제안하세요:
+      - question: "UI 플랜이 감지되었습니다. 구현 전에 플랜 디자인 리뷰를 실행할까요?"
+      - header: "플랜 디자인 리뷰"
+      - multiSelect: false
+      - 선택지:
+        - label: "디자인 리뷰 실행 (권장)", description: "/vs-plan-design-review로 7개 디자인 차원을 검증합니다"
+        - label: "건너뛰기", description: "디자인 리뷰 없이 진행합니다"
+      - "디자인 리뷰 실행" 선택 시: `/vs-plan-design-review`를 안내하세요
+
    **UI 관련 플랜이 아닌 경우:** 이 단계를 건너뛰고 Step 3a로 진행하세요.
 
 3a. **보안 키워드 감지** (자동)

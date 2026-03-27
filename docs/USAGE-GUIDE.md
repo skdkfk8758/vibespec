@@ -284,6 +284,7 @@ claude plugin install /path/to/vibespec
 | `/vs-qa` | QA 에이전트 팀 실행 | 종합 품질 검증 |
 | `/vs-browse` | 탐색적 브라우저 QA | UI 시각적 확인 |
 | `/vs-code-review` | 코드 리뷰 | 커밋/PR 전 버그 탐지 |
+| `/vs-plan-design-review` | 플랜 디자인 리뷰 | 구현 전 UI 설계 검증 |
 | `/vs-security` | 보안 감사 | OWASP 기반 검사 |
 | `/vs-design-review` | 디자인 감사 | DESIGN.md 기준 검증 |
 | `/vs-acceptance` | 인수 테스트 | AC 기반 브라우저 검증 |
