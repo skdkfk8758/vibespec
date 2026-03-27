@@ -22,7 +22,7 @@ import { BacklogModel } from '../core/models/backlog.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage, formatBacklogList, formatBacklogDetail, formatBacklogStats, formatBacklogBoard, formatImportPreview } from './formatters.js';
 import { importFromGithub, importFromFile, importFromSlack } from './importers.js';
-import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus, ContextLog } from '../core/types.js';
+import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus } from '../core/types.js';
 import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus } from '../core/types.js';
 import { VALID_PLAN_STATUSES, VALID_BACKLOG_PRIORITIES, VALID_BACKLOG_CATEGORIES, VALID_BACKLOG_COMPLEXITIES, VALID_BACKLOG_STATUSES, VALID_QA_RUN_TERMINAL_STATUSES } from '../core/types.js';
 
@@ -1180,86 +1180,6 @@ ideate
       const log = contextModel.getById(parseInt(id, 10));
       if (!log) return outputError(`Ideation not found: ${id}`);
       output(log, `## Ideation #${log.id}\n\n**Created**: ${log.created_at}\n\n${log.summary}`);
-    });
-  });
-
-// ── deploy ────────────────────────────────────────────────────────────
-
-const deploy = program.command('deploy').description('Manage deployment pipeline');
-
-deploy
-  .command('setup')
-  .description('Guide to set up deployment configuration')
-  .action(() => {
-    withErrorHandler(() => {
-      output(
-        { guide: 'Use /vs-deploy-setup skill to configure deployment' },
-        '배포 설정을 구성하려면 /vs-deploy-setup 스킬을 사용하세요.\n\n사용법: /vs-deploy-setup\n\n자동 감지 지원 플랫폼: Fly.io, Vercel, Netlify, Docker, GCP, Heroku'
-      );
-    });
-  });
-
-deploy
-  .command('status')
-  .description('Show current deployment configuration')
-  .action(() => {
-    withErrorHandler(() => {
-      const { db } = initModels();
-      const platform = getConfig(db, 'deploy.platform');
-      const command = getConfig(db, 'deploy.command');
-      const url = getConfig(db, 'deploy.url');
-      const healthUrl = getConfig(db, 'deploy.health_url');
-
-      const config = {
-        platform: platform ?? null,
-        command: command ?? null,
-        url: url ?? null,
-        health_url: healthUrl ?? null,
-      };
-
-      if (!platform && !command) {
-        output(config, '배포 설정이 없습니다. /vs-deploy-setup으로 설정하세요.');
-        return;
-      }
-
-      const lines = [
-        '## 배포 설정 현황',
-        '',
-        '| 항목 | 값 |',
-        '|------|-----|',
-        `| 플랫폼 | ${platform ?? '미설정'} |`,
-        `| 배포 명령 | ${command ?? '미설정'} |`,
-        `| 배포 URL | ${url ?? '미설정'} |`,
-        `| 헬스체크 URL | ${healthUrl ?? '미설정'} |`,
-      ];
-      output(config, lines.join('\n'));
-    });
-  });
-
-// ── canary ────────────────────────────────────────────────────────────
-
-const canary = program.command('canary').description('Manage canary health checks');
-
-canary
-  .command('status')
-  .description('Show latest deploy/canary events')
-  .action(() => {
-    withErrorHandler(() => {
-      const { contextModel } = initModels();
-      const deployLogs = contextModel.search('[deploy]');
-      const canaryLogs = contextModel.search('[canary]');
-      const deployEvents = [...deployLogs, ...canaryLogs]
-        .sort((a, b) => b.id - a.id);
-
-      if (deployEvents.length === 0) {
-        output([], '배포/카나리 이벤트가 없습니다.');
-        return;
-      }
-
-      const formatted = deployEvents.map((l: ContextLog, i: number) =>
-        `${i + 1}. [#${l.id}] ${l.summary} (${l.created_at})`
-      ).join('\n');
-      output(deployEvents, `## 배포/카나리 이벤트 이력\n\n${formatted}`);
     });
   });
 
