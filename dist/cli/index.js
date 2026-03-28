@@ -3213,6 +3213,21 @@ context.command("save").requiredOption("--summary <summary>", "Summary of contex
   });
   output(log, `Context saved: ${log.id} "${log.summary.slice(0, 50)}..."`);
 });
+context.command("search").argument("<query>", "Search query (tag or keyword)").option("--limit <n>", "Max results", "10").description("Search context log entries by tag or keyword").action((query, opts) => {
+  const { contextModel } = initModels();
+  const results = contextModel.search(query);
+  const limited = results.slice(0, parseInt(opts.limit, 10));
+  if (limited.length === 0) {
+    output([], `No context logs matching "${query}".`);
+    return;
+  }
+  const formatted = limited.map(
+    (l, i) => `${i + 1}. [#${l.id}] ${l.summary.slice(0, 100)} (${l.created_at})`
+  ).join("\n");
+  output(limited, `## Context Search: "${query}"
+
+${formatted}`);
+});
 program.command("stats").argument("[plan_id]", "Optional plan ID").description("Show velocity and estimates").action((planId) => {
   const { stats } = initModels();
   const velocity = stats.getVelocity(planId);
@@ -3545,8 +3560,13 @@ var qaRun = qa.command("run").description("Manage QA runs");
 qaRun.command("create").argument("[plan_id]", "Plan ID (optional for --mode security-only)").option("--trigger <type>", "Trigger type (manual, auto, milestone)", "manual").option("--mode <mode>", "Run mode (full, security-only)").description("Create a new QA run").action((planId, opts) => withErrorHandler(() => {
   const { qaRun: qaRunModel } = getQAModels();
   if (opts.mode === "security-only") {
-    const run2 = qaRunModel.create(planId ?? "__security_only__", opts.trigger);
-    output(run2, `Created security-only QA run: ${run2.id}`);
+    const { planModel: planModel2 } = initModels();
+    let sentinelPlan = planModel2.list({ status: "active" }).find((p) => p.title === "__security_audit__");
+    if (!sentinelPlan) {
+      sentinelPlan = planModel2.create("__security_audit__", "Auto-created sentinel plan for standalone security audits");
+    }
+    const run2 = qaRunModel.create(sentinelPlan.id, opts.trigger);
+    output(run2, `Created security-only QA run: ${run2.id} (sentinel plan: ${sentinelPlan.id})`);
     return;
   }
   if (!planId) return outputError("Plan ID is required (use --mode security-only for standalone)");

@@ -28,7 +28,7 @@ invocation: user
 
    **Ideation 참조**: 인터뷰 시작 전에 Bash 도구로 `vs ideate list --json`을 실행하여 최근 ideation 기록을 확인하세요.
    - `[ideation]` 태그가 붙은 최근 기록이 있으면:
-     1. `[ideation-spec]` 태그로 전체 스펙 초안을 검색하세요 (vs-ideate가 저장한 전체 스펙)
+     1. `vs --json context search "[ideation-spec]"`으로 전체 스펙 초안을 검색하세요 (vs-ideate가 저장한 전체 스펙)
      2. 전체 스펙이 있으면: 해당 스펙을 Step 4의 초안으로 제시하고, Step 1~3을 빠르게 확인만 (이미 답변된 항목 건너뛰기)
      3. 전체 스펙이 없고 요약만 있으면: 요약을 요구사항 초안으로 제시하고, 부족한 항목을 추가 인터뷰
    - 기록이 없으면: 아래 일반 인터뷰 플로우를 진행하세요.

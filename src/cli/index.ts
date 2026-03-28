@@ -460,6 +460,25 @@ context
     output(log, `Context saved: ${log.id} "${log.summary.slice(0, 50)}..."`);
   });
 
+context
+  .command('search')
+  .argument('<query>', 'Search query (tag or keyword)')
+  .option('--limit <n>', 'Max results', '10')
+  .description('Search context log entries by tag or keyword')
+  .action((query: string, opts: { limit: string }) => {
+    const { contextModel } = initModels();
+    const results = contextModel.search(query);
+    const limited = results.slice(0, parseInt(opts.limit, 10));
+    if (limited.length === 0) {
+      output([], `No context logs matching "${query}".`);
+      return;
+    }
+    const formatted = limited.map((l: { id: number; summary: string; created_at: string }, i: number) =>
+      `${i + 1}. [#${l.id}] ${l.summary.slice(0, 100)} (${l.created_at})`
+    ).join('\n');
+    output(limited, `## Context Search: "${query}"\n\n${formatted}`);
+  });
+
 // ── stats ──────────────────────────────────────────────────────────────
 
 program
@@ -982,9 +1001,14 @@ qaRun
   .action((planId: string | undefined, opts: { trigger: string; mode?: string }) => withErrorHandler(() => {
     const { qaRun: qaRunModel } = getQAModels();
     if (opts.mode === 'security-only') {
-      // security-only 모드: plan_id 없이 독립 실행
-      const run = qaRunModel.create(planId ?? '__security_only__', opts.trigger as QARunTrigger);
-      output(run, `Created security-only QA run: ${run.id}`);
+      // security-only 모드: sentinel plan 자동 생성 후 Run 연결
+      const { planModel } = initModels();
+      let sentinelPlan = planModel.list({ status: 'active' as PlanStatus }).find(p => p.title === '__security_audit__');
+      if (!sentinelPlan) {
+        sentinelPlan = planModel.create('__security_audit__', 'Auto-created sentinel plan for standalone security audits');
+      }
+      const run = qaRunModel.create(sentinelPlan.id, opts.trigger as QARunTrigger);
+      output(run, `Created security-only QA run: ${run.id} (sentinel plan: ${sentinelPlan.id})`);
       return;
     }
     if (!planId) return outputError('Plan ID is required (use --mode security-only for standalone)');
