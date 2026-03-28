@@ -338,6 +338,14 @@ invocation: user
    - 최종 리스크: {N}%
    ```
 
+   수정 루프 완료 후 `AskUserQuestion`으로 커밋 전략을 선택받으세요:
+   - question: "수정 루프가 완료되었습니다. 커밋을 어떻게 처리할까요?"
+   - header: "커밋 전략"
+   - 선택지:
+     - label: "Atomic commit 유지 (Recommended)", description: "개별 style(design): FINDING-NNN 커밋을 그대로 유지합니다. bisectable하게 유지됨."
+     - label: "하나로 squash", description: "모든 디자인 수정을 하나의 커밋으로 합칩니다"
+     - label: "카테고리별 squash", description: "Color/Typography/Spacing 등 카테고리별로 합칩니다"
+
 ## 다음 단계
 
 - -> `/vs-design-init`으로 디자인 시스템 업데이트 (토큰 추가/변경 필요 시)

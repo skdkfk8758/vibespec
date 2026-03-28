@@ -7,8 +7,8 @@ set -euo pipefail
 TOOL_NAME="${TOOL_NAME:-}"
 TOOL_INPUT="${TOOL_INPUT:-}"
 
-# Edit, Write 도구만 검사
-if [[ "$TOOL_NAME" != "Edit" && "$TOOL_NAME" != "Write" ]]; then
+# Edit, Write, Bash 도구 검사
+if [[ "$TOOL_NAME" != "Edit" && "$TOOL_NAME" != "Write" && "$TOOL_NAME" != "Bash" ]]; then
   exit 0
 fi
 
@@ -24,7 +24,18 @@ fi
 TARGET_FILE=$(echo "$TOOL_INPUT" | node -e "
   try {
     const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-    console.log(d.file_path || '');
+    if (d.file_path) {
+      // Edit/Write 도구: file_path 직접 추출
+      console.log(d.file_path);
+    } else if (d.command) {
+      // Bash 도구: 리다이렉션 대상 파일 추출 (>, >>, tee)
+      // 참고: 완벽하지 않으나 주요 패턴을 커버
+      const m = d.command.match(/(?:>|>>|tee\s+(?:-a\s+)?)\s*([^\s;|&]+)/);
+      if (m) console.log(m[1]);
+      else console.log('');
+    } else {
+      console.log('');
+    }
   } catch { console.log(''); }
 " 2>/dev/null || echo "")
 

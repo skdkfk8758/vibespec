@@ -57,7 +57,10 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
         - `app/xxx/page.tsx` → `/xxx`
         - `src/routes/xxx.tsx` → `/xxx`
         - 컴포넌트 파일(components/)이면: `Grep`으로 해당 컴포넌트를 import하는 페이지를 역추적
-     3. 비UI 파일만 변경된 경우(`.ts`, `.json`, `.md` 등 + 라우트 미매핑): 라우트 매핑 스킵, API/로직 변경으로 분류
+        - **API 파일**(api/, routes/, controllers/, server/)이면: 해당 API 엔드포인트 경로를 추출하고, `Grep`으로 프론트엔드에서 해당 경로를 호출하는 파일을 역추적
+          - 검색 패턴: `fetch.*{endpoint}`, `axios.*{endpoint}`, `api\.(get|post|put|delete).*{endpoint}`
+          - 발견된 프론트 파일의 라우트를 affected_routes에 추가
+     3. 비UI 파일만 변경 + API 역추적으로도 프론트 파일이 발견되지 않는 경우: 라우트 매핑 스킵, API/로직 변경으로 분류
      4. 추론된 라우트 목록을 coordinator에 `affected_routes`로 전달
      5. coordinator는 해당 라우트에 집중하여 시나리오를 생성
    - targeted 선택 시 추가 질문: 대상 태스크 선택

@@ -251,6 +251,22 @@ SQL 인젝션, XSS, 커맨드 인젝션 취약점을 탐지합니다.
 
 ## qa_findings Registration
 
+### run_id 확보
+
+qa_findings 등록 전에 반드시 run_id를 확보하세요:
+
+1. `vs --json qa run list --status running`으로 활성 QA Run 확인
+2. **활성 Run이 있으면**: 해당 run_id를 사용
+3. **활성 Run이 없으면**: 임시 Run을 자동 생성
+   ```bash
+   vs --json qa run create --mode security-only
+   ```
+   반환된 run_id를 사용합니다.
+4. 스캔 완료 후 임시 Run을 완료 처리:
+   ```bash
+   vs --json qa run complete <run_id>
+   ```
+
 **critical** 및 **high** 심각도 발견 항목은 자동으로 qa_findings에 등록합니다:
 
 ```bash

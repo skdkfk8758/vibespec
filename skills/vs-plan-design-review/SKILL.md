@@ -188,10 +188,20 @@ invocation: user
 - {점수 기반 권장 사항}
 ```
 
-### Step 4: 결과 저장
+### Step 4: 수정 반영 + 결과 저장
 
-1. 리포트를 context_log에 저장: `vs context save --summary "[plan-design-review] {등급}: {플랜 제목} — {주요 개선점 요약}"`
-2. `AskUserQuestion`으로 다음 단계 제시:
+1. **승인된 수정을 플랜에 반영**: Step 2에서 승인된 수정 제안이 있으면, `AskUserQuestion`으로 반영 방식을 선택받으세요:
+   - question: "승인된 수정 사항을 플랜에 어떻게 반영할까요?"
+   - header: "수정 반영"
+   - 선택지:
+     - label: "플랜 스펙에 추가 (Recommended)", description: "수정 내용을 스펙의 UI/UX Requirements에 append합니다"
+     - label: "신규 태스크로 생성", description: "수정 항목별로 태스크를 생성합니다"
+     - label: "리포트만 저장", description: "반영하지 않고 기록만 합니다"
+   - "스펙에 추가" 선택 시: `vs plan edit <plan_id> --append-spec "## Design Review 수정\n{수정 내용}"` 실행
+   - "태스크로 생성" 선택 시: 각 수정 항목에 대해 `vs task create --plan <plan_id> --title "디자인 수정: {항목}" --spec "{수정 내용}"` 실행
+
+2. 리포트를 context_log에 저장: `vs context save --summary "[plan-design-review] {등급}: {플랜 제목} — {주요 개선점 요약}"`
+3. `AskUserQuestion`으로 다음 단계 제시:
    - "구현 시작" → `/vs-next` 안내
    - "추가 수정" → 특정 차원 재검토
    - "리포트만 저장" → 종료
