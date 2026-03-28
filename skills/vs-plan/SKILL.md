@@ -232,8 +232,25 @@ invocation: user
    스펙을 태스크로 분해하세요. 각 태스크는:
    - 한 세션(15~30분)에 완료 가능한 크기
    - 명확한 spec (구현 상세)
-   - 검증 가능한 acceptance criteria
+   - 검증 가능한 acceptance criteria (**AC 네이밍 컨벤션** 참조)
    - 의존성 순서대로 정렬 (Data Model → Core Logic → API → Integration)
+
+   **AC 네이밍 컨벤션** (권장):
+   acceptance criteria는 `AC01`, `AC02`, ... 형식으로 번호를 매기세요.
+   이렇게 하면 tdd-implementer가 테스트 이름에 AC 번호를 포함하고,
+   verifier가 테스트-AC 매핑을 자동으로 검증할 수 있습니다.
+
+   ```
+   # acceptance 작성 예시
+   acceptance: "AC01: 사용자가 이메일로 로그인할 수 있어야 한다.
+                AC02: 비밀번호 5회 실패 시 계정이 잠겨야 한다.
+                AC03: 로그인 성공 시 JWT 토큰을 반환해야 한다."
+
+   # 대응하는 테스트 이름
+   it('AC01: 이메일 로그인 성공')
+   it('AC02: 비밀번호 5회 실패 시 계정 잠금')
+   it('AC03: 로그인 성공 시 JWT 반환')
+   ```
    - **Scope 규칙** (권장): 각 태스크에 수정 범위를 명시하세요:
      - `allowed_files` — 해당 태스크에서 수정할 파일 목록. Step 2에서 파악한 관련 파일과 스펙의 API/Data Model에서 도출
      - `forbidden_patterns` — 해당 태스크와 무관한 영역. 보통 core/공통/설정 모듈, 다른 태스크가 담당하는 파일
