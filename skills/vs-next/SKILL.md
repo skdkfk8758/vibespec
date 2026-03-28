@@ -60,7 +60,12 @@ invocation: user
      → occurrences >= 3인 에러가 있으면: "반복 패턴입니다. patterns/ 문서 생성을 고려하세요." 추가 안내하세요
    - 결과가 없으면: 조용히 다음 단계로 진행하세요
 
-6. **크로스 플랜 파일 겹침 확인**
+6. **Scope 규칙과 Freeze 관계**
+   - **태스크 scope** (`allowed_files`/`forbidden_patterns`): 태스크 레벨 범위 제한. verifier가 검증하며 위반 시 WARN.
+   - **freeze** (`freeze.path`): 프로젝트 레벨 편집 범위 제한. PreToolUse hook이 실시간 차단 (exit 2).
+   - **관계**: 두 규칙은 독립적으로 동작합니다. freeze는 물리적 차단(hook), scope는 논리적 검증(verifier). freeze.path 안이라도 scope 밖이면 verifier WARN. scope 안이라도 freeze.path 밖이면 hook 차단.
+
+7. **크로스 플랜 파일 겹침 확인**
    - 현재 태스크에 `allowed_files`가 설정되어 있으면:
      1. `vs --json plan list --status active`로 다른 활성 플랜 조회
      2. 각 플랜의 태스크 중 `allowed_files`가 설정된 태스크와 현재 태스크의 `allowed_files`를 비교

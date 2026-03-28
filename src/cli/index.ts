@@ -153,6 +153,28 @@ plan
   });
 
 plan
+  .command('edit')
+  .argument('<id>', 'Plan ID')
+  .option('--title <title>', 'New title')
+  .option('--spec <spec>', 'Replace spec')
+  .option('--append-spec <text>', 'Append text to existing spec')
+  .option('--summary <summary>', 'New summary')
+  .description('Edit plan title, spec, or summary')
+  .action((id: string, opts: { title?: string; spec?: string; appendSpec?: string; summary?: string }) => {
+    const { planModel } = initModels();
+    const p = planModel.getById(id);
+    if (!p) return outputError(`Plan not found: ${id}`);
+    const updates: Record<string, string> = {};
+    if (opts.title) updates.title = opts.title;
+    if (opts.spec) updates.spec = opts.spec;
+    if (opts.appendSpec) updates.spec = (p.spec ?? '') + '\n\n' + opts.appendSpec;
+    if (opts.summary) updates.summary = opts.summary;
+    if (Object.keys(updates).length === 0) return outputError('No changes specified');
+    const updated = planModel.update(id, updates);
+    output(updated, `Plan updated: ${updated.id} "${updated.title}"`);
+  });
+
+plan
   .command('complete')
   .argument('<id>', 'Plan ID')
   .description('Complete a plan')
@@ -953,14 +975,22 @@ const qaRun = qa.command('run').description('Manage QA runs');
 
 qaRun
   .command('create')
-  .argument('<plan_id>', 'Plan ID')
+  .argument('[plan_id]', 'Plan ID (optional for --mode security-only)')
   .option('--trigger <type>', 'Trigger type (manual, auto, milestone)', 'manual')
+  .option('--mode <mode>', 'Run mode (full, security-only)')
   .description('Create a new QA run')
-  .action((planId: string, opts: { trigger: string }) => withErrorHandler(() => {
+  .action((planId: string | undefined, opts: { trigger: string; mode?: string }) => withErrorHandler(() => {
+    const { qaRun: qaRunModel } = getQAModels();
+    if (opts.mode === 'security-only') {
+      // security-only 모드: plan_id 없이 독립 실행
+      const run = qaRunModel.create(planId ?? '__security_only__', opts.trigger as QARunTrigger);
+      output(run, `Created security-only QA run: ${run.id}`);
+      return;
+    }
+    if (!planId) return outputError('Plan ID is required (use --mode security-only for standalone)');
     const { planModel } = initModels();
     const plan = planModel.getById(planId);
     if (!plan) return outputError(`Plan not found: ${planId}`);
-    const { qaRun: qaRunModel } = getQAModels();
     const run = qaRunModel.create(planId, opts.trigger as QARunTrigger);
     output(run, `Created QA run: ${run.id} (plan: ${planId}, trigger: ${opts.trigger})`);
   }));
