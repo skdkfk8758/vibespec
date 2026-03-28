@@ -60,10 +60,18 @@ invocation: user
      → occurrences >= 3인 에러가 있으면: "반복 패턴입니다. patterns/ 문서 생성을 고려하세요." 추가 안내하세요
    - 결과가 없으면: 조용히 다음 단계로 진행하세요
 
-6. **Scope 규칙과 Freeze 관계**
-   - **태스크 scope** (`allowed_files`/`forbidden_patterns`): 태스크 레벨 범위 제한. verifier가 검증하며 위반 시 WARN.
-   - **freeze** (`freeze.path`): 프로젝트 레벨 편집 범위 제한. PreToolUse hook이 실시간 차단 (exit 2).
-   - **관계**: 두 규칙은 독립적으로 동작합니다. freeze는 물리적 차단(hook), scope는 논리적 검증(verifier). freeze.path 안이라도 scope 밖이면 verifier WARN. scope 안이라도 freeze.path 밖이면 hook 차단.
+6. **스코프 규칙 우선순위**
+
+   3단계 스코프 규칙이 존재하며, 우선순위는 다음과 같습니다:
+   | 우선순위 | 메커니즘 | 동작 |
+   |---------|---------|------|
+   | 1 (최고) | **freeze** (PreToolUse 훅) | Edit/Write를 물리적으로 차단 (exit 2) |
+   | 2 | **allowed_files / forbidden_patterns** (태스크 DB) | verifier가 WARN으로 보고 |
+   | 3 (최저) | **Modification Plan** (에이전트 자율) | tdd-implementer가 자체 판단 |
+
+   - freeze가 차단하면 allowed_files 여부와 무관하게 편집 불가
+   - allowed_files 위반은 WARN이며 FAIL을 발생시키지 않음
+   - 상세: verifier 에이전트 문서의 "스코프 규칙 우선순위" 섹션 참조
 
 7. **크로스 플랜 파일 겹침 확인**
    - 현재 태스크에 `allowed_files`가 설정되어 있으면:

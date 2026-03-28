@@ -1,25 +1,26 @@
 ---
 name: vs-exec
-description: Use when the user wants to execute ALL tasks in a plan at once without subagent dispatch — run the entire plan end-to-end in the current session. This is the go-to skill when the user says "플랜 실행", "전체 실행", "쭉 돌려", "전부 구현", "끝까지 실행", "execute plan", "run all tasks", or any variation of "implement everything". Also use when the user is in a cowork/non-subagent environment and wants to process multiple tasks sequentially, or when they explicitly say "서브에이전트 없이", "에이전트 안 쓰고", "이 세션에서 전부", "한번에 끝내고 싶어". If the user wants to run just ONE task, use vs-next instead. If they want to PICK a specific task, use vs-pick. But if they want batch/full/all execution in a single session, this is the right skill.
+description: Use when the user wants to execute ALL tasks in a plan at once in a single session — run the entire plan end-to-end with minimal subagent usage (verifier agent for verification, direct implementation without tdd-implementer). Use --inline flag for fully subagent-free execution. This is the go-to skill when the user says "플랜 실행", "전체 실행", "쭉 돌려", "전부 구현", "끝까지 실행", "execute plan", "run all tasks", or any variation of "implement everything". Also use when the user is in a cowork/non-subagent environment and wants to process multiple tasks sequentially, or when they explicitly say "서브에이전트 없이", "에이전트 안 쓰고", "이 세션에서 전부", "한번에 끝내고 싶어". If the user wants to run just ONE task, use vs-next instead. If they want to PICK a specific task, use vs-pick. But if they want batch/full/all execution in a single session, this is the right skill.
 invocation: user
 ---
 
 # vs-exec
 
-서브에이전트 없이 플랜의 전체 태스크를 현재 세션에서 순차 실행합니다.
+플랜의 전체 태스크를 현재 세션에서 순차 실행합니다. 구현은 직접 수행하고, 검증은 기본적으로 verifier 에이전트를 디스패치합니다 (`--inline` 모드에서는 검증도 직접 수행).
 
-vs-next/vs-pick은 태스크마다 tdd-implementer, verifier 에이전트를 디스패치하여 높은 품질을 보장합니다. 이 스킬은 서브에이전트를 사용하지 않으므로 컨텍스트 격리나 독립 리뷰의 이점이 없지만, 단일 세션에서 플랜을 빠르게 소화할 수 있습니다.
+vs-next/vs-pick은 태스크마다 tdd-implementer + verifier 에이전트를 디스패치하여 높은 품질을 보장합니다. vs-exec은 구현 서브에이전트(tdd-implementer)를 사용하지 않으므로 컨텍스트 격리나 독립 리뷰의 이점이 없지만, 단일 세션에서 플랜을 빠르게 소화할 수 있습니다.
+
+> **Note:** 기본 모드에서도 verifier 에이전트는 디스패치됩니다. 완전히 서브에이전트 없이 실행하려면 `--inline` 플래그를 사용하세요.
 
 ### vs-next와의 차이
 
-| 항목 | vs-next (서브에이전트) | vs-exec (단일 세션) |
-|------|----------------------|---------------------|
-| 컨텍스트 격리 | 태스크별 fresh 컨텍스트 | 누적 (오염 가능) |
-| 구현 | tdd-implementer 에이전트 | 직접 구현 |
-| 검증 | verifier 에이전트 | verifier 에이전트 (인라인 모드 가능) |
-| 병렬성 | 최대 3개 동시 실행 | 순차 실행 |
-| 인라인 모드 | 없음 | `--inline`으로 서브에이전트 없이 검증 |
-| 적합 상황 | 복잡한 플랜, 높은 품질 요구 | 소규모 플랜, 빠른 실행 우선 |
+| 항목 | vs-next (서브에이전트) | vs-exec 기본 모드 | vs-exec --inline 모드 |
+|------|----------------------|-------------------|----------------------|
+| 컨텍스트 격리 | 태스크별 fresh 컨텍스트 | 누적 (오염 가능) | 누적 (오염 가능) |
+| 구현 | tdd-implementer 에이전트 | 직접 구현 | 직접 구현 |
+| 검증 | verifier 에이전트 | verifier 에이전트 | 직접 검증 (서브에이전트 없음) |
+| 병렬성 | 최대 3개 동시 실행 | 순차 실행 | 순차 실행 |
+| 적합 상황 | 복잡한 플랜, 높은 품질 요구 | 중간 규모, 빠른 실행 | 소규모, 최소 오버헤드 |
 
 이 테이블은 사용자가 vs-exec을 처음 사용하거나, vs-next와의 차이를 물을 때만 보여주세요. 매번 표시하지 마세요.
 
@@ -157,6 +158,8 @@ vs-next/vs-pick은 태스크마다 tdd-implementer, verifier 에이전트를 디
       - 재시도 횟수를 종합 리포트에 기록하세요
 
    > **참고**: 독립적인 코드 품질 리뷰가 필요하면 커밋 전 `/simplify-loop`을 활용하거나 PR 리뷰를 활용하세요.
+
+   > **스코프 규칙 우선순위**: freeze(훅, 물리적 차단) > allowed_files(DB, WARN) > Modification Plan(에이전트 자율). 상세: verifier 에이전트 문서 참조.
 
    **d. 검증 (인라인 모드: `--inline` 플래그 사용 시)**
 

@@ -1,18 +1,23 @@
 ---
 name: verification
-description: Use when verifying task completion before marking as done. Checks acceptance criteria, tests, build, and lint against the task spec.
-invocation: user
+description: Internal gate for task completion verification. Automatically invoked by verifier agent, vs-next, and vs-exec. Direct user invocation is supported but not recommended — use vs-next or vs-exec instead which include verification automatically.
 ---
 
-# Task Verification
+# Task Verification (Internal Gate)
 
 태스크 완료 시점에서 acceptance criteria 충족 여부, 테스트, 빌드, lint를 검증하고 구조화된 리포트를 생성합니다.
 
+> **Note:** 이 스킬은 vs-next/vs-exec의 내부 검증 게이트로 설계되었습니다. 대부분의 경우 verifier 에이전트가 이 로직을 자동으로 실행합니다. 수동 호출도 가능하지만, 일반적으로는 vs-next/vs-exec을 사용하세요.
+
 ## When to Use
 
-**사용하세요:**
-- vs-next / vs-pick의 완료 처리 단계에서 태스크를 `done`으로 변경하기 전
-- 수동으로 구현 완료 검증이 필요할 때
+**주요 호출자 (자동):**
+- verifier 에이전트 — 독립 컨텍스트에서 이 스킬의 검증 로직을 실행
+- vs-next / vs-pick — 완료 처리 단계에서 verifier 에이전트를 통해 간접 호출
+- vs-exec — 기본 모드에서 verifier 에이전트를 통해, --inline 모드에서 직접 실행
+
+**수동 호출 (비권장):**
+- 수동으로 구현 완료 검증이 필요할 때 직접 호출 가능하지만, vs-next/vs-exec 사용을 권장합니다
 
 **사용하지 마세요:**
 - 중간 저장(WIP 커밋) 시점

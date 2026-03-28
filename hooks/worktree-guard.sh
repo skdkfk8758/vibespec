@@ -5,7 +5,7 @@ set -euo pipefail
 # 차단: checkout, switch, merge, push 등 메인 브랜치를 변경하는 명령
 # 허용: log, diff, show 등 읽기 전용 명령
 
-trap 'exit 0' ERR
+trap 'exit 2' ERR  # fail-closed: 파싱 에러 시 차단 (git rev-parse 실패는 || exit 0으로 개별 처리)
 
 COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
 

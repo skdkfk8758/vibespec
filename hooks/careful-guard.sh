@@ -3,7 +3,7 @@ set -euo pipefail
 
 # PreToolUse(Bash) hook: careful 모드 활성화 시 파괴적 명령을 차단
 
-trap 'exit 0' ERR
+trap 'exit 2' ERR  # fail-closed: 파싱/설정 에러 시 차단 (안전 우선)
 
 # 공유 유틸 로드
 source "$(dirname "$0")/lib/read-config.sh"

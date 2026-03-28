@@ -3,7 +3,7 @@ set -euo pipefail
 
 # PreToolUse(Edit/Write) hook: freeze 활성화 시 지정 디렉토리 외 파일 편집 차단
 
-trap 'exit 0' ERR
+trap 'exit 2' ERR  # fail-closed: 파싱/경로 에러 시 차단 (안전 우선)
 
 source "$(dirname "$0")/lib/read-config.sh"
 
