@@ -59,6 +59,26 @@ argument-hint: "[target-branch]"
 
 6. **지배적 타입 결정**: `feat`, `fix`, `refactor`, `docs`, `chore`, `test` 중 전체 작업을 가장 잘 대표하는 타입을 결정합니다.
 
+7. **머지 리포트 데이터 수집** (Phase 6에서 사용):
+
+   이 단계에서 수집한 정보를 아래 구조로 메모리에 유지하세요. Phase 6 리포트 생성에서 사용합니다.
+
+   a. **changes_summary**: 파일별 변경 카테고리와 설명을 수집하세요:
+      ```json
+      [{"file": "src/models/user.ts", "category": "feat", "description": "사용자 인증 필드 추가"}]
+      ```
+
+   b. **ai_judgments**: 구현 과정에서 AI가 추론/추측한 부분을 기록하세요:
+      - `inference` (기존 패턴에서 추론한 코드) — confidence: high
+      - `guess` (도메인 지식이 필요한 추측) — confidence: low
+      - `pattern_based` (기계적 변환, import 경로 등) — confidence: high
+      ```json
+      [{"file": "src/api/auth.ts", "line": "45", "type": "guess", "description": "세션 만료 시간을 30분으로 설정 — 요구사항에 명시 없어 추측", "confidence": "low"}]
+      ```
+
+   c. **테스트 커버리지 갭**: 변경된 소스 파일 중 대응하는 테스트 파일이 없는 파일을 식별하세요. 파일명 패턴으로 매칭합니다:
+      - `src/foo.ts` → `src/__tests__/foo.test.ts`, `tests/foo.test.ts`, `src/foo.test.ts`, `src/foo.spec.ts`
+
 ### Phase 3: Target Preparation
 
 1. **원본 레포 경로**를 Phase 1 step 4에서 가져옵니다.
@@ -275,6 +295,15 @@ argument-hint: "[target-branch]"
 
 4. 충돌 없이 성공하면 Phase 4.5로 진행합니다.
 
+5. **충돌 해결 기록 수집** (머지 리포트용):
+
+   충돌이 있었다면, 각 충돌 파일의 해결 기록을 아래 구조로 메모리에 유지하세요:
+   ```json
+   [{"file": "src/api/auth.ts", "hunks": 3, "resolution": "ai_merge", "choice_reason": "양쪽 의도를 모두 반영 — ours의 파라미터 추가 + theirs의 async 변환"}]
+   ```
+   - `resolution`: `ours`, `theirs`, `ai_merge`, `manual` 중 하나
+   - AI 병합을 선택한 경우 `choice_reason`에 통합 근거를 기록하세요
+
 ### Phase 4.5: Integration Gate
 
 squash merge 후, 커밋 전에 통합 검증을 수행합니다. **이 단계를 통과해야만 커밋이 진행됩니다.**
@@ -427,11 +456,100 @@ EOF
 )"
 ```
 
-### Phase 6: Verification
+### Phase 6: Verification & Merge Report
 
 1. **커밋 확인**: `git -C <original-repo> log --oneline -3`으로 결과를 보여줍니다.
 
-2. **사용자에게 보고**:
+2. **머지 리포트 자동 생성**:
+
+   Phase 2~5에서 수집한 데이터를 사용하여 머지 리포트를 생성합니다.
+   **이 단계의 실패는 머지 결과에 영향을 주지 않습니다.** 리포트 생성이 실패하면 경고만 표시하고 Step 3으로 진행하세요.
+
+   a. **Review Checklist 생성**:
+      Phase 2에서 수집한 `ai_judgments`와 `conflict_log`를 바탕으로 review_checklist를 생성하세요:
+      - 🔴 `must` (반드시 확인):
+        - AI 병합(`ai_merge`)으로 해결된 충돌 부분
+        - `confidence: low`인 AI 판단 (추측이 포함된 코드)
+        - 비즈니스 로직을 변경한 파일 중 테스트가 없는 경우
+      - 🟡 `should` (가능하면 확인):
+        - 테스트 파일이 없는 변경된 소스 파일 (Phase 2 step 7c에서 식별)
+        - `confidence: medium`인 AI 판단
+        - 충돌 해결에서 `ours` 또는 `theirs`를 선택했지만 다른 쪽의 의도도 유효한 경우
+      - 🟢 `info` (참고):
+        - `confidence: high`인 기계적 변환
+        - 빌드/테스트가 통과한 항목
+        - 문서나 설정 파일 변경
+
+   b. **마크다운 리포트 파일 생성**:
+      `.claude/reports/` 디렉토리가 없으면 먼저 생성하세요.
+      `Write` 도구로 `.claude/reports/merge-{YYYY-MM-DD}-{source-branch}.md` 파일을 생성하세요:
+
+      ```markdown
+      # Merge Report: {source-branch} → {target-branch}
+      > {날짜} | Commit: {commit-hash}
+      > Plan: {plan-id} (있을 때만)
+
+      ## 변경 요약
+      {changes_summary를 카테고리별로 그룹화하여 불릿 리스트}
+
+      ## ⚡ Review Checklist
+      {review_checklist를 level별로 그룹화}
+      ### 🔴 반드시 확인
+      - [ ] {file}:{line} — {description}
+        └ {reason}
+      ### 🟡 가능하면 확인
+      - [ ] ...
+      ### 🟢 참고
+      - ...
+
+      ## 충돌 해결 기록
+      {conflict_log가 있을 때만 — 파일별 hunk 수, 선택, 근거}
+
+      ## AI 판단 로그
+      {ai_judgments가 있을 때만 — confidence별로 그룹화}
+
+      ## 검증 결과
+      - Build: {결과}
+      - Test: {결과} ({passed} passed, {failed} failed)
+      - Lint: {결과}
+      - Acceptance: {결과}
+
+      ## 관련 태스크
+      {task_ids가 있을 때만}
+
+      ## 메타
+      - Report: {report_path}
+      - Generated: {날짜시간}
+      ```
+
+   c. **DB에 리포트 저장**:
+      Bash 도구로 아래 명령을 실행하세요:
+      ```bash
+      vs merge-report create \
+        --commit "{커밋 해시}" \
+        --source "{소스 브랜치}" \
+        --target "{타겟 브랜치}" \
+        --changes '{changes_summary JSON}' \
+        --checklist '{review_checklist JSON}' \
+        --verification '{verification JSON}' \
+        --report-path "{MD 파일 경로}" \
+        --plan-id "{플랜 ID}" \
+        --conflict-log '{conflict_log JSON}' \
+        --ai-judgments '{ai_judgments JSON}' \
+        --task-ids '{task_ids JSON}'
+      ```
+      - plan-id, conflict-log, ai-judgments, task-ids는 해당 데이터가 있을 때만 포함하세요
+      - JSON 값에 작은따옴표가 포함되면 적절히 이스케이프하세요
+
+   d. **리포트 생성 결과 표시**:
+      ```
+      📋 머지 리포트 생성 완료
+      - 파일: {report_path}
+      - Review Checklist: 🔴{must_count} 🟡{should_count} 🟢{info_count}
+      - /vs-recap으로 나중에 조회할 수 있습니다
+      ```
+
+3. **사용자에게 보고**:
    - 최종 커밋 해시
    - 커밋 요약 라인
    - 어떤 브랜치에 머지되었는지

@@ -340,3 +340,75 @@ export interface NewBacklogItem {
   source?: string;
 }
 
+// Merge Report types
+export type ReviewChecklistLevel = 'must' | 'should' | 'info';
+export type ConflictResolution = 'ours' | 'theirs' | 'ai_merge' | 'manual';
+export type AIJudgmentType = 'inference' | 'guess' | 'pattern_based';
+export type AIConfidence = 'high' | 'medium' | 'low';
+
+export interface ChangeSummaryItem {
+  file: string;
+  category: 'feat' | 'fix' | 'refactor' | 'test' | 'docs' | 'chore';
+  description: string;
+}
+
+export interface ReviewChecklistItem {
+  level: ReviewChecklistLevel;
+  file: string;
+  line?: string;
+  description: string;
+  reason: string;
+}
+
+export interface ConflictLogItem {
+  file: string;
+  hunks: number;
+  resolution: ConflictResolution;
+  choice_reason: string;
+}
+
+export interface AIJudgmentItem {
+  file: string;
+  line?: string;
+  type: AIJudgmentType;
+  description: string;
+  confidence: AIConfidence;
+}
+
+export interface MergeVerificationResult {
+  build: 'pass' | 'fail' | 'skip';
+  test: { status: 'pass' | 'fail' | 'skip'; passed?: number; failed?: number };
+  lint: 'pass' | 'fail' | 'skip' | 'warn';
+  acceptance: 'pass' | 'fail' | 'skip' | 'warn';
+}
+
+export interface MergeReport {
+  id: string;
+  plan_id: string | null;
+  commit_hash: string;
+  source_branch: string;
+  target_branch: string;
+  changes_summary: ChangeSummaryItem[];
+  review_checklist: ReviewChecklistItem[];
+  conflict_log: ConflictLogItem[] | null;
+  ai_judgments: AIJudgmentItem[] | null;
+  verification: MergeVerificationResult;
+  task_ids: string[] | null;
+  report_path: string;
+  created_at: string;
+}
+
+export interface NewMergeReport {
+  plan_id?: string;
+  commit_hash: string;
+  source_branch: string;
+  target_branch: string;
+  changes_summary: ChangeSummaryItem[];
+  review_checklist: ReviewChecklistItem[];
+  conflict_log?: ConflictLogItem[];
+  ai_judgments?: AIJudgmentItem[];
+  verification: MergeVerificationResult;
+  task_ids?: string[];
+  report_path: string;
+}
+

@@ -388,4 +388,29 @@ export function applyMigrations(db: Database.Database): void {
 
     db.pragma('user_version = 9');
   }
+
+  if (version < 10) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS merge_reports (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT REFERENCES plans(id),
+        commit_hash     TEXT NOT NULL,
+        source_branch   TEXT NOT NULL,
+        target_branch   TEXT NOT NULL,
+        changes_summary TEXT NOT NULL,
+        review_checklist TEXT NOT NULL,
+        conflict_log    TEXT,
+        ai_judgments    TEXT,
+        verification    TEXT NOT NULL,
+        task_ids        TEXT,
+        report_path     TEXT NOT NULL,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_merge_reports_plan ON merge_reports(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_merge_reports_commit ON merge_reports(commit_hash);
+    `);
+
+    db.pragma('user_version = 10');
+  }
 }

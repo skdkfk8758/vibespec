@@ -19,6 +19,7 @@ import { QARunModel } from '../core/models/qa-run.js';
 import { QAScenarioModel } from '../core/models/qa-scenario.js';
 import { QAFindingModel } from '../core/models/qa-finding.js';
 import { BacklogModel } from '../core/models/backlog.js';
+import { MergeReportModel } from '../core/models/merge-report.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage, formatBacklogList, formatBacklogDetail, formatBacklogStats, formatBacklogBoard, formatImportPreview } from './formatters.js';
 import { importFromGithub, importFromFile, importFromSlack } from './importers.js';
@@ -74,7 +75,8 @@ function initModels() {
   const qaScenarioModel = new QAScenarioModel(db);
   const qaFindingModel = new QAFindingModel(db);
   const backlogModel = new BacklogModel(db, events);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel };
+  const mergeReportModel = new MergeReportModel(db);
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel };
 }
 
 const program = new Command();
@@ -1525,5 +1527,149 @@ importCmd
     const result = importFromSlack(opts.channel, { since: opts.since });
     output(result, formatImportPreview(result));
   }));
+
+// merge-report
+const mergeReport = program.command('merge-report').description('Manage merge reports');
+
+mergeReport
+  .command('show')
+  .argument('<id>', 'Report ID or commit hash')
+  .description('Show a merge report')
+  .action((id: string) => withErrorHandler(() => {
+    const { mergeReportModel } = initModels();
+    const report = mergeReportModel.get(id) ?? mergeReportModel.getByCommit(id);
+    if (!report) return outputError(`Merge report not found: ${id}`);
+    output(report, formatMergeReportSummary(report));
+  }));
+
+mergeReport
+  .command('list')
+  .option('--plan-id <plan_id>', 'Filter by plan ID')
+  .option('--limit <n>', 'Limit results', '20')
+  .description('List merge reports')
+  .action((opts: { planId?: string; limit: string }) => withErrorHandler(() => {
+    const { mergeReportModel } = initModels();
+    const reports = mergeReportModel.list({ planId: opts.planId, limit: parseInt(opts.limit, 10) });
+    output(reports, formatMergeReportList(reports));
+  }));
+
+mergeReport
+  .command('latest')
+  .description('Show the latest merge report')
+  .action(() => withErrorHandler(() => {
+    const { mergeReportModel } = initModels();
+    const reports = mergeReportModel.getLatest(1);
+    if (reports.length === 0) {
+      output(null, '리포트가 없습니다. vs-merge로 머지를 완료하면 자동으로 생성됩니다.');
+      return;
+    }
+    output(reports[0], formatMergeReportSummary(reports[0]));
+  }));
+
+mergeReport
+  .command('create')
+  .description('Create a merge report (used internally by vs-merge)')
+  .requiredOption('--commit <hash>', 'Commit hash')
+  .requiredOption('--source <branch>', 'Source branch')
+  .requiredOption('--target <branch>', 'Target branch')
+  .requiredOption('--changes <json>', 'Changes summary JSON')
+  .requiredOption('--checklist <json>', 'Review checklist JSON')
+  .requiredOption('--verification <json>', 'Verification result JSON')
+  .requiredOption('--report-path <path>', 'Path to MD report file')
+  .option('--plan-id <id>', 'Plan ID')
+  .option('--conflict-log <json>', 'Conflict log JSON')
+  .option('--ai-judgments <json>', 'AI judgments JSON')
+  .option('--task-ids <json>', 'Task IDs JSON')
+  .action((opts: {
+    commit: string; source: string; target: string;
+    changes: string; checklist: string; verification: string;
+    reportPath: string; planId?: string; conflictLog?: string;
+    aiJudgments?: string; taskIds?: string;
+  }) => withErrorHandler(() => {
+    const { mergeReportModel } = initModels();
+    const report = mergeReportModel.create({
+      commit_hash: opts.commit,
+      source_branch: opts.source,
+      target_branch: opts.target,
+      changes_summary: JSON.parse(opts.changes),
+      review_checklist: JSON.parse(opts.checklist),
+      verification: JSON.parse(opts.verification),
+      report_path: opts.reportPath,
+      plan_id: opts.planId,
+      conflict_log: opts.conflictLog ? JSON.parse(opts.conflictLog) : undefined,
+      ai_judgments: opts.aiJudgments ? JSON.parse(opts.aiJudgments) : undefined,
+      task_ids: opts.taskIds ? JSON.parse(opts.taskIds) : undefined,
+    });
+    output(report, `Created merge report: ${report.id}`);
+  }));
+
+function formatMergeReportSummary(r: import('../core/types.js').MergeReport): string {
+  const lines: string[] = [];
+  lines.push(`# Merge Report: ${r.source_branch} → ${r.target_branch}`);
+  lines.push(`> ${r.created_at} | Commit: ${r.commit_hash.slice(0, 8)}`);
+  if (r.plan_id) lines.push(`> Plan: ${r.plan_id}`);
+  lines.push('');
+
+  lines.push('## 변경 요약');
+  for (const c of r.changes_summary) {
+    lines.push(`- [${c.category}] ${c.file} — ${c.description}`);
+  }
+  lines.push('');
+
+  lines.push('## Review Checklist');
+  const levelIcon = { must: '🔴', should: '🟡', info: '🟢' } as const;
+  for (const item of r.review_checklist) {
+    const loc = item.line ? `${item.file}:${item.line}` : item.file;
+    lines.push(`- ${levelIcon[item.level]} ${loc} — ${item.description}`);
+    lines.push(`  └ ${item.reason}`);
+  }
+  lines.push('');
+
+  if (r.conflict_log && r.conflict_log.length > 0) {
+    lines.push('## 충돌 해결 기록');
+    for (const c of r.conflict_log) {
+      lines.push(`- ${c.file} (${c.hunks} hunks) → ${c.resolution}: ${c.choice_reason}`);
+    }
+    lines.push('');
+  }
+
+  if (r.ai_judgments && r.ai_judgments.length > 0) {
+    lines.push('## AI 판단 로그');
+    for (const j of r.ai_judgments) {
+      const loc = j.line ? `${j.file}:${j.line}` : j.file;
+      lines.push(`- [${j.confidence}] ${loc} — ${j.description} (${j.type})`);
+    }
+    lines.push('');
+  }
+
+  const v = r.verification;
+  lines.push('## 검증 결과');
+  lines.push(`- Build: ${v.build}`);
+  lines.push(`- Test: ${v.test.status}${v.test.passed != null ? ` (${v.test.passed} passed${v.test.failed ? `, ${v.test.failed} failed` : ''})` : ''}`);
+  lines.push(`- Lint: ${v.lint}`);
+  lines.push(`- Acceptance: ${v.acceptance}`);
+
+  if (r.task_ids && r.task_ids.length > 0) {
+    lines.push('');
+    lines.push(`## 관련 태스크: ${r.task_ids.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatMergeReportList(reports: import('../core/types.js').MergeReport[]): string {
+  if (reports.length === 0) return '리포트가 없습니다.';
+  const header = '| # | 날짜 | 브랜치 | 커밋 | Checklist | 충돌 |';
+  const sep = '|---|------|--------|------|-----------|------|';
+  const rows = reports.map((r, i) => {
+    const date = r.created_at.split('T')[0] || r.created_at.split(' ')[0];
+    const must = r.review_checklist.filter(c => c.level === 'must').length;
+    const should = r.review_checklist.filter(c => c.level === 'should').length;
+    const info = r.review_checklist.filter(c => c.level === 'info').length;
+    const conflicts = r.conflict_log?.length ?? 0;
+    return `| ${i + 1} | ${date} | ${r.source_branch} → ${r.target_branch} | ${r.commit_hash.slice(0, 8)} | 🔴${must} 🟡${should} 🟢${info} | ${conflicts} |`;
+  });
+  return [header, sep, ...rows].join('\n');
+}
 
 program.parse();

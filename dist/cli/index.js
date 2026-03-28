@@ -486,6 +486,29 @@ function applyMigrations(db) {
     `);
     db.pragma("user_version = 9");
   }
+  if (version < 10) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS merge_reports (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT REFERENCES plans(id),
+        commit_hash     TEXT NOT NULL,
+        source_branch   TEXT NOT NULL,
+        target_branch   TEXT NOT NULL,
+        changes_summary TEXT NOT NULL,
+        review_checklist TEXT NOT NULL,
+        conflict_log    TEXT,
+        ai_judgments    TEXT,
+        verification    TEXT NOT NULL,
+        task_ids        TEXT,
+        report_path     TEXT NOT NULL,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_merge_reports_plan ON merge_reports(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_merge_reports_commit ON merge_reports(commit_hash);
+    `);
+    db.pragma("user_version = 10");
+  }
 }
 
 // src/core/engine/dashboard.ts
@@ -2412,6 +2435,89 @@ var BacklogModel = class {
   }
 };
 
+// src/core/models/merge-report.ts
+function rowToReport(row) {
+  return {
+    id: row.id,
+    plan_id: row.plan_id,
+    commit_hash: row.commit_hash,
+    source_branch: row.source_branch,
+    target_branch: row.target_branch,
+    changes_summary: JSON.parse(row.changes_summary),
+    review_checklist: JSON.parse(row.review_checklist),
+    conflict_log: row.conflict_log ? JSON.parse(row.conflict_log) : null,
+    ai_judgments: row.ai_judgments ? JSON.parse(row.ai_judgments) : null,
+    verification: JSON.parse(row.verification),
+    task_ids: row.task_ids ? JSON.parse(row.task_ids) : null,
+    report_path: row.report_path,
+    created_at: row.created_at
+  };
+}
+var MergeReportModel = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  create(data) {
+    const id = generateId();
+    this.db.prepare(
+      `INSERT INTO merge_reports (id, plan_id, commit_hash, source_branch, target_branch,
+        changes_summary, review_checklist, conflict_log, ai_judgments, verification, task_ids, report_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      data.plan_id ?? null,
+      data.commit_hash,
+      data.source_branch,
+      data.target_branch,
+      JSON.stringify(data.changes_summary),
+      JSON.stringify(data.review_checklist),
+      data.conflict_log ? JSON.stringify(data.conflict_log) : null,
+      data.ai_judgments ? JSON.stringify(data.ai_judgments) : null,
+      JSON.stringify(data.verification),
+      data.task_ids ? JSON.stringify(data.task_ids) : null,
+      data.report_path
+    );
+    return this.get(id);
+  }
+  get(id) {
+    const row = this.db.prepare(
+      `SELECT * FROM merge_reports WHERE id = ?`
+    ).get(id);
+    return row ? rowToReport(row) : null;
+  }
+  getByCommit(hash) {
+    const row = this.db.prepare(
+      `SELECT * FROM merge_reports WHERE commit_hash = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(hash);
+    return row ? rowToReport(row) : null;
+  }
+  getByPlan(planId) {
+    const rows = this.db.prepare(
+      `SELECT * FROM merge_reports WHERE plan_id = ? ORDER BY created_at DESC`
+    ).all(planId);
+    return rows.map(rowToReport);
+  }
+  getLatest(limit = 5) {
+    const rows = this.db.prepare(
+      `SELECT * FROM merge_reports ORDER BY created_at DESC LIMIT ?`
+    ).all(limit);
+    return rows.map(rowToReport);
+  }
+  list(opts) {
+    if (opts?.planId) {
+      const rows2 = this.db.prepare(
+        `SELECT * FROM merge_reports WHERE plan_id = ? ORDER BY created_at DESC LIMIT ?`
+      ).all(opts.planId, opts.limit ?? 100);
+      return rows2.map(rowToReport);
+    }
+    const rows = this.db.prepare(
+      `SELECT * FROM merge_reports ORDER BY created_at DESC LIMIT ?`
+    ).all(opts?.limit ?? 100);
+    return rows.map(rowToReport);
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -2976,7 +3082,8 @@ function initModels() {
   const qaScenarioModel = new QAScenarioModel(db);
   const qaFindingModel = new QAFindingModel(db);
   const backlogModel = new BacklogModel(db, events);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel };
+  const mergeReportModel = new MergeReportModel(db);
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel };
 }
 var program = new Command();
 program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
@@ -3904,5 +4011,103 @@ importCmd.command("slack").description("Import from Slack channel (requires MCP)
   const result = importFromSlack(opts.channel, { since: opts.since });
   output(result, formatImportPreview(result));
 }));
+var mergeReport = program.command("merge-report").description("Manage merge reports");
+mergeReport.command("show").argument("<id>", "Report ID or commit hash").description("Show a merge report").action((id) => withErrorHandler(() => {
+  const { mergeReportModel } = initModels();
+  const report = mergeReportModel.get(id) ?? mergeReportModel.getByCommit(id);
+  if (!report) return outputError(`Merge report not found: ${id}`);
+  output(report, formatMergeReportSummary(report));
+}));
+mergeReport.command("list").option("--plan-id <plan_id>", "Filter by plan ID").option("--limit <n>", "Limit results", "20").description("List merge reports").action((opts) => withErrorHandler(() => {
+  const { mergeReportModel } = initModels();
+  const reports = mergeReportModel.list({ planId: opts.planId, limit: parseInt(opts.limit, 10) });
+  output(reports, formatMergeReportList(reports));
+}));
+mergeReport.command("latest").description("Show the latest merge report").action(() => withErrorHandler(() => {
+  const { mergeReportModel } = initModels();
+  const reports = mergeReportModel.getLatest(1);
+  if (reports.length === 0) {
+    output(null, "\uB9AC\uD3EC\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. vs-merge\uB85C \uBA38\uC9C0\uB97C \uC644\uB8CC\uD558\uBA74 \uC790\uB3D9\uC73C\uB85C \uC0DD\uC131\uB429\uB2C8\uB2E4.");
+    return;
+  }
+  output(reports[0], formatMergeReportSummary(reports[0]));
+}));
+mergeReport.command("create").description("Create a merge report (used internally by vs-merge)").requiredOption("--commit <hash>", "Commit hash").requiredOption("--source <branch>", "Source branch").requiredOption("--target <branch>", "Target branch").requiredOption("--changes <json>", "Changes summary JSON").requiredOption("--checklist <json>", "Review checklist JSON").requiredOption("--verification <json>", "Verification result JSON").requiredOption("--report-path <path>", "Path to MD report file").option("--plan-id <id>", "Plan ID").option("--conflict-log <json>", "Conflict log JSON").option("--ai-judgments <json>", "AI judgments JSON").option("--task-ids <json>", "Task IDs JSON").action((opts) => withErrorHandler(() => {
+  const { mergeReportModel } = initModels();
+  const report = mergeReportModel.create({
+    commit_hash: opts.commit,
+    source_branch: opts.source,
+    target_branch: opts.target,
+    changes_summary: JSON.parse(opts.changes),
+    review_checklist: JSON.parse(opts.checklist),
+    verification: JSON.parse(opts.verification),
+    report_path: opts.reportPath,
+    plan_id: opts.planId,
+    conflict_log: opts.conflictLog ? JSON.parse(opts.conflictLog) : void 0,
+    ai_judgments: opts.aiJudgments ? JSON.parse(opts.aiJudgments) : void 0,
+    task_ids: opts.taskIds ? JSON.parse(opts.taskIds) : void 0
+  });
+  output(report, `Created merge report: ${report.id}`);
+}));
+function formatMergeReportSummary(r) {
+  const lines = [];
+  lines.push(`# Merge Report: ${r.source_branch} \u2192 ${r.target_branch}`);
+  lines.push(`> ${r.created_at} | Commit: ${r.commit_hash.slice(0, 8)}`);
+  if (r.plan_id) lines.push(`> Plan: ${r.plan_id}`);
+  lines.push("");
+  lines.push("## \uBCC0\uACBD \uC694\uC57D");
+  for (const c of r.changes_summary) {
+    lines.push(`- [${c.category}] ${c.file} \u2014 ${c.description}`);
+  }
+  lines.push("");
+  lines.push("## Review Checklist");
+  const levelIcon = { must: "\u{1F534}", should: "\u{1F7E1}", info: "\u{1F7E2}" };
+  for (const item of r.review_checklist) {
+    const loc = item.line ? `${item.file}:${item.line}` : item.file;
+    lines.push(`- ${levelIcon[item.level]} ${loc} \u2014 ${item.description}`);
+    lines.push(`  \u2514 ${item.reason}`);
+  }
+  lines.push("");
+  if (r.conflict_log && r.conflict_log.length > 0) {
+    lines.push("## \uCDA9\uB3CC \uD574\uACB0 \uAE30\uB85D");
+    for (const c of r.conflict_log) {
+      lines.push(`- ${c.file} (${c.hunks} hunks) \u2192 ${c.resolution}: ${c.choice_reason}`);
+    }
+    lines.push("");
+  }
+  if (r.ai_judgments && r.ai_judgments.length > 0) {
+    lines.push("## AI \uD310\uB2E8 \uB85C\uADF8");
+    for (const j of r.ai_judgments) {
+      const loc = j.line ? `${j.file}:${j.line}` : j.file;
+      lines.push(`- [${j.confidence}] ${loc} \u2014 ${j.description} (${j.type})`);
+    }
+    lines.push("");
+  }
+  const v = r.verification;
+  lines.push("## \uAC80\uC99D \uACB0\uACFC");
+  lines.push(`- Build: ${v.build}`);
+  lines.push(`- Test: ${v.test.status}${v.test.passed != null ? ` (${v.test.passed} passed${v.test.failed ? `, ${v.test.failed} failed` : ""})` : ""}`);
+  lines.push(`- Lint: ${v.lint}`);
+  lines.push(`- Acceptance: ${v.acceptance}`);
+  if (r.task_ids && r.task_ids.length > 0) {
+    lines.push("");
+    lines.push(`## \uAD00\uB828 \uD0DC\uC2A4\uD06C: ${r.task_ids.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+function formatMergeReportList(reports) {
+  if (reports.length === 0) return "\uB9AC\uD3EC\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
+  const header = "| # | \uB0A0\uC9DC | \uBE0C\uB79C\uCE58 | \uCEE4\uBC0B | Checklist | \uCDA9\uB3CC |";
+  const sep = "|---|------|--------|------|-----------|------|";
+  const rows = reports.map((r, i) => {
+    const date = r.created_at.split("T")[0] || r.created_at.split(" ")[0];
+    const must = r.review_checklist.filter((c) => c.level === "must").length;
+    const should = r.review_checklist.filter((c) => c.level === "should").length;
+    const info = r.review_checklist.filter((c) => c.level === "info").length;
+    const conflicts = r.conflict_log?.length ?? 0;
+    return `| ${i + 1} | ${date} | ${r.source_branch} \u2192 ${r.target_branch} | ${r.commit_hash.slice(0, 8)} | \u{1F534}${must} \u{1F7E1}${should} \u{1F7E2}${info} | ${conflicts} |`;
+  });
+  return [header, sep, ...rows].join("\n");
+}
 program.parse();
 //# sourceMappingURL=index.js.map
