@@ -6,6 +6,7 @@ import type {
   ErrorKBStats,
   ErrorSeverity,
   ErrorStatus,
+  ErrorUpdateInput,
   NewErrorEntry,
 } from '../types.js';
 
@@ -14,12 +15,9 @@ export interface SearchOptions {
   severity?: ErrorSeverity;
 }
 
-export interface UpdatePatch {
-  severity?: ErrorSeverity;
-  status?: ErrorStatus;
+export interface UpdatePatch extends ErrorUpdateInput {
   occurrences?: number;
   last_seen?: string;
-  tags?: string[];
 }
 
 interface FrontmatterData {

@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { TaskMetrics } from '../types.js';
+import type { TaskMetrics, TaskMetricsInput } from '../types.js';
 
 export class TaskMetricsModel {
   private db: Database.Database;
@@ -12,14 +12,7 @@ export class TaskMetricsModel {
     taskId: string,
     planId: string,
     finalStatus: string,
-    metrics?: {
-      impl_status?: string;
-      test_count?: number;
-      files_changed?: number;
-      has_concerns?: boolean;
-      changed_files_detail?: string;
-      scope_violations?: string;
-    },
+    metrics?: TaskMetricsInput,
   ): TaskMetrics {
     const durationMin = this.calculateDuration(taskId);
     const blockReason = this.extractBlockReason(taskId, finalStatus);

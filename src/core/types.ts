@@ -125,8 +125,25 @@ export interface TaskMetrics {
   created_at: string;
 }
 
+export interface TaskMetricsInput {
+  impl_status?: string;
+  test_count?: number;
+  files_changed?: number;
+  has_concerns?: boolean;
+  changed_files_detail?: string;
+  scope_violations?: string;
+}
+
+export type TaskUpdateInput = Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order' | 'depends_on' | 'allowed_files' | 'forbidden_patterns'>>;
+
 export type ErrorSeverity = 'critical' | 'high' | 'medium' | 'low';
 export type ErrorStatus = 'open' | 'resolved' | 'recurring' | 'wontfix';
+
+export interface ErrorUpdateInput {
+  status?: ErrorStatus;
+  severity?: ErrorSeverity;
+  tags?: string[];
+}
 
 export interface ErrorEntry {
   id: string;

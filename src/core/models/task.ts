@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Task, TaskStatus, TaskTreeNode, Wave } from '../types.js';
+import type { Task, TaskStatus, TaskTreeNode, TaskUpdateInput, Wave } from '../types.js';
 import type { EventModel } from './event.js';
 import { generateId, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
 
@@ -227,7 +227,7 @@ export class TaskModel {
 
   update(
     id: string,
-    fields: Partial<Pick<Task, 'title' | 'spec' | 'acceptance' | 'sort_order' | 'depends_on' | 'allowed_files' | 'forbidden_patterns'>>,
+    fields: TaskUpdateInput,
   ): TaskWithWarnings {
     const { warnings } = fields.acceptance !== undefined
       ? validateAcceptance(fields.acceptance)

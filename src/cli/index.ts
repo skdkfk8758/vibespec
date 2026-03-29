@@ -23,7 +23,7 @@ import { MergeReportModel } from '../core/models/merge-report.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 import { formatDashboard, formatStats, formatHistory, formatPlanTree, formatPlanList, formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatSkillUsage, formatBacklogList, formatBacklogDetail, formatBacklogStats, formatBacklogBoard, formatImportPreview } from './formatters.js';
 import { importFromGithub, importFromFile, importFromSlack } from './importers.js';
-import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus } from '../core/types.js';
+import type { TaskStatus, PlanStatus, ErrorSeverity, BacklogPriority, BacklogCategory, BacklogComplexity, BacklogStatus, TaskMetricsInput, TaskUpdateInput, ErrorUpdateInput } from '../core/types.js';
 import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus } from '../core/types.js';
 import { VALID_PLAN_STATUSES, VALID_BACKLOG_PRIORITIES, VALID_BACKLOG_CATEGORIES, VALID_BACKLOG_COMPLEXITIES, VALID_BACKLOG_STATUSES, VALID_QA_RUN_TERMINAL_STATUSES } from '../core/types.js';
 
@@ -308,14 +308,14 @@ task
 
     if (['done', 'blocked', 'skipped'].includes(status)) {
       try {
-        const metrics: Record<string, unknown> = {};
+        const metrics: TaskMetricsInput = {};
         if (opts.implStatus) metrics.impl_status = opts.implStatus;
         if (opts.testCount) metrics.test_count = parseInt(opts.testCount, 10);
         if (opts.filesChanged) metrics.files_changed = parseInt(opts.filesChanged, 10);
         if (opts.hasConcerns) metrics.has_concerns = true;
         if (opts.changedFilesDetail) metrics.changed_files_detail = opts.changedFilesDetail;
         if (opts.scopeViolations) metrics.scope_violations = opts.scopeViolations;
-        taskMetricsModel.record(id, updated.plan_id, status, Object.keys(metrics).length > 0 ? metrics as any : undefined);
+        taskMetricsModel.record(id, updated.plan_id, status, Object.keys(metrics).length > 0 ? metrics : undefined);
       } catch {
         // Metrics recording is non-blocking
       }
@@ -403,7 +403,7 @@ task
     const { taskModel } = initModels();
     const t = taskModel.getById(id);
     if (!t) return outputError(`Task not found: ${id}`);
-    const fields: Record<string, unknown> = {};
+    const fields: TaskUpdateInput = {};
     if (opts.title !== undefined) fields.title = opts.title;
     if (opts.spec !== undefined) fields.spec = opts.spec;
     if (opts.acceptance !== undefined) fields.acceptance = opts.acceptance;
@@ -413,7 +413,7 @@ task
     if (opts.forbiddenPatterns !== undefined) {
       fields.forbidden_patterns = JSON.stringify(opts.forbiddenPatterns.split(',').map(s => s.trim()));
     }
-    const edited = taskModel.update(id, fields as any);
+    const edited = taskModel.update(id, fields);
     output(edited, `Task edited: ${edited.id} "${edited.title}"`);
   });
 
@@ -836,10 +836,10 @@ errorKb
       const updated = engine.show(id);
       output(updated, `Recorded occurrence for ${id}: ${opts.occurrence}`);
     } else {
-      const patch: Record<string, unknown> = {};
-      if (opts.status) patch.status = opts.status;
-      if (opts.severity) patch.severity = opts.severity;
-      engine.update(id, patch as any);
+      const patch: ErrorUpdateInput = {};
+      if (opts.status) patch.status = opts.status as ErrorUpdateInput['status'];
+      if (opts.severity) patch.severity = opts.severity as ErrorUpdateInput['severity'];
+      engine.update(id, patch);
       const updated = engine.show(id);
       output(updated, `Updated error: ${id}`);
     }
