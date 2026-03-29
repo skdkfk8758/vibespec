@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { Plan, PlanStatus } from '../types.js';
 import type { EventModel } from './event.js';
 import { detectGitContext } from '../db/connection.js';
-import { generateId, buildUpdateQuery, validateTransition, type AllowedTransitions } from '../utils.js';
+import { generateId, buildUpdateQuery, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
 
 export const PLAN_TRANSITIONS: AllowedTransitions = {
   draft: ['active'],
@@ -94,15 +94,17 @@ export class PlanModel {
     if (guard) guard(plan);
     const oldStatus = plan.status;
 
-    const sql = extra
-      ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?`
-      : `UPDATE plans SET status = ? WHERE id = ?`;
-    this.db.prepare(sql).run(newStatus, id);
+    withTransaction(this.db, () => {
+      const sql = extra
+        ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?`
+        : `UPDATE plans SET status = ? WHERE id = ?`;
+      this.db.prepare(sql).run(newStatus, id);
 
-    this.events?.record('plan', id, eventType,
-      JSON.stringify({ status: oldStatus }),
-      JSON.stringify({ status: newStatus }),
-    );
+      this.events?.record('plan', id, eventType,
+        JSON.stringify({ status: oldStatus }),
+        JSON.stringify({ status: newStatus }),
+      );
+    });
     return this.requireById(id);
   }
 
@@ -127,9 +129,11 @@ export class PlanModel {
     if (plan.status !== 'draft') {
       throw new Error(`Only draft plans can be deleted. Current status: ${plan.status}`);
     }
-    this.db.prepare('DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)').run(id);
-    this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
-    this.db.prepare('DELETE FROM tasks WHERE plan_id = ?').run(id);
-    this.db.prepare('DELETE FROM plans WHERE id = ?').run(id);
+    withTransaction(this.db, () => {
+      this.db.prepare('DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)').run(id);
+      this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
+      this.db.prepare('DELETE FROM tasks WHERE plan_id = ?').run(id);
+      this.db.prepare('DELETE FROM plans WHERE id = ?').run(id);
+    });
   }
 }

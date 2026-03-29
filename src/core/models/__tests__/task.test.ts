@@ -4,6 +4,7 @@ import { initSchema } from '../../db/schema.js';
 import { TaskModel, validateAcceptance } from '../task.js';
 import { EventModel } from '../event.js';
 import { InvalidTransitionError } from '../../utils.js';
+import type { EntityType, EventType } from '../../types.js';
 import type Database from 'better-sqlite3';
 
 describe('TaskModel', () => {
@@ -656,6 +657,105 @@ describe('TaskModel with EventModel', () => {
     expect(statusEvent.event_type).toBe('status_changed');
     expect(statusEvent.old_value).toBe('{"status":"in_progress"}');
     expect(statusEvent.new_value).toBe('{"status":"done"}');
+  });
+});
+
+describe('Task transaction rollback', () => {
+  let db: Database.Database;
+  let taskModel: TaskModel;
+
+  beforeEach(() => {
+    db = createMemoryDb();
+    initSchema(db);
+    db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run(
+      'test-plan',
+      'Test Plan',
+      'active',
+    );
+  });
+
+  it('AC05: updateStatus should rollback DB change when event recording throws', () => {
+    // Arrange: create task with a normal model first
+    const normalModel = new TaskModel(db);
+    const task = normalModel.create('test-plan', 'Rollback Task');
+
+    // Now create a model with faulty events
+    const faultyEvents = {
+      record: () => { throw new Error('Event recording failed'); },
+      getByEntity: () => [],
+    } as unknown as EventModel;
+    taskModel = new TaskModel(db, faultyEvents);
+
+    // Act: attempt status change that will fail during event recording
+    expect(() => taskModel.updateStatus(task.id, 'in_progress')).toThrow('Event recording failed');
+
+    // Assert: status should NOT have changed (rollback)
+    const afterTask = taskModel.getById(task.id);
+    expect(afterTask!.status).toBe('todo');
+  });
+
+  it('AC01: delete() wraps all operations in a transaction', () => {
+    // Arrange: create task with events, then use faulty events
+    const realEvents = new EventModel(db);
+    taskModel = new TaskModel(db, realEvents);
+    const task = taskModel.create('test-plan', 'Delete Task');
+    const child = taskModel.create('test-plan', 'Child Task', { parentId: task.id });
+
+    // Replace with faulty events that throw on 'deleted' event
+    const faultyEvents = {
+      record: (_a: EntityType, _b: string, eventType: EventType) => {
+        if (eventType === 'deleted') throw new Error('Delete event failed');
+        return realEvents.record(_a, _b, eventType, null, null);
+      },
+      getByEntity: (t: EntityType, id: string) => realEvents.getByEntity(t, id),
+    } as unknown as EventModel;
+    taskModel = new TaskModel(db, faultyEvents);
+
+    // Act: attempt delete that will fail during event recording
+    expect(() => taskModel.delete(task.id)).toThrow('Delete event failed');
+
+    // Assert: task and child should still exist (rollback)
+    expect(taskModel.getById(task.id)).not.toBeNull();
+    expect(taskModel.getById(child.id)).not.toBeNull();
+  });
+
+  it('AC02: updateStatus() wraps UPDATE + event in a transaction', () => {
+    const realEvents = new EventModel(db);
+    taskModel = new TaskModel(db, realEvents);
+    const task = taskModel.create('test-plan', 'Status Task');
+
+    // Replace with faulty events
+    const faultyEvents = {
+      record: (_a: EntityType, _b: string, eventType: EventType) => {
+        if (eventType === 'status_changed') throw new Error('Status event failed');
+        return realEvents.record(_a, _b, eventType, null, null);
+      },
+      getByEntity: (t: EntityType, id: string) => realEvents.getByEntity(t, id),
+    } as unknown as EventModel;
+    taskModel = new TaskModel(db, faultyEvents);
+
+    expect(() => taskModel.updateStatus(task.id, 'in_progress')).toThrow('Status event failed');
+    expect(taskModel.getById(task.id)!.status).toBe('todo');
+  });
+
+  it('AC03: update() wraps UPDATE + event in a transaction', () => {
+    const realEvents = new EventModel(db);
+    taskModel = new TaskModel(db, realEvents);
+    const task = taskModel.create('test-plan', 'Update Task');
+
+    // Replace with faulty events that throw on any record after creation
+    let callCount = 0;
+    const faultyEvents = {
+      record: () => {
+        callCount++;
+        throw new Error('Update event failed');
+      },
+      getByEntity: (t: EntityType, id: string) => realEvents.getByEntity(t, id),
+    } as unknown as EventModel;
+    taskModel = new TaskModel(db, faultyEvents);
+
+    expect(() => taskModel.update(task.id, { title: 'New Title' })).toThrow('Update event failed');
+    expect(taskModel.getById(task.id)!.title).toBe('Update Task');
   });
 });
 

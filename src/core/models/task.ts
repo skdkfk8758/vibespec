@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Task, TaskStatus, TaskTreeNode, Wave } from '../types.js';
 import type { EventModel } from './event.js';
-import { generateId, validateTransition, type AllowedTransitions } from '../utils.js';
+import { generateId, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
 
 export const TASK_TRANSITIONS: AllowedTransitions = {
   todo: ['in_progress', 'blocked', 'skipped'],
@@ -278,11 +278,15 @@ export class TaskModel {
     }
 
     values.push(id);
-    this.db
-      .prepare(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`)
-      .run(...values);
+    return withTransaction(this.db, () => {
+      this.db
+        .prepare(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`)
+        .run(...values);
 
-    return Object.assign(this.getById(id)!, { warnings });
+      const oldTask = this.getById(id);
+      this.events?.record('task', id, 'updated', null, JSON.stringify(fields));
+      return Object.assign(oldTask!, { warnings });
+    });
   }
 
   updateStatus(id: string, status: TaskStatus, opts?: { force?: boolean }): Task {
@@ -293,22 +297,26 @@ export class TaskModel {
     const oldStatus = oldTask.status;
     const completedAt = status === 'done' ? new Date().toISOString() : null;
 
-    this.db
-      .prepare('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?')
-      .run(status, completedAt, id);
+    return withTransaction(this.db, () => {
+      this.db
+        .prepare('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?')
+        .run(status, completedAt, id);
 
-    this.events?.record('task', id, 'status_changed', JSON.stringify({ status: oldStatus }), JSON.stringify({ status }));
-    return this.getById(id)!;
+      this.events?.record('task', id, 'status_changed', JSON.stringify({ status: oldStatus }), JSON.stringify({ status }));
+      return this.getById(id)!;
+    });
   }
 
   delete(id: string): void {
     const task = this.getById(id);
     if (!task) throw new Error(`Task not found: ${id}`);
-    this.db.prepare('DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)').run(id);
-    this.db.prepare('DELETE FROM tasks WHERE parent_id = ?').run(id);
-    this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
-    this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
-    this.events?.record('task', id, 'deleted', JSON.stringify({ title: task.title }), null);
+    withTransaction(this.db, () => {
+      this.db.prepare('DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)').run(id);
+      this.db.prepare('DELETE FROM tasks WHERE parent_id = ?').run(id);
+      this.db.prepare('DELETE FROM events WHERE entity_id = ?').run(id);
+      this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+      this.events?.record('task', id, 'deleted', JSON.stringify({ title: task.title }), null);
+    });
   }
 
   validateDependencies(planId: string, taskId: string, dependsOn: string[]): void {

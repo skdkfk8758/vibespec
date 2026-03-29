@@ -332,3 +332,54 @@ describe('PlanModel with EventModel', () => {
     expect(JSON.parse(updatedEvent.new_value!)).toEqual({ title: 'New Title' });
   });
 });
+
+describe('PlanModel transaction rollback', () => {
+  let db: Database.Database;
+  let events: EventModel;
+  let model: PlanModel;
+
+  beforeEach(() => {
+    db = createMemoryDb();
+    initSchema(db);
+    events = new EventModel(db);
+    model = new PlanModel(db, events);
+  });
+
+  it('AC04: delete should roll back all changes if an error occurs mid-transaction', () => {
+    // Arrange: create a draft plan with associated task and events
+    const plan = model.create('Rollback Plan');
+    db.prepare(
+      "INSERT INTO tasks (id, plan_id, title, status) VALUES ('t1', ?, 'Task 1', 'todo')"
+    ).run(plan.id);
+    events.record('task', 't1', 'created', null, JSON.stringify({ title: 'Task 1' }));
+
+    // Count data before the attempted delete
+    const eventsBefore = db.prepare("SELECT count(*) as cnt FROM events").get() as { cnt: number };
+    const tasksBefore = db.prepare("SELECT count(*) as cnt FROM tasks WHERE plan_id = ?").get(plan.id) as { cnt: number };
+
+    // Sabotage: use a trigger on the plans table to cause a failure
+    // when DELETE FROM plans is executed (the last DELETE in the sequence).
+    // This ensures the earlier DELETEs (events, tasks) have already run.
+    db.exec(`
+      CREATE TRIGGER fail_plan_delete BEFORE DELETE ON plans
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated failure in delete');
+      END;
+    `);
+
+    // Act: delete should throw due to the trigger
+    expect(() => model.delete(plan.id)).toThrow('simulated failure in delete');
+
+    // Clean up trigger
+    db.exec('DROP TRIGGER fail_plan_delete');
+
+    // Assert: all data should be intact (transaction rolled back)
+    const eventsAfter = db.prepare("SELECT count(*) as cnt FROM events").get() as { cnt: number };
+    const tasksAfter = db.prepare("SELECT count(*) as cnt FROM tasks WHERE plan_id = ?").get(plan.id) as { cnt: number };
+
+    expect(eventsAfter.cnt).toBe(eventsBefore.cnt);
+    expect(tasksAfter.cnt).toBe(tasksBefore.cnt);
+    // Plan itself should still exist
+    expect(model.getById(plan.id)).not.toBeNull();
+  });
+});

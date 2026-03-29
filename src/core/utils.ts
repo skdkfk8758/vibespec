@@ -69,6 +69,16 @@ export function toDateOnly(iso: string): string {
  * Build a dynamic UPDATE query from a fields object.
  * Returns null if no fields to update.
  */
+/**
+ * Execute fn inside a database transaction.
+ * Automatically commits on success and rolls back on exception.
+ * Uses better-sqlite3's synchronous transaction API.
+ */
+export function withTransaction<T>(db: Database.Database, fn: () => T): T {
+  const tx = db.transaction(fn);
+  return tx();
+}
+
 export function buildUpdateQuery(
   table: string,
   id: string,
