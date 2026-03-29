@@ -7,7 +7,6 @@
 - **opportunistic**: 구현 중 백로그/크로스플랜 융통성 추가 (26ebc19)
 - **design**: 디자인 시스템 통합 기능 추가 — vs-design-init, vs-design-review (d302515)
 - **security**: 보안 감사 기능 추가 — vs-security (05c7c64)
-- **deploy**: 배포 파이프라인 기능 추가 — vs-deploy, vs-deploy-setup, vs-canary (8d23f91)
 - **qa-visual**: 브라우저 기반 시각적 QA 기능 추가 — vs-acceptance, vs-browse (6dc5d71)
 - **ideate**: 아이디어 검증 기능 추가 — vs-ideate (68a3c17)
 - **guardrail**: 안전 가드레일 기능 추가 — vs-careful, vs-freeze, vs-guard (5df303e)

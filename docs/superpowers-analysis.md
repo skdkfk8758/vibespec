@@ -177,4 +177,4 @@ superpowers/
 | 브랜치 관리 | using-git-worktrees + finishing | vs-worktree + vs-merge |
 | 시각적 도구 | visual-companion (HTML 서빙) | browser-control + Figma 연동 |
 | 에러 학습 | 없음 | error-kb + self-improve |
-| 배포 | 없음 | vs-deploy + vs-canary |
+| 배포 | 없음 | vs-release (릴리즈만 지원) |

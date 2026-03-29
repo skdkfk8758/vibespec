@@ -172,7 +172,6 @@ the user has approved it.
 | **데이터 추적** | SQLite 14테이블, 메트릭, 이벤트 감사 로그 | 파일 기반, 메트릭 추적 없음 |
 | **에러 학습** | error-kb + self-improve + self-improve-review | 없음 |
 | **안전 가드** | careful + freeze + guard 3단계 | 없음 |
-| **배포 파이프라인** | vs-deploy + vs-canary + vs-deploy-setup | 없음 |
 | **백로그 관리** | vs-backlog으로 사전 관리 | 없음 |
 | **세션 연속성** | vs-resume + vs-dashboard + context_log | 없음 |
 | **디자인 시스템** | vs-design-init + vs-design-review + DESIGN.md | 없음 |
