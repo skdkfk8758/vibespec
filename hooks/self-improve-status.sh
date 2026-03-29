@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+trap 'exit 0' ERR  # 정보성 훅: 에러 시 fail-open (조용히 통과)
 
 # SessionStart hook: self-improve 상태 알림
 # pending 파일 수, 규칙 수, 쿨다운 상태를 체크하여 알림

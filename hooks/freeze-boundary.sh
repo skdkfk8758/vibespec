@@ -5,6 +5,12 @@ set -euo pipefail
 
 trap 'exit 2' ERR  # fail-closed: 파싱/경로 에러 시 차단 (안전 우선)
 
+# jq 사전 체크: 미설치 시 명시적 에러 메시지와 함께 차단
+if ! command -v jq &>/dev/null; then
+  echo '{"decision":"block","reason":"[freeze-boundary] jq가 설치되어 있지 않습니다. brew install jq 또는 apt install jq로 설치하세요."}'
+  exit 2
+fi
+
 source "$(dirname "$0")/lib/read-config.sh"
 
 FREEZE_PATH=$(vs_config_get "freeze.path" "")
@@ -30,8 +36,13 @@ fi
 if [[ "$FILE_PATH" != /* ]]; then
   FILE_PATH="$(pwd)/$FILE_PATH"
 fi
-# 정규화
-FILE_PATH=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && echo "$(pwd)/$(basename "$FILE_PATH")" || echo "$FILE_PATH")
+# 정규화 — 실패 시 fail-closed (경로를 확인할 수 없으면 차단)
+RESOLVED_DIR=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd)
+if [ -z "$RESOLVED_DIR" ]; then
+  jq -n --arg path "$FILE_PATH" '{"decision":"block","reason":("[freeze-boundary] 경로 정규화 실패: " + $path + ". 경로를 확인할 수 없어 안전을 위해 차단합니다.")}'
+  exit 2
+fi
+FILE_PATH="$RESOLVED_DIR/$(basename "$FILE_PATH")"
 
 # freeze.path 하위인지 확인
 if [[ "$FILE_PATH" != "$FREEZE_PATH"* ]]; then

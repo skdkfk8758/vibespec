@@ -7,6 +7,12 @@ set -euo pipefail
 
 trap 'exit 2' ERR  # fail-closed: 파싱 에러 시 차단 (git rev-parse 실패는 || exit 0으로 개별 처리)
 
+# jq 사전 체크: 미설치 시 명시적 에러 메시지와 함께 차단
+if ! command -v jq &>/dev/null; then
+  echo '{"decision":"block","reason":"[worktree-guard] jq가 설치되어 있지 않습니다. brew install jq 또는 apt install jq로 설치하세요."}'
+  exit 2
+fi
+
 COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
 
 # git 명령이 아니면 통과

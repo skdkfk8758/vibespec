@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+trap 'exit 0' ERR  # 정보성 훅: 에러 시 fail-open (조용히 통과)
 
 # PreToolUse hook: git commit 전 관련 규칙 리마인드
 # .claude/rules/*.md에서 Applies When을 파싱하여 변경 파일과 매칭

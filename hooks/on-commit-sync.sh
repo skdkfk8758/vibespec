@@ -1,5 +1,8 @@
 #!/bin/bash
 set -e
+# WHY: 정보성 훅이므로 fail-open 정책 적용.
+# 커밋 후 태스크 참조 감지/에러 KB 제안은 부가 기능이며,
+# 실패해도 커밋 자체에 영향을 주면 안 됩니다.
 trap 'exit 0' ERR
 
 # PostToolUse hook: git commit 후 태스크 ID 참조 감지

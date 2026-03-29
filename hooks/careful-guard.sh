@@ -5,6 +5,12 @@ set -euo pipefail
 
 trap 'exit 2' ERR  # fail-closed: 파싱/설정 에러 시 차단 (안전 우선)
 
+# jq 사전 체크: 미설치 시 명시적 에러 메시지와 함께 차단
+if ! command -v jq &>/dev/null; then
+  echo '{"decision":"block","reason":"[careful-guard] jq가 설치되어 있지 않습니다. brew install jq 또는 apt install jq로 설치하세요."}'
+  exit 2
+fi
+
 # 공유 유틸 로드
 source "$(dirname "$0")/lib/read-config.sh"
 

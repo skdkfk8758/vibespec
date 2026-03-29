@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+trap 'exit 0' ERR  # 정보성 훅: 에러 시 fail-open (조용히 통과)
 
 # PostToolUse hook: fix/hotfix/debug 커밋 감지 → pending 파일 생성
 # self-improve 파이프라인의 신호 수집 단계

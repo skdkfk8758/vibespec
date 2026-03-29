@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+trap 'exit 0' ERR  # 정보성 훅: 에러 시 fail-open (조용히 통과)
 
 # PostToolUse hook: Bash 실행 결과에서 에러 패턴 감지 → KB 검색 제안
 # 테스트 실패, 빌드 에러, 런타임 에러를 감지하면 additionalContext로 제안
