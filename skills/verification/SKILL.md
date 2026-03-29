@@ -13,7 +13,8 @@ description: Internal gate for task completion verification. Automatically invok
 
 **주요 호출자 (자동):**
 - verifier 에이전트 — 독립 컨텍스트에서 이 스킬의 검증 로직을 실행
-- vs-next / vs-pick — 완료 처리 단계에서 verifier 에이전트를 통해 간접 호출
+- vs-next — 완료 처리 단계에서 verifier 에이전트를 통해 간접 호출
+- vs-pick — 완료 처리 단계에서 verification 스킬을 직접 호출 (verifier 에이전트를 경유하지 않음)
 - vs-exec — 기본 모드에서 verifier 에이전트를 통해, --inline 모드에서 직접 실행
 
 **수동 호출 (비권장):**
