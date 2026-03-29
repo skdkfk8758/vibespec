@@ -54,7 +54,8 @@ export function detectGitContext(): GitContext {
       worktreeName,
       isWorktree,
     };
-  } catch {
+  } catch (e) {
+    console.error('[connection] Git root detection failed:', e instanceof Error ? e.message : e);
     return { branch: null, worktreeName: null, isWorktree: false };
   }
 }

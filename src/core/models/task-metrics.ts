@@ -91,7 +91,7 @@ export class TaskMetricsModel {
         const parsed = JSON.parse(row.new_value);
         if (parsed.reason) return parsed.reason;
       } catch {
-        // fall through
+        // Intentional: JSON.parse fallback for optional metrics field — returns null if unparseable
       }
     }
 

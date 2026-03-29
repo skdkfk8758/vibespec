@@ -28,6 +28,16 @@ export function getJsonMode(): boolean {
   return jsonMode;
 }
 
+let verboseMode = false;
+
+export function setVerboseMode(mode: boolean): void {
+  verboseMode = mode;
+}
+
+export function getVerboseMode(): boolean {
+  return verboseMode;
+}
+
 export function output(data: unknown, formatted?: string) {
   if (jsonMode) {
     console.log(JSON.stringify(data, null, 2));
@@ -49,6 +59,9 @@ export function withErrorHandler(fn: () => void): void {
   try {
     fn();
   } catch (e: unknown) {
+    if (verboseMode && e instanceof Error && e.stack) {
+      console.error(e.stack);
+    }
     outputError(e instanceof Error ? e.message : String(e));
   }
 }

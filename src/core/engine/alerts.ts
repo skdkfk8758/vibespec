@@ -148,7 +148,7 @@ export class AlertsEngine {
         }
       }
     } catch {
-      // QA tables may not exist yet
+      // Intentional: QA tables may not exist yet during initial setup — safe to skip
     }
 
     return qaAlerts;
@@ -223,7 +223,7 @@ export class AlertsEngine {
         });
       }
     } catch {
-      // backlog_items table may not exist yet
+      // Intentional: backlog_items table may not exist yet during initial setup — safe to skip
     }
 
     return alerts;

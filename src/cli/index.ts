@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { createRequire } from 'node:module';
 import { formatDashboard, formatSkillUsage } from './formatters.js';
-import { output, setJsonMode, initModels } from './shared.js';
+import { output, setJsonMode, setVerboseMode, initModels } from './shared.js';
 import { registerGovernanceCommands } from './commands/governance.js';
 import { registerBacklogCommands } from './commands/backlog.js';
 import { registerPlanningCommands } from './commands/planning.js';
@@ -19,8 +19,10 @@ program
   .description('VibeSpec CLI')
   .version(pkg.version)
   .option('--json', 'Output in JSON format')
+  .option('--verbose', 'Show detailed error output')
   .hook('preAction', () => {
     setJsonMode(program.opts().json === true);
+    setVerboseMode(program.opts().verbose === true);
   });
 
 // ── dashboard ──────────────────────────────────────────────────────────
