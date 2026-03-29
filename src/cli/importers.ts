@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import type { NewBacklogItem, BacklogPriority, BacklogCategory } from '../core/types.js';
 
@@ -8,6 +8,22 @@ export interface ImportResult {
   errors: string[];
 }
 
+// ── Repo Validation ───────────────────────────────────────────────────
+
+const REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
+
+export function validateRepoFormat(repo: string): void {
+  const trimmed = repo.trim();
+  if (!trimmed) {
+    throw new Error('repo 파라미터가 비어 있습니다. "owner/repo" 형식으로 입력하세요.');
+  }
+  if (!REPO_FORMAT_RE.test(trimmed)) {
+    throw new Error(
+      `잘못된 repo 형식입니다: "${repo}". "owner/repo" 형식(예: octocat/Hello-World)만 허용됩니다.`,
+    );
+  }
+}
+
 // ── GitHub Issues ──────────────────────────────────────────────────────
 
 export function importFromGithub(
@@ -15,18 +31,32 @@ export function importFromGithub(
   options?: { label?: string; state?: string },
 ): ImportResult {
   const errors: string[] = [];
+
+  try {
+    validateRepoFormat(repo);
+  } catch (e: unknown) {
+    errors.push(e instanceof Error ? e.message : String(e));
+    return { items: [], source_prefix: `github:${repo}`, errors };
+  }
+
   const state = options?.state ?? 'open';
-  const labelArg = options?.label ? `--label "${options.label}"` : '';
+  const args = [
+    'issue', 'list',
+    '--repo', repo,
+    '--state', state,
+    '--json', 'number,title,body,labels',
+    '--limit', '50',
+  ];
+  if (options?.label) {
+    args.push('--label', options.label);
+  }
 
   let jsonStr: string;
   try {
-    jsonStr = execSync(
-      `gh issue list --repo ${repo} --state ${state} ${labelArg} --json number,title,body,labels --limit 50`,
-      { encoding: 'utf-8', timeout: 30000 },
-    );
+    jsonStr = execFileSync('gh', args, { encoding: 'utf-8', timeout: 30000 });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes('command not found') || msg.includes('not found')) {
+    if (msg.includes('command not found') || msg.includes('not found') || msg.includes('ENOENT')) {
       errors.push('gh CLI가 설치되어 있지 않습니다. https://cli.github.com 에서 설치하세요.');
     } else {
       errors.push(`GitHub API 오류: ${msg.slice(0, 200)}`);
