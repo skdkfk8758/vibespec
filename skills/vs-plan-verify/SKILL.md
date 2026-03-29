@@ -65,13 +65,36 @@ invocation: user
    - 플랜 스펙에서 `## Success Criteria` 섹션을 파싱하세요
    - 섹션이 없으면 이 단계를 건너뛰세요
    - 각 기준에 대해:
-     - 프로젝트 코드, 테스트 결과, git log를 근거로 충족 여부를 판정하세요
-     - **정량적 기준** (응답시간, 커버리지 등): 측정 가능하면 실제 값을 확인 → `PASS` / `FAIL`
+     - **정량적 기준 실측** — 기준에 측정 가능한 수치가 포함된 경우 (테스트 수, 파일 줄 수, grep 결과 건수, CLI 명령 동작 등):
+       1. 기준에서 검증 명령을 도출하세요 (예: "테스트 전체 통과" → `npx vitest run`, "as any 0건" → `grep -rn 'as any' src/`, "index.ts 150줄 이하" → `wc -l src/cli/index.ts`)
+       2. Bash 도구로 해당 명령을 실행하세요
+       3. 실제 측정값과 기준값을 비교하여 `PASS` / `FAIL` 판정
+       4. 리포트에 **실제 값**을 근거로 표시하세요 (예: "실측: 63줄 ≤ 150줄 → PASS")
+       5. 명령 실행 실패 시 → `WARN` ("측정 실패: {에러 메시지}")으로 폴백
      - **정성적 기준** (코드 품질, UX 등): 코드 변경분으로 판단 가능하면 → `PASS` / `WARN`
      - 판단 근거를 찾을 수 없음 → `WARN`
      - 명백히 미충족 → `FAIL`
 
-4. **주의 태스크 집계**
+4. **QA Findings 검증**
+   - `vs --json qa run list --plan <plan_id>`를 Bash 도구로 실행하여 QA Run 목록을 조회하세요
+   - **QA Run이 없는 경우**: 이 단계를 `SKIP` 처리하세요 (리포트에 "QA 미실행 — SKIP" 표시)
+   - **QA Run이 있는 경우**: 가장 최근 `completed` 상태의 Run을 선택하세요
+     1. `vs --json qa finding list --run <run_id> --status open`으로 미해결 이슈를 조회하세요
+     2. severity별 집계: critical / high / medium / low
+     3. 판정:
+        - critical findings **1건 이상** → `FAIL` 요소
+        - high findings **3건 이상** → `WARN` 요소
+        - medium/low만 → 리포트에 참고로 표시, 판정에 영향 없음
+        - 미해결 이슈 0건 → `PASS`
+   - 리포트에 **QA Findings** 섹션을 추가하세요:
+     ```
+     ### QA Findings
+     - QA Run: #{run_id} ({날짜}) — {status}
+     - 미해결 이슈: critical: {N} | high: {N} | medium: {N} | low: {N}
+     - 판정: [PASS | WARN | FAIL | SKIP]
+     ```
+
+5. **주의 태스크 집계**
    - `has_concerns: true`로 완료된 태스크 목록을 수집하세요 (metrics 필드 확인)
    - 각 concern의 **severity를 분류**하세요:
      - **critical**: 보안 취약점, 데이터 손실 가능성, 핵심 기능 미동작 → FAIL 요소로 취급
@@ -83,9 +106,9 @@ invocation: user
 5. **최종 판정**
 
    ```
-   PASS = 미완료 태스크 없음 AND 회귀 테스트 전체 통과(또는 SKIP) AND success criteria 전항목 PASS AND critical concerns 없음
-   WARN = 미완료 태스크 없음 AND 회귀 테스트 통과(또는 신규 테스트만 실패) AND (success criteria에 WARN 존재 OR minor concerns 존재 OR skipped 태스크 존재)
-   FAIL = 미완료 태스크 존재 OR 기존 테스트 실패(회귀) OR success criteria에 FAIL 존재 OR critical concerns 존재
+   PASS = 미완료 태스크 없음 AND 회귀 테스트 전체 통과(또는 SKIP) AND success criteria 전항목 PASS AND critical concerns 없음 AND QA critical findings 없음
+   WARN = 미완료 태스크 없음 AND 회귀 테스트 통과(또는 신규 테스트만 실패) AND (success criteria에 WARN 존재 OR minor concerns 존재 OR skipped 태스크 존재 OR QA high findings 3건+)
+   FAIL = 미완료 태스크 존재 OR 기존 테스트 실패(회귀) OR success criteria에 FAIL 존재 OR critical concerns 존재 OR QA critical findings 1건+
    ```
 
 6. **리포트 출력**
@@ -110,6 +133,11 @@ invocation: user
    | # | 기준 | 판정 | 근거 |
    |---|------|------|------|
    | 1 | {criteria} | [PASS|WARN|FAIL] | {근거} |
+
+   ### QA Findings
+   - QA Run: #{run_id} ({날짜}) — {status} (없으면 "QA 미실행 — SKIP")
+   - 미해결 이슈: critical: {N} | high: {N} | medium: {N} | low: {N}
+   - 판정: [PASS | WARN | FAIL | SKIP]
 
    ### 주의 사항
    - critical concerns: [{task_id}: {title} — {내용}] (없으면 "없음")
