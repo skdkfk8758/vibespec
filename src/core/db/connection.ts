@@ -93,3 +93,27 @@ export function closeDb(): void {
     _db = null;
   }
 }
+
+// --- Graceful shutdown ---
+
+let _closing = false;
+
+function handleShutdown(): void {
+  if (_closing) return;
+  _closing = true;
+  closeDb();
+  process.exit(0);
+}
+
+process.on('SIGTERM', handleShutdown);
+process.on('SIGINT', handleShutdown);
+
+// Test helpers (not part of public API)
+export function _getClosingFlag(): boolean {
+  return _closing;
+}
+
+export function _resetForTest(): void {
+  _closing = false;
+  closeDb();
+}

@@ -73,6 +73,21 @@ function getDb(dbPath) {
   _db.pragma("foreign_keys = ON");
   return _db;
 }
+function closeDb() {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+}
+var _closing = false;
+function handleShutdown() {
+  if (_closing) return;
+  _closing = true;
+  closeDb();
+  process.exit(0);
+}
+process.on("SIGTERM", handleShutdown);
+process.on("SIGINT", handleShutdown);
 
 // node_modules/nanoid/index.js
 import { webcrypto as crypto } from "crypto";
