@@ -407,7 +407,8 @@ function detectGitContext() {
       worktreeName,
       isWorktree
     };
-  } catch {
+  } catch (e) {
+    console.error("[connection] Git root detection failed:", e instanceof Error ? e.message : e);
     return { branch: null, worktreeName: null, isWorktree: false };
   }
 }
@@ -939,7 +940,8 @@ var DashboardEngine = class {
       }
       const totalRow = this.db.prepare("SELECT COUNT(*) AS total FROM backlog_items").get();
       return { total: totalRow.total, open, by_priority };
-    } catch {
+    } catch (e) {
+      console.error("[dashboard] backlog query failed:", e instanceof Error ? e.message : e);
       return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 } };
     }
   }
@@ -955,7 +957,8 @@ var DashboardEngine = class {
            ORDER BY created_at DESC LIMIT 1`
       ).get(planId);
       return row ?? null;
-    } catch {
+    } catch (e) {
+      console.error("[dashboard] QA run query failed:", e instanceof Error ? e.message : e);
       return null;
     }
   }
@@ -975,7 +978,8 @@ var DashboardEngine = class {
         }
       }
       return result;
-    } catch {
+    } catch (e) {
+      console.error("[dashboard] alert counts query failed:", e instanceof Error ? e.message : e);
       return { critical: 0, high: 0, medium: 0, low: 0 };
     }
   }
@@ -2572,6 +2576,10 @@ function setJsonMode(mode) {
 function getJsonMode() {
   return jsonMode;
 }
+var verboseMode = false;
+function setVerboseMode(mode) {
+  verboseMode = mode;
+}
 function output(data, formatted) {
   if (jsonMode) {
     console.log(JSON.stringify(data, null, 2));
@@ -2591,6 +2599,9 @@ function withErrorHandler(fn) {
   try {
     fn();
   } catch (e) {
+    if (verboseMode && e instanceof Error && e.stack) {
+      console.error(e.stack);
+    }
     outputError(e instanceof Error ? e.message : String(e));
   }
 }
@@ -4218,8 +4229,9 @@ ${log.summary}`);
 var require2 = createRequire(import.meta.url);
 var pkg = require2("../../package.json");
 var program = new Command();
-program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
+program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").option("--verbose", "Show detailed error output").hook("preAction", () => {
   setJsonMode(program.opts().json === true);
+  setVerboseMode(program.opts().verbose === true);
 });
 program.command("dashboard").description("Show all active plans overview").action(() => {
   const { dashboard, alerts } = initModels();

@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.29.0] - 2026-03-29
+
+### 새 기능
+- **transaction**: Plan/Task 모델에 DB 트랜잭션 경계 추가 (44ae984)
+- **plan-verify**: 정량적 기준 실측 + QA findings 연계 추가 (fd4e4bd)
+- **state-machine**: Plan/Task 상태 전환 가드 도입 (ec5b0a7)
+- **patterns**: Superpowers 패턴 도입 — HARD-GATE, 구현자 불신, AC 표준화 (31e6bfc)
+- **merge-report**: 머지 리포트 + vs-recap 스킬 추가 (38a7d4a)
+- **pipeline**: 파이프라인 이음새 개선 10건 (1eecec4)
+- **plan**: 스코프 확대 검토 옵션 추가 (dd4958f)
+- **qa**: Diff-aware 라우트 매핑 + 회귀 테스트 자동 생성 (ad63f48)
+- **guardrail**: careful/freeze/guard PreToolUse hook 실구현 (22cc831)
+- **design-review**: 80항목 감사 + A~F 등급 + 수정 루프 (93fc117)
+- **security**: OWASP Top 10 전체 커버리지 확대 (5a5d236)
+- **ideate**: 적응형 후속 질문 + 점진적 스펙 매핑 추가 (ec20963)
+
+### 버그 수정
+- **observability**: 빈 catch 블록 로깅 추가 + verbose 모드 도입 (d7552ed)
+- **security**: GitHub import 명령 주입 취약점 수정 (198c762)
+- **hooks**: 훅 안정성 강화 — set -euo, jq 체크, fallback 수정 (d76a447)
+- **qa**: 복합 시나리오 QA 발견 이슈 2건 수정 (4f5cd11)
+- **stability**: CRITICAL 이슈 3건 + 스코프 규칙 명확화 (16e2505)
+- **cli**: context search 명령 추가 + security-only Run FK 수정 (f21776d)
+- **pipeline**: 시뮬레이션 발견 잔여 이슈 6건 수정 (98237ae)
+
+### 리팩토링
+- **cli**: God File 분할 — index.ts를 8개 도메인 모듈로 분리 (45e0307)
+- **types**: as any 타입 단언 제거 및 Input DTO 타입 정의 (45a859f)
+
+### 테스트
+- **models**: 4개 미테스트 모델에 74개 테스트 추가 (162f10a)
+
+### 문서
+- **cleanup**: 제거된 배포 스킬 잔존 참조 정리 + QA 리포트 (29c5bbe)
+- **readme**: 스킬 테이블 및 디렉토리 트리 업데이트 (208c9ce)
+
+### 기타
+- **simple-backlog**: 6건 simple 백로그 일괄 정리 (a2fb95a)
+- **deploy**: 배포 관련 스킬 3종 제거 (e3e7527)
+- **build**: 빌드 산출물 갱신 (d619cd5)
+
 ## [0.28.0] - 2026-03-27
 
 ### 새 기능
