@@ -4,6 +4,363 @@
 import { Command } from "commander";
 import { createRequire } from "module";
 
+// src/cli/formatters.ts
+var FILLED = "\u2588";
+var EMPTY = "\u2591";
+function formatProgressBar(pct, width = 20) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filled = Math.round(clamped / 100 * width);
+  const empty = width - filled;
+  return `${FILLED.repeat(filled)}${EMPTY.repeat(empty)} ${Math.round(clamped)}%`;
+}
+function formatDashboard(overview, alerts) {
+  const lines = [];
+  if (overview.plans.length === 0) {
+    lines.push("No active plans.");
+  } else {
+    const boxWidth = 55;
+    const inner = boxWidth - 2;
+    lines.push(`\u250C\u2500 Active Plans ${"\u2500".repeat(inner - 14)}\u2510`);
+    lines.push(`\u2502${" ".repeat(inner)}\u2502`);
+    overview.plans.forEach((plan, index) => {
+      const num = numCircle(index + 1);
+      const bar = formatProgressBar(plan.progress_pct, 12);
+      const titleLine = `  ${num} ${plan.title}`;
+      const gap = inner - titleLine.length - bar.length - 2;
+      const paddedTitle = `${titleLine}${" ".repeat(Math.max(1, gap))}${bar}  `;
+      lines.push(`\u2502${padRight(paddedTitle, inner)}\u2502`);
+      const todoCount = plan.total_tasks - plan.done_tasks - plan.active_tasks - plan.blocked_tasks;
+      const countsLine = `    done ${plan.done_tasks} \xB7 active ${plan.active_tasks} \xB7 blocked ${plan.blocked_tasks} \xB7 todo ${todoCount}`;
+      lines.push(`\u2502${padRight(countsLine, inner)}\u2502`);
+      lines.push(`\u2502${" ".repeat(inner)}\u2502`);
+    });
+    lines.push(`\u2514${"\u2500".repeat(inner)}\u2518`);
+  }
+  if (overview.backlog && overview.backlog.open > 0) {
+    lines.push("");
+    const bp = overview.backlog.by_priority;
+    const priParts = [];
+    if (bp.critical > 0) priParts.push(`critical: ${bp.critical}`);
+    if (bp.high > 0) priParts.push(`high: ${bp.high}`);
+    if (bp.medium > 0) priParts.push(`medium: ${bp.medium}`);
+    if (bp.low > 0) priParts.push(`low: ${bp.low}`);
+    lines.push(`Backlog: ${overview.backlog.open} open / ${overview.backlog.total} total  (${priParts.join(" \xB7 ")})`);
+  }
+  if (alerts.length > 0) {
+    lines.push("\u26A0 Alerts:");
+    for (const alert of alerts) {
+      lines.push(`  - [${alert.type}] ${alert.message}`);
+    }
+  }
+  return lines.join("\n");
+}
+function numCircle(n) {
+  const circles = ["\u2460", "\u2461", "\u2462", "\u2463", "\u2464", "\u2465", "\u2466", "\u2467", "\u2468", "\u2469"];
+  return circles[n - 1] ?? `(${n})`;
+}
+function padRight(str, len) {
+  if (str.length >= len) return str.slice(0, len);
+  return str + " ".repeat(len - str.length);
+}
+function formatStats(velocity, estimate, timeline) {
+  const lines = [];
+  lines.push(
+    `Velocity: ${velocity.daily.toFixed(1)} tasks/day (${velocity.total_completed} completed in last 7 days)`
+  );
+  if (estimate) {
+    lines.push(`Remaining: ${estimate.remaining_tasks} tasks`);
+    if (estimate.estimated_days !== null && estimate.estimated_date !== null) {
+      lines.push(`Estimated: ~${estimate.estimated_days} days (${estimate.estimated_date})`);
+    } else {
+      lines.push("Estimated: unknown (no velocity)");
+    }
+  }
+  if (timeline && timeline.length > 0) {
+    lines.push("");
+    lines.push("Timeline:");
+    const maxTasks = Math.max(...timeline.map((e) => e.tasks_completed));
+    const maxBarWidth = 10;
+    for (const entry of timeline) {
+      const datePart = entry.date.slice(5).replace("-", "/");
+      const barWidth = maxTasks > 0 ? Math.max(1, Math.round(entry.tasks_completed / maxTasks * maxBarWidth)) : 1;
+      const bar = FILLED.repeat(barWidth);
+      const label = entry.tasks_completed === 1 ? "1 task" : `${entry.tasks_completed} tasks`;
+      lines.push(`  ${datePart}  ${bar}  ${label}`);
+    }
+  }
+  return lines.join("\n");
+}
+function formatHistory(events) {
+  if (events.length === 0) {
+    return "No history found.";
+  }
+  const lines = ["History:"];
+  for (const event of events) {
+    const dt = event.created_at.replace("T", " ").slice(0, 16);
+    const oldPart = event.old_value ?? "";
+    const newPart = event.new_value ?? "";
+    let detail = "";
+    if (oldPart && newPart) {
+      detail = ` ${oldPart} \u2192 ${newPart}`;
+    } else if (newPart) {
+      detail = ` \u2192 ${newPart}`;
+    } else if (oldPart) {
+      detail = ` ${oldPart}`;
+    }
+    lines.push(
+      `  ${dt}  ${event.entity_type}    ${event.event_type}  ${detail}`.trimEnd()
+    );
+  }
+  return lines.join("\n");
+}
+var STATUS_ICONS = {
+  done: "[x]",
+  in_progress: "[>]",
+  blocked: "[!]",
+  todo: "[ ]",
+  skipped: "[-]"
+};
+function formatPlanTree(plan, tasks) {
+  const lines = [];
+  const totalTasks = countTasks(tasks);
+  const doneTasks = countTasksByStatus(tasks, ["done", "skipped"]);
+  const pct = totalTasks === 0 ? 0 : Math.round(doneTasks / totalTasks * 100);
+  lines.push(`${plan.title} (${plan.status})${" ".repeat(5)}${pct}%`);
+  for (let i = 0; i < tasks.length; i++) {
+    const isLast = i === tasks.length - 1;
+    renderNode(tasks[i], "", isLast, lines);
+  }
+  return lines.join("\n");
+}
+function renderNode(node, prefix, isLast, lines) {
+  const connector = isLast ? "\u2514\u2500" : "\u251C\u2500";
+  const icon = STATUS_ICONS[node.status];
+  lines.push(`${prefix}${connector} ${icon} ${node.title}${" ".repeat(4)}${node.status}`);
+  const childPrefix = prefix + (isLast ? "   " : "\u2502  ");
+  for (let i = 0; i < node.children.length; i++) {
+    const childIsLast = i === node.children.length - 1;
+    renderNode(node.children[i], childPrefix, childIsLast, lines);
+  }
+}
+function countTasks(nodes) {
+  let count = 0;
+  for (const node of nodes) {
+    count += 1 + countTasks(node.children);
+  }
+  return count;
+}
+function countTasksByStatus(nodes, statuses) {
+  let count = 0;
+  for (const node of nodes) {
+    if (statuses.includes(node.status)) count++;
+    count += countTasksByStatus(node.children, statuses);
+  }
+  return count;
+}
+function formatPlanList(plans) {
+  if (plans.length === 0) return "No plans found.";
+  const lines = [];
+  const header = `${padRight("ID", 14)}${padRight("Title", 26)}${padRight("Status", 12)}Created`;
+  lines.push(header);
+  for (const plan of plans) {
+    const created = plan.created_at?.split("T")[0] ?? "unknown";
+    lines.push(
+      `${padRight(plan.id, 14)}${padRight(plan.title, 26)}${padRight(plan.status, 12)}${created}`
+    );
+  }
+  return lines.join("\n");
+}
+function formatErrorSearchResults(entries) {
+  if (entries.length === 0) return "No errors found.";
+  const lines = [];
+  const header = `${padRight("ID", 16)}${padRight("Severity", 12)}${padRight("Status", 12)}${padRight("Occ", 6)}Title`;
+  lines.push(header);
+  for (const entry of entries) {
+    lines.push(
+      `${padRight(entry.id, 16)}${padRight(entry.severity, 12)}${padRight(entry.status, 12)}${padRight(String(entry.occurrences), 6)}${entry.title}`
+    );
+  }
+  return lines.join("\n");
+}
+function formatErrorDetail(entry) {
+  const tagsStr = entry.tags.length > 0 ? entry.tags.join(", ") : "(none)";
+  const lines = [
+    `ID:          ${entry.id}`,
+    `Title:       ${entry.title}`,
+    `Severity:    ${entry.severity}`,
+    `Tags:        ${tagsStr}`,
+    `Status:      ${entry.status}`,
+    `Occurrences: ${entry.occurrences}`,
+    `First seen:  ${entry.first_seen}`,
+    `Last seen:   ${entry.last_seen}`
+  ];
+  if (entry.content && entry.content.trim().length > 0) {
+    lines.push("");
+    lines.push(entry.content.trim());
+  }
+  return lines.join("\n");
+}
+function formatErrorKBStats(stats) {
+  const lines = [];
+  lines.push(`Total: ${stats.total}`);
+  lines.push("");
+  lines.push("By Severity:");
+  lines.push(`  critical: ${stats.by_severity.critical}`);
+  lines.push(`  high:     ${stats.by_severity.high}`);
+  lines.push(`  medium:   ${stats.by_severity.medium}`);
+  lines.push(`  low:      ${stats.by_severity.low}`);
+  lines.push("");
+  lines.push("By Status:");
+  lines.push(`  open:      ${stats.by_status.open}`);
+  lines.push(`  resolved:  ${stats.by_status.resolved}`);
+  lines.push(`  recurring: ${stats.by_status.recurring}`);
+  lines.push(`  wontfix:   ${stats.by_status.wontfix}`);
+  if (stats.top_recurring.length > 0) {
+    lines.push("");
+    lines.push("Top Recurring:");
+    for (const entry of stats.top_recurring) {
+      lines.push(`  ${entry.title} (${entry.occurrences}x)`);
+    }
+  }
+  return lines.join("\n");
+}
+function formatSkillUsage(skillStats) {
+  if (skillStats.length === 0) return "";
+  const lines = [];
+  lines.push("Recent Skill Usage:");
+  for (let i = 0; i < skillStats.length; i++) {
+    const s = skillStats[i];
+    const label = s.count === 1 ? "1 time" : `${s.count} times`;
+    lines.push(`  ${numCircle(i + 1)} ${s.skill_name} (${label})`);
+  }
+  return lines.join("\n");
+}
+var PRIORITY_ICONS = {
+  critical: "!!!!",
+  high: "!!! ",
+  medium: "!!  ",
+  low: "!   "
+};
+var STATUS_LABELS = {
+  open: "open",
+  planned: "planned",
+  done: "done",
+  dropped: "dropped"
+};
+function formatBacklogList(items) {
+  if (items.length === 0) return "No backlog items found.";
+  const lines = [];
+  const header = `${padRight("ID", 14)}${padRight("Pri", 6)}${padRight("Category", 12)}${padRight("Status", 10)}Title`;
+  lines.push(header);
+  for (const item of items) {
+    const pri = PRIORITY_ICONS[item.priority] ?? "    ";
+    const cat = padRight(item.category ?? "-", 12);
+    const status = padRight(STATUS_LABELS[item.status] ?? item.status, 10);
+    lines.push(`${padRight(item.id, 14)}${padRight(pri, 6)}${cat}${status}${item.title}`);
+  }
+  return lines.join("\n");
+}
+function formatBacklogDetail(item) {
+  const tags = item.tags ? JSON.parse(item.tags).join(", ") : "(none)";
+  const lines = [
+    `ID:          ${item.id}`,
+    `Title:       ${item.title}`,
+    `Priority:    ${item.priority}`,
+    `Category:    ${item.category ?? "-"}`,
+    `Tags:        ${tags}`,
+    `Complexity:  ${item.complexity_hint ?? "-"}`,
+    `Source:      ${item.source ?? "-"}`,
+    `Status:      ${item.status}`,
+    `Plan:        ${item.plan_id ?? "-"}`,
+    `Created:     ${item.created_at}`,
+    `Updated:     ${item.updated_at}`
+  ];
+  if (item.description) {
+    lines.push("");
+    lines.push(item.description);
+  }
+  return lines.join("\n");
+}
+function formatBacklogStats(stats) {
+  const lines = [];
+  lines.push(`Total: ${stats.total}`);
+  lines.push("");
+  lines.push("By Priority:");
+  lines.push(`  critical: ${stats.by_priority.critical}`);
+  lines.push(`  high:     ${stats.by_priority.high}`);
+  lines.push(`  medium:   ${stats.by_priority.medium}`);
+  lines.push(`  low:      ${stats.by_priority.low}`);
+  lines.push("");
+  lines.push("By Status:");
+  lines.push(`  open:     ${stats.by_status.open}`);
+  lines.push(`  planned:  ${stats.by_status.planned}`);
+  lines.push(`  done:     ${stats.by_status.done}`);
+  lines.push(`  dropped:  ${stats.by_status.dropped}`);
+  if (Object.keys(stats.by_category).length > 0) {
+    lines.push("");
+    lines.push("By Category:");
+    for (const [cat, count] of Object.entries(stats.by_category)) {
+      lines.push(`  ${padRight(cat + ":", 16)}${count}`);
+    }
+  }
+  return lines.join("\n");
+}
+function formatBacklogBoard(items) {
+  if (items.length === 0) return "No backlog items found.";
+  const groups = {};
+  for (const item of items) {
+    const cat = item.category ?? "uncategorized";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(item);
+  }
+  const lines = [];
+  const categories = Object.keys(groups).sort();
+  const colWidth = 30;
+  lines.push(categories.map((c) => padRight(`[${c}]`, colWidth)).join("  "));
+  lines.push(categories.map(() => "-".repeat(colWidth)).join("  "));
+  const maxRows = Math.max(...categories.map((c) => groups[c].length));
+  for (let row = 0; row < maxRows; row++) {
+    const cols = [];
+    for (const cat of categories) {
+      const item = groups[cat][row];
+      if (item) {
+        const pri = PRIORITY_ICONS[item.priority] ?? "    ";
+        const label = `${pri.trim()} ${item.title}`;
+        cols.push(padRight(label.length > colWidth ? label.slice(0, colWidth - 1) + ">" : label, colWidth));
+      } else {
+        cols.push(" ".repeat(colWidth));
+      }
+    }
+    lines.push(cols.join("  "));
+  }
+  return lines.join("\n");
+}
+function formatImportPreview(result) {
+  const lines = [];
+  if (result.errors.length > 0) {
+    for (const err of result.errors) {
+      lines.push(`Error: ${err}`);
+    }
+    if (result.items.length === 0) return lines.join("\n");
+    lines.push("");
+  }
+  lines.push(`Import preview (${result.source_prefix}): ${result.items.length} items`);
+  lines.push("");
+  if (result.items.length === 0) {
+    lines.push("No items to import.");
+    return lines.join("\n");
+  }
+  const header = `${padRight("#", 4)}${padRight("Priority", 10)}${padRight("Category", 12)}Title`;
+  lines.push(header);
+  for (let i = 0; i < result.items.length; i++) {
+    const item = result.items[i];
+    const pri = padRight(item.priority ?? "medium", 10);
+    const cat = padRight(item.category ?? "-", 12);
+    lines.push(`${padRight(String(i + 1), 4)}${pri}${cat}${item.title}`);
+  }
+  return lines.join("\n");
+}
+
 // src/core/db/connection.ts
 import Database from "better-sqlite3";
 import { existsSync, statSync, readFileSync } from "fs";
@@ -140,6 +497,10 @@ function generateId() {
 function hasColumn(db, table, column) {
   const columns = db.pragma(`table_info(${table})`);
   return columns.some((c) => c.name === column);
+}
+function withTransaction(db, fn) {
+  const tx = db.transaction(fn);
+  return tx();
 }
 function buildUpdateQuery(table, id, fields) {
   const sets = [];
@@ -557,8 +918,8 @@ var DashboardEngine = class {
     const active_count = plans.filter((p) => p.status === "active").length;
     const total_tasks = plans.reduce((sum, p) => sum + p.total_tasks, 0);
     const done_tasks = plans.reduce((sum, p) => sum + p.done_tasks, 0);
-    const backlog2 = this.getBacklogSummary();
-    return { plans, active_count, total_tasks, done_tasks, backlog: backlog2 };
+    const backlog = this.getBacklogSummary();
+    return { plans, active_count, total_tasks, done_tasks, backlog };
   }
   getBacklogSummary() {
     try {
@@ -629,36 +990,36 @@ var AlertsEngine = class {
   getAlerts() {
     const alerts = [];
     const progress = this.getAllPlanProgress();
-    for (const task2 of this.getStaleTasks()) {
+    for (const task of this.getStaleTasks()) {
       alerts.push({
         type: "stale",
         entity_type: "task",
-        entity_id: task2.id,
-        message: `Task "${task2.title}" has been in progress for ${task2.days_stale} days with no activity`
+        entity_id: task.id,
+        message: `Task "${task.title}" has been in progress for ${task.days_stale} days with no activity`
       });
     }
-    for (const plan2 of progress.filter((p) => p.blocked_tasks > 0)) {
+    for (const plan of progress.filter((p) => p.blocked_tasks > 0)) {
       alerts.push({
         type: "blocked",
         entity_type: "plan",
-        entity_id: plan2.id,
-        message: `Plan "${plan2.title}" has ${plan2.blocked_tasks} blocked task(s)`
+        entity_id: plan.id,
+        message: `Plan "${plan.title}" has ${plan.blocked_tasks} blocked task(s)`
       });
     }
-    for (const plan2 of progress.filter((p) => p.progress_pct === 100 && p.status === "active")) {
+    for (const plan of progress.filter((p) => p.progress_pct === 100 && p.status === "active")) {
       alerts.push({
         type: "completable",
         entity_type: "plan",
-        entity_id: plan2.id,
-        message: `Plan "${plan2.title}" has all tasks done and can be completed`
+        entity_id: plan.id,
+        message: `Plan "${plan.title}" has all tasks done and can be completed`
       });
     }
-    for (const plan2 of this.getForgottenPlans()) {
+    for (const plan of this.getForgottenPlans()) {
       alerts.push({
         type: "forgotten",
         entity_type: "plan",
-        entity_id: plan2.id,
-        message: `Plan "${plan2.title}" has had no activity for ${plan2.days_inactive} days`
+        entity_id: plan.id,
+        message: `Plan "${plan.title}" has had no activity for ${plan.days_inactive} days`
       });
     }
     alerts.push(...this.getQAAlerts(progress));
@@ -677,13 +1038,13 @@ var AlertsEngine = class {
          GROUP BY plan_id`
       ).all();
       for (const row of highRiskRuns) {
-        const plan2 = planMap.get(row.plan_id);
-        if (plan2) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: "qa_risk_high",
             entity_type: "plan",
             entity_id: row.plan_id,
-            message: `Plan "${plan2.title}"\uC758 QA \uB9AC\uC2A4\uD06C\uAC00 \uB192\uC2B5\uB2C8\uB2E4 (risk: ${row.risk_score.toFixed(2)})`
+            message: `Plan "${plan.title}"\uC758 QA \uB9AC\uC2A4\uD06C\uAC00 \uB192\uC2B5\uB2C8\uB2E4 (risk: ${row.risk_score.toFixed(2)})`
           });
         }
       }
@@ -694,13 +1055,13 @@ var AlertsEngine = class {
          GROUP BY qr.plan_id`
       ).all();
       for (const row of openFindings) {
-        const plan2 = planMap.get(row.plan_id);
-        if (plan2) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: "qa_findings_open",
             entity_type: "plan",
             entity_id: row.plan_id,
-            message: `Plan "${plan2.title}"\uC5D0 \uBBF8\uD574\uACB0 critical/high QA \uC774\uC288\uAC00 ${row.count}\uAC74 \uC788\uC2B5\uB2C8\uB2E4`
+            message: `Plan "${plan.title}"\uC5D0 \uBBF8\uD574\uACB0 critical/high QA \uC774\uC288\uAC00 ${row.count}\uAC74 \uC788\uC2B5\uB2C8\uB2E4`
           });
         }
       }
@@ -711,13 +1072,13 @@ var AlertsEngine = class {
          HAVING days_since > 7`
       ).all();
       for (const row of staleRuns) {
-        const plan2 = planMap.get(row.plan_id);
-        if (plan2) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: "qa_stale",
             entity_type: "plan",
             entity_id: row.plan_id,
-            message: `Plan "${plan2.title}"\uC758 \uB9C8\uC9C0\uB9C9 QA\uAC00 ${row.days_since}\uC77C \uC804\uC785\uB2C8\uB2E4`
+            message: `Plan "${plan.title}"\uC758 \uB9C8\uC9C0\uB9C9 QA\uAC00 ${row.days_since}\uC77C \uC804\uC785\uB2C8\uB2E4`
           });
         }
       }
@@ -730,8 +1091,8 @@ var AlertsEngine = class {
          GROUP BY qr.plan_id`
       ).all();
       for (const row of blockedFixPlans) {
-        const plan2 = planMap.get(row.plan_id);
-        if (plan2) {
+        const plan = planMap.get(row.plan_id);
+        if (plan) {
           qaAlerts.push({
             type: "qa_fix_blocked",
             entity_type: "plan",
@@ -1043,436 +1404,6 @@ var InsightsEngine = class {
   }
 };
 
-// src/core/engine/error-kb.ts
-import * as fs from "fs";
-import * as path from "path";
-var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
-var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
-var VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
-function parseFrontmatter(raw) {
-  const defaultMeta = {
-    title: "",
-    severity: "medium",
-    tags: [],
-    status: "open",
-    occurrences: 0,
-    first_seen: "",
-    last_seen: ""
-  };
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) {
-    return { meta: defaultMeta, body: raw };
-  }
-  const yamlBlock = match[1];
-  const body = match[2];
-  const meta = { ...defaultMeta };
-  for (const line of yamlBlock.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx + 1).trim();
-    if (key === "title") {
-      meta.title = value;
-    } else if (key === "severity") {
-      if (VALID_SEVERITIES.has(value)) meta.severity = value;
-    } else if (key === "status") {
-      if (VALID_STATUSES.has(value)) meta.status = value;
-    } else if (key === "occurrences") {
-      meta.occurrences = parseInt(value, 10) || 0;
-    } else if (key === "first_seen") {
-      meta.first_seen = value;
-    } else if (key === "last_seen") {
-      meta.last_seen = value;
-    } else if (key === "tags") {
-      const bracketMatch = value.match(/^\[(.*)\]$/);
-      if (bracketMatch) {
-        meta.tags = bracketMatch[1].split(",").map((t) => t.trim()).filter((t) => t.length > 0);
-      } else if (value === "" || value === "[]") {
-        meta.tags = [];
-      }
-    }
-  }
-  return { meta, body };
-}
-function serializeFrontmatter(meta) {
-  const tagsStr = meta.tags.length > 0 ? `[${meta.tags.join(", ")}]` : "[]";
-  const lines = [
-    "---",
-    `title: ${meta.title}`,
-    `severity: ${meta.severity}`,
-    `tags: ${tagsStr}`,
-    `status: ${meta.status}`,
-    `occurrences: ${meta.occurrences}`,
-    `first_seen: ${meta.first_seen}`,
-    `last_seen: ${meta.last_seen}`,
-    "---"
-  ];
-  return lines.join("\n");
-}
-var ErrorKBEngine = class {
-  kbRoot;
-  errorsDir;
-  constructor(projectRoot) {
-    this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
-    this.errorsDir = path.join(this.kbRoot, "errors");
-    fs.mkdirSync(this.errorsDir, { recursive: true });
-  }
-  resolveFilePath(id) {
-    if (!VALID_ID_PATTERN.test(id)) return null;
-    return path.join(this.errorsDir, `${id}.md`);
-  }
-  add(newEntry) {
-    const id = generateId();
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const meta = {
-      title: newEntry.title,
-      severity: newEntry.severity,
-      tags: newEntry.tags,
-      status: "open",
-      occurrences: 1,
-      first_seen: now,
-      last_seen: now
-    };
-    let body = "\n";
-    if (newEntry.cause) {
-      body += `## Cause
-
-${newEntry.cause}
-
-`;
-    }
-    if (newEntry.solution) {
-      body += `## Solution
-
-${newEntry.solution}
-
-`;
-    }
-    const content = serializeFrontmatter(meta) + "\n" + body;
-    const filePath = path.join(this.errorsDir, `${id}.md`);
-    fs.writeFileSync(filePath, content, "utf-8");
-    this.updateIndex();
-    return this.toErrorEntry(id, meta, body);
-  }
-  show(id) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) {
-      return null;
-    }
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter(raw);
-    return this.toErrorEntry(id, meta, body);
-  }
-  search(query, opts) {
-    const files = this.listErrorFiles();
-    const results = [];
-    for (const file of files) {
-      const id = path.basename(file, ".md");
-      const entry = this.show(id);
-      if (!entry) continue;
-      if (opts?.tags && opts.tags.length > 0) {
-        const hasMatchingTag = opts.tags.some((t) => entry.tags.includes(t));
-        if (!hasMatchingTag) continue;
-      }
-      if (opts?.severity && entry.severity !== opts.severity) {
-        continue;
-      }
-      if (query && query.length > 0) {
-        const searchable = `${entry.title} ${entry.content}`.toLowerCase();
-        if (!searchable.includes(query.toLowerCase())) {
-          continue;
-        }
-      }
-      results.push(entry);
-    }
-    return results;
-  }
-  delete(id) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) return false;
-    fs.unlinkSync(filePath);
-    this.updateIndex();
-    return true;
-  }
-  update(id, patch) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter(raw);
-    if (patch.severity !== void 0) meta.severity = patch.severity;
-    if (patch.status !== void 0) meta.status = patch.status;
-    if (patch.occurrences !== void 0) meta.occurrences = patch.occurrences;
-    if (patch.last_seen !== void 0) meta.last_seen = patch.last_seen;
-    if (patch.tags !== void 0) meta.tags = patch.tags;
-    const content = serializeFrontmatter(meta) + "\n" + body;
-    fs.writeFileSync(filePath, content, "utf-8");
-    this.updateIndex();
-  }
-  recordOccurrence(id, context2) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter(raw);
-    meta.occurrences += 1;
-    meta.last_seen = (/* @__PURE__ */ new Date()).toISOString();
-    let updatedBody = body;
-    const historyEntry = `- ${meta.last_seen}: ${context2}`;
-    const historyIdx = updatedBody.lastIndexOf("## History");
-    if (historyIdx !== -1) {
-      const headerEnd = updatedBody.indexOf("\n", historyIdx);
-      if (headerEnd !== -1) {
-        updatedBody = updatedBody.slice(0, headerEnd + 1) + historyEntry + "\n" + updatedBody.slice(headerEnd + 1);
-      }
-    } else {
-      updatedBody = updatedBody.trimEnd() + "\n\n## History\n" + historyEntry + "\n";
-    }
-    const content = serializeFrontmatter(meta) + "\n" + updatedBody;
-    fs.writeFileSync(filePath, content, "utf-8");
-    this.updateIndex();
-  }
-  getStats() {
-    const files = this.listErrorFiles();
-    const stats = {
-      total: 0,
-      by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
-      by_status: { open: 0, resolved: 0, recurring: 0, wontfix: 0 },
-      top_recurring: []
-    };
-    const entries = [];
-    for (const file of files) {
-      const id = path.basename(file, ".md");
-      const raw = fs.readFileSync(file, "utf-8");
-      const { meta } = parseFrontmatter(raw);
-      stats.total++;
-      stats.by_severity[meta.severity]++;
-      stats.by_status[meta.status]++;
-      entries.push({ id, title: meta.title, occurrences: meta.occurrences });
-    }
-    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10);
-    return stats;
-  }
-  toErrorEntry(id, meta, body) {
-    return {
-      id,
-      title: meta.title,
-      severity: meta.severity,
-      tags: meta.tags,
-      status: meta.status,
-      occurrences: meta.occurrences,
-      first_seen: meta.first_seen,
-      last_seen: meta.last_seen,
-      content: body
-    };
-  }
-  listErrorFiles() {
-    if (!fs.existsSync(this.errorsDir)) return [];
-    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && f !== "_index.md").map((f) => path.join(this.errorsDir, f));
-  }
-  updateIndex() {
-    const stats = this.getStats();
-    const lines = [
-      "# Error Knowledge Base Index",
-      "",
-      `Total: ${stats.total}`,
-      "",
-      "## By Severity",
-      `- Critical: ${stats.by_severity.critical}`,
-      `- High: ${stats.by_severity.high}`,
-      `- Medium: ${stats.by_severity.medium}`,
-      `- Low: ${stats.by_severity.low}`,
-      "",
-      "## By Status",
-      `- Open: ${stats.by_status.open}`,
-      `- Resolved: ${stats.by_status.resolved}`,
-      `- Recurring: ${stats.by_status.recurring}`,
-      `- Won't Fix: ${stats.by_status.wontfix}`,
-      ""
-    ];
-    if (stats.top_recurring.length > 0) {
-      lines.push("## Top Recurring");
-      for (const entry of stats.top_recurring.slice(0, 10)) {
-        lines.push(`- ${entry.title} (${entry.occurrences}x)`);
-      }
-      lines.push("");
-    }
-    const indexPath = path.join(this.kbRoot, "_index.md");
-    fs.writeFileSync(indexPath, lines.join("\n"), "utf-8");
-  }
-};
-
-// src/core/engine/self-improve.ts
-import * as fs2 from "fs";
-import * as path2 from "path";
-
-// src/core/config.ts
-function getConfig(db, key) {
-  const row = db.prepare("SELECT value FROM vs_config WHERE key = ?").get(key);
-  return row?.value ?? null;
-}
-function setConfig(db, key, value) {
-  db.prepare("INSERT INTO vs_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
-}
-function deleteConfig(db, key) {
-  db.prepare("DELETE FROM vs_config WHERE key = ?").run(key);
-}
-function listConfig(db) {
-  return db.prepare("SELECT key, value FROM vs_config ORDER BY key").all();
-}
-
-// src/core/engine/self-improve.ts
-var RULES_DIR = ".claude/rules";
-var ARCHIVE_DIR = ".claude/rules/archive";
-var PENDING_DIR = ".claude/self-improve/pending";
-var PROCESSED_DIR = ".claude/self-improve/processed";
-var CONFIG_LAST_RUN = "self_improve_last_run";
-var MAX_ACTIVE_RULES = 30;
-var SelfImproveEngine = class {
-  db;
-  projectRoot;
-  rulesDir;
-  archiveDir;
-  pendingDir;
-  processedDir;
-  constructor(db, projectRoot) {
-    this.db = db;
-    this.projectRoot = projectRoot;
-    this.rulesDir = path2.join(projectRoot, RULES_DIR);
-    this.archiveDir = path2.join(projectRoot, ARCHIVE_DIR);
-    this.pendingDir = path2.join(projectRoot, PENDING_DIR);
-    this.processedDir = path2.join(projectRoot, PROCESSED_DIR);
-    this.ensureDirectories();
-  }
-  ensureDirectories() {
-    fs2.mkdirSync(this.rulesDir, { recursive: true });
-    fs2.mkdirSync(this.archiveDir, { recursive: true });
-    fs2.mkdirSync(this.pendingDir, { recursive: true });
-    fs2.mkdirSync(this.processedDir, { recursive: true });
-  }
-  createRule(newRule) {
-    const id = generateId();
-    const slug = newRule.title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
-    const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
-    const rulePath = path2.join(RULES_DIR, filename);
-    const fullPath = path2.join(this.projectRoot, rulePath);
-    fs2.writeFileSync(fullPath, newRule.ruleContent, "utf-8");
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(`
-      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, created_at)
-      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?)
-    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, now);
-    return {
-      id,
-      error_kb_id: newRule.error_kb_id ?? null,
-      title: newRule.title,
-      category: newRule.category,
-      rule_path: rulePath,
-      occurrences: 0,
-      prevented: 0,
-      status: "active",
-      created_at: now,
-      last_triggered_at: null
-    };
-  }
-  listRules(status) {
-    if (status) {
-      return this.db.prepare(
-        "SELECT * FROM self_improve_rules WHERE status = ? ORDER BY created_at DESC"
-      ).all(status);
-    }
-    return this.db.prepare(
-      "SELECT * FROM self_improve_rules ORDER BY status ASC, created_at DESC"
-    ).all();
-  }
-  getRule(id) {
-    return this.db.prepare(
-      "SELECT * FROM self_improve_rules WHERE id = ?"
-    ).get(id) ?? null;
-  }
-  archiveRule(id) {
-    const rule = this.getRule(id);
-    if (!rule || rule.status === "archived") return false;
-    const srcPath = path2.join(this.projectRoot, rule.rule_path);
-    const destPath = path2.join(this.archiveDir, path2.basename(rule.rule_path));
-    if (fs2.existsSync(srcPath)) {
-      fs2.renameSync(srcPath, destPath);
-    }
-    const newRulePath = path2.join(ARCHIVE_DIR, path2.basename(rule.rule_path));
-    this.db.prepare(
-      "UPDATE self_improve_rules SET status = ?, rule_path = ? WHERE id = ?"
-    ).run("archived", newRulePath, id);
-    return true;
-  }
-  incrementPrevented(id) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(
-      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
-    ).run(now, id);
-  }
-  updateOccurrences(id, occurrences) {
-    this.db.prepare(
-      "UPDATE self_improve_rules SET occurrences = ? WHERE id = ?"
-    ).run(occurrences, id);
-  }
-  getPendingCount() {
-    if (!fs2.existsSync(this.pendingDir)) return 0;
-    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).length;
-  }
-  listPending() {
-    if (!fs2.existsSync(this.pendingDir)) return [];
-    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).map((f) => path2.join(this.pendingDir, f)).sort();
-  }
-  movePendingToProcessed(pendingPath) {
-    const filename = path2.basename(pendingPath);
-    const destPath = path2.join(this.processedDir, filename);
-    if (fs2.existsSync(pendingPath)) {
-      fs2.renameSync(pendingPath, destPath);
-    }
-  }
-  getLastRunTimestamp() {
-    return getConfig(this.db, CONFIG_LAST_RUN);
-  }
-  setLastRunTimestamp() {
-    setConfig(this.db, CONFIG_LAST_RUN, (/* @__PURE__ */ new Date()).toISOString());
-  }
-  getRuleStats() {
-    const row = this.db.prepare(`
-      SELECT
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
-        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
-        COALESCE(SUM(prevented), 0) AS total_prevented
-      FROM self_improve_rules
-    `).get();
-    return {
-      active: row?.active ?? 0,
-      archived: row?.archived ?? 0,
-      total_prevented: row?.total_prevented ?? 0
-    };
-  }
-  getEffectiveness(id) {
-    const rule = this.getRule(id);
-    if (!rule) return 0;
-    const total = rule.prevented + rule.occurrences;
-    if (total === 0) return 0;
-    return rule.prevented / total;
-  }
-  isAtCapacity() {
-    const stats = this.getRuleStats();
-    return stats.active >= MAX_ACTIVE_RULES;
-  }
-  getMaxActiveRules() {
-    return MAX_ACTIVE_RULES;
-  }
-  getRulesDir() {
-    return this.rulesDir;
-  }
-  getPendingDir() {
-    return this.pendingDir;
-  }
-  getProcessedDir() {
-    return this.processedDir;
-  }
-};
-
 // src/core/models/task.ts
 var TASK_TRANSITIONS = {
   todo: ["in_progress", "blocked", "skipped"],
@@ -1574,9 +1505,9 @@ var TaskModel = class {
       allowedFiles,
       forbiddenPatterns
     );
-    const task2 = this.getById(id);
-    this.events?.record("task", task2.id, "created", null, JSON.stringify({ title, status: "todo" }));
-    return Object.assign(task2, { warnings });
+    const task = this.getById(id);
+    this.events?.record("task", task.id, "created", null, JSON.stringify({ title, status: "todo" }));
+    return Object.assign(task, { warnings });
   }
   getById(id) {
     const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
@@ -1601,22 +1532,22 @@ var TaskModel = class {
     }
     return map;
   }
-  parseDeps(task2) {
-    if (!task2.depends_on) return [];
-    return JSON.parse(task2.depends_on);
+  parseDeps(task) {
+    if (!task.depends_on) return [];
+    return JSON.parse(task.depends_on);
   }
   buildTree(tasks) {
     const map = /* @__PURE__ */ new Map();
     const roots = [];
-    for (const task2 of tasks) {
-      map.set(task2.id, { ...task2, children: [] });
+    for (const task of tasks) {
+      map.set(task.id, { ...task, children: [] });
     }
-    for (const task2 of tasks) {
-      const node = map.get(task2.id);
-      if (task2.parent_id === null) {
+    for (const task of tasks) {
+      const node = map.get(task.id);
+      if (task.parent_id === null) {
         roots.push(node);
       } else {
-        const parent = map.get(task2.parent_id);
+        const parent = map.get(task.parent_id);
         if (parent) {
           parent.children.push(node);
         }
@@ -1651,9 +1582,9 @@ var TaskModel = class {
       if (fields.depends_on !== null) {
         const depIds = JSON.parse(fields.depends_on);
         if (depIds.length > 0) {
-          const task2 = this.getById(id);
-          if (task2) {
-            this.validateDependencies(task2.plan_id, id, depIds);
+          const task = this.getById(id);
+          if (task) {
+            this.validateDependencies(task.plan_id, id, depIds);
           }
         }
       }
@@ -1672,8 +1603,12 @@ var TaskModel = class {
       return Object.assign(this.getById(id), { warnings });
     }
     values.push(id);
-    this.db.prepare(`UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
-    return Object.assign(this.getById(id), { warnings });
+    return withTransaction(this.db, () => {
+      this.db.prepare(`UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
+      const oldTask = this.getById(id);
+      this.events?.record("task", id, "updated", null, JSON.stringify(fields));
+      return Object.assign(oldTask, { warnings });
+    });
   }
   updateStatus(id, status, opts) {
     const oldTask = this.getById(id);
@@ -1682,18 +1617,22 @@ var TaskModel = class {
     validateTransition(TASK_TRANSITIONS, oldTask.status, status, opts);
     const oldStatus = oldTask.status;
     const completedAt = status === "done" ? (/* @__PURE__ */ new Date()).toISOString() : null;
-    this.db.prepare("UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?").run(status, completedAt, id);
-    this.events?.record("task", id, "status_changed", JSON.stringify({ status: oldStatus }), JSON.stringify({ status }));
-    return this.getById(id);
+    return withTransaction(this.db, () => {
+      this.db.prepare("UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?").run(status, completedAt, id);
+      this.events?.record("task", id, "status_changed", JSON.stringify({ status: oldStatus }), JSON.stringify({ status }));
+      return this.getById(id);
+    });
   }
   delete(id) {
-    const task2 = this.getById(id);
-    if (!task2) throw new Error(`Task not found: ${id}`);
-    this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)").run(id);
-    this.db.prepare("DELETE FROM tasks WHERE parent_id = ?").run(id);
-    this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
-    this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
-    this.events?.record("task", id, "deleted", JSON.stringify({ title: task2.title }), null);
+    const task = this.getById(id);
+    if (!task) throw new Error(`Task not found: ${id}`);
+    withTransaction(this.db, () => {
+      this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)").run(id);
+      this.db.prepare("DELETE FROM tasks WHERE parent_id = ?").run(id);
+      this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
+      this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
+      this.events?.record("task", id, "deleted", JSON.stringify({ title: task.title }), null);
+    });
   }
   validateDependencies(planId, taskId, dependsOn) {
     if (!dependsOn || dependsOn.length === 0) {
@@ -1747,8 +1686,8 @@ var TaskModel = class {
       if (waveIndex.has(id)) return waveIndex.get(id);
       if (visited.has(id)) return 0;
       visited.add(id);
-      const task2 = taskMap.get(id);
-      const deps = this.parseDeps(task2).filter((d) => includedSet.has(d));
+      const task = taskMap.get(id);
+      const deps = this.parseDeps(task).filter((d) => includedSet.has(d));
       if (deps.length === 0) {
         waveIndex.set(id, 0);
         return 0;
@@ -1776,15 +1715,15 @@ var TaskModel = class {
     if (tasks.length === 0) return null;
     const taskMap = this.buildTaskMap(tasks);
     const todoTasks = tasks.filter((t) => t.status === "todo").sort((a, b) => a.sort_order - b.sort_order);
-    for (const task2 of todoTasks) {
-      const deps = this.parseDeps(task2);
-      if (deps.length === 0) return task2;
+    for (const task of todoTasks) {
+      const deps = this.parseDeps(task);
+      if (deps.length === 0) return task;
       const allDone = deps.every((id) => taskMap.get(id)?.status === "done");
       const anyPoisoned = deps.some((id) => {
         const s = taskMap.get(id)?.status;
         return s === "blocked" || s === "skipped";
       });
-      if (allDone && !anyPoisoned) return task2;
+      if (allDone && !anyPoisoned) return task;
     }
     return null;
   }
@@ -1794,13 +1733,13 @@ var TaskModel = class {
       if (poisoned.has(id)) return true;
       if (visited.has(id)) return false;
       visited.add(id);
-      const task2 = taskMap.get(id);
-      if (!task2) return false;
-      if (task2.status === "blocked" || task2.status === "skipped") {
+      const task = taskMap.get(id);
+      if (!task) return false;
+      if (task.status === "blocked" || task.status === "skipped") {
         poisoned.add(id);
         return true;
       }
-      for (const dep of this.parseDeps(task2)) {
+      for (const dep of this.parseDeps(task)) {
         if (check(dep, visited)) {
           poisoned.add(id);
           return true;
@@ -1900,18 +1839,18 @@ var PlanModel = class {
     this.db.prepare(
       `INSERT INTO plans (id, title, status, spec, summary, branch, worktree_name) VALUES (?, ?, 'draft', ?, ?, ?, ?)`
     ).run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
-    const plan2 = this.requireById(id);
-    this.events?.record("plan", plan2.id, "created", null, JSON.stringify({ title, status: "draft", branch: ctx.branch }));
-    return plan2;
+    const plan = this.requireById(id);
+    this.events?.record("plan", plan.id, "created", null, JSON.stringify({ title, status: "draft", branch: ctx.branch }));
+    return plan;
   }
   getById(id) {
     const row = this.db.prepare(`SELECT * FROM plans WHERE id = ?`).get(id);
     return row ?? null;
   }
   requireById(id) {
-    const plan2 = this.getById(id);
-    if (!plan2) throw new Error(`Plan not found: ${id}`);
-    return plan2;
+    const plan = this.getById(id);
+    if (!plan) throw new Error(`Plan not found: ${id}`);
+    return plan;
   }
   list(filter) {
     const conditions = [];
@@ -1928,14 +1867,14 @@ var PlanModel = class {
     return this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`).all(...params);
   }
   update(id, fields) {
-    const plan2 = this.requireById(id);
+    const plan = this.requireById(id);
     const query = buildUpdateQuery("plans", id, fields);
-    if (!query) return plan2;
+    if (!query) return plan;
     const oldFields = {};
     const newFields = {};
     for (const key of Object.keys(fields)) {
       if (fields[key] !== void 0) {
-        oldFields[key] = plan2[key];
+        oldFields[key] = plan[key];
         newFields[key] = fields[key];
       }
     }
@@ -1943,21 +1882,23 @@ var PlanModel = class {
     this.events?.record("plan", id, "updated", JSON.stringify(oldFields), JSON.stringify(newFields));
     return this.requireById(id);
   }
-  transitionStatus(id, newStatus, eventType, guard2, extra, opts) {
-    const plan2 = this.requireById(id);
-    if (plan2.status === newStatus) return plan2;
-    validateTransition(PLAN_TRANSITIONS, plan2.status, newStatus, opts);
-    if (guard2) guard2(plan2);
-    const oldStatus = plan2.status;
-    const sql = extra ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?` : `UPDATE plans SET status = ? WHERE id = ?`;
-    this.db.prepare(sql).run(newStatus, id);
-    this.events?.record(
-      "plan",
-      id,
-      eventType,
-      JSON.stringify({ status: oldStatus }),
-      JSON.stringify({ status: newStatus })
-    );
+  transitionStatus(id, newStatus, eventType, guard, extra, opts) {
+    const plan = this.requireById(id);
+    if (plan.status === newStatus) return plan;
+    validateTransition(PLAN_TRANSITIONS, plan.status, newStatus, opts);
+    if (guard) guard(plan);
+    const oldStatus = plan.status;
+    withTransaction(this.db, () => {
+      const sql = extra ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?` : `UPDATE plans SET status = ? WHERE id = ?`;
+      this.db.prepare(sql).run(newStatus, id);
+      this.events?.record(
+        "plan",
+        id,
+        eventType,
+        JSON.stringify({ status: oldStatus }),
+        JSON.stringify({ status: newStatus })
+      );
+    });
     return this.requireById(id);
   }
   activate(id, opts) {
@@ -1973,14 +1914,16 @@ var PlanModel = class {
     return this.transitionStatus(id, "archived", "archived", void 0, void 0, opts);
   }
   delete(id) {
-    const plan2 = this.requireById(id);
-    if (plan2.status !== "draft") {
-      throw new Error(`Only draft plans can be deleted. Current status: ${plan2.status}`);
+    const plan = this.requireById(id);
+    if (plan.status !== "draft") {
+      throw new Error(`Only draft plans can be deleted. Current status: ${plan.status}`);
     }
-    this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)").run(id);
-    this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
-    this.db.prepare("DELETE FROM tasks WHERE plan_id = ?").run(id);
-    this.db.prepare("DELETE FROM plans WHERE id = ?").run(id);
+    withTransaction(this.db, () => {
+      this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE plan_id = ?)").run(id);
+      this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
+      this.db.prepare("DELETE FROM tasks WHERE plan_id = ?").run(id);
+      this.db.prepare("DELETE FROM plans WHERE id = ?").run(id);
+    });
   }
 };
 
@@ -2590,7 +2533,7 @@ var LifecycleEngine = class {
         `Plan cannot be completed. Blockers: ${blockers.join(", ")}`
       );
     }
-    const plan2 = this.planModel.complete(planId);
+    const plan = this.planModel.complete(planId);
     this.events?.record(
       "plan",
       planId,
@@ -2598,7 +2541,7 @@ var LifecycleEngine = class {
       null,
       JSON.stringify({ status: "completed" })
     );
-    return plan2;
+    return plan;
   }
   autoCheckCompletion(planId) {
     const allTasks = this.taskModel.getByPlan(planId);
@@ -2621,366 +2564,201 @@ var LifecycleEngine = class {
   }
 };
 
-// src/cli/formatters.ts
-var FILLED = "\u2588";
-var EMPTY = "\u2591";
-function formatProgressBar(pct, width = 20) {
-  const clamped = Math.max(0, Math.min(100, pct));
-  const filled = Math.round(clamped / 100 * width);
-  const empty = width - filled;
-  return `${FILLED.repeat(filled)}${EMPTY.repeat(empty)} ${Math.round(clamped)}%`;
+// src/cli/shared.ts
+var jsonMode = false;
+function setJsonMode(mode) {
+  jsonMode = mode;
 }
-function formatDashboard(overview, alerts) {
-  const lines = [];
-  if (overview.plans.length === 0) {
-    lines.push("No active plans.");
+function getJsonMode() {
+  return jsonMode;
+}
+function output(data, formatted) {
+  if (jsonMode) {
+    console.log(JSON.stringify(data, null, 2));
   } else {
-    const boxWidth = 55;
-    const inner = boxWidth - 2;
-    lines.push(`\u250C\u2500 Active Plans ${"\u2500".repeat(inner - 14)}\u2510`);
-    lines.push(`\u2502${" ".repeat(inner)}\u2502`);
-    overview.plans.forEach((plan2, index) => {
-      const num = numCircle(index + 1);
-      const bar = formatProgressBar(plan2.progress_pct, 12);
-      const titleLine = `  ${num} ${plan2.title}`;
-      const gap = inner - titleLine.length - bar.length - 2;
-      const paddedTitle = `${titleLine}${" ".repeat(Math.max(1, gap))}${bar}  `;
-      lines.push(`\u2502${padRight(paddedTitle, inner)}\u2502`);
-      const todoCount = plan2.total_tasks - plan2.done_tasks - plan2.active_tasks - plan2.blocked_tasks;
-      const countsLine = `    done ${plan2.done_tasks} \xB7 active ${plan2.active_tasks} \xB7 blocked ${plan2.blocked_tasks} \xB7 todo ${todoCount}`;
-      lines.push(`\u2502${padRight(countsLine, inner)}\u2502`);
-      lines.push(`\u2502${" ".repeat(inner)}\u2502`);
+    console.log(formatted ?? JSON.stringify(data, null, 2));
+  }
+}
+function outputError(message) {
+  if (jsonMode) {
+    console.log(JSON.stringify({ error: message }));
+  } else {
+    console.error(message);
+  }
+  process.exit(1);
+}
+function withErrorHandler(fn) {
+  try {
+    fn();
+  } catch (e) {
+    outputError(e instanceof Error ? e.message : String(e));
+  }
+}
+function initModels() {
+  const db = getDb();
+  initSchema(db);
+  const events = new EventModel(db);
+  const planModel = new PlanModel(db, events);
+  const taskModel = new TaskModel(db, events);
+  const contextModel = new ContextModel(db);
+  const taskMetricsModel = new TaskMetricsModel(db);
+  const skillUsageModel = new SkillUsageModel(db);
+  const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
+  const dashboard = new DashboardEngine(db, skillUsageModel);
+  const alerts = new AlertsEngine(db);
+  const stats = new StatsEngine(db);
+  const insights = new InsightsEngine(db);
+  const qaRunModel = new QARunModel(db);
+  const qaScenarioModel = new QAScenarioModel(db);
+  const qaFindingModel = new QAFindingModel(db);
+  const backlogModel = new BacklogModel(db, events);
+  const mergeReportModel = new MergeReportModel(db);
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel };
+}
+function initDb() {
+  const db = getDb();
+  initSchema(db);
+  return db;
+}
+
+// src/cli/commands/governance.ts
+import { resolve as resolve2, join } from "path";
+import { existsSync as existsSync2, readFileSync as readFileSync2, writeFileSync, chmodSync } from "fs";
+
+// src/core/config.ts
+function getConfig(db, key) {
+  const row = db.prepare("SELECT value FROM vs_config WHERE key = ?").get(key);
+  return row?.value ?? null;
+}
+function setConfig(db, key, value) {
+  db.prepare("INSERT INTO vs_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+}
+function deleteConfig(db, key) {
+  db.prepare("DELETE FROM vs_config WHERE key = ?").run(key);
+}
+function listConfig(db) {
+  return db.prepare("SELECT key, value FROM vs_config ORDER BY key").all();
+}
+
+// src/cli/commands/governance.ts
+function manageHook(action, hookId, toolName, scriptPath) {
+  const settingsDir = join(process.cwd(), ".claude");
+  const settingsPath = join(settingsDir, "settings.local.json");
+  let settings = {};
+  if (existsSync2(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync2(settingsPath, "utf8"));
+    } catch {
+      settings = {};
+    }
+  }
+  if (!settings.hooks) settings.hooks = {};
+  const hooks = settings.hooks;
+  if (!hooks.PreToolUse) hooks.PreToolUse = [];
+  const preToolUse = hooks.PreToolUse;
+  if (action === "add") {
+    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
+    hooks.PreToolUse.push({
+      id: hookId,
+      type: "command",
+      matcher: toolName,
+      command: scriptPath
     });
-    lines.push(`\u2514${"\u2500".repeat(inner)}\u2518`);
-  }
-  if (overview.backlog && overview.backlog.open > 0) {
-    lines.push("");
-    const bp = overview.backlog.by_priority;
-    const priParts = [];
-    if (bp.critical > 0) priParts.push(`critical: ${bp.critical}`);
-    if (bp.high > 0) priParts.push(`high: ${bp.high}`);
-    if (bp.medium > 0) priParts.push(`medium: ${bp.medium}`);
-    if (bp.low > 0) priParts.push(`low: ${bp.low}`);
-    lines.push(`Backlog: ${overview.backlog.open} open / ${overview.backlog.total} total  (${priParts.join(" \xB7 ")})`);
-  }
-  if (alerts.length > 0) {
-    lines.push("\u26A0 Alerts:");
-    for (const alert of alerts) {
-      lines.push(`  - [${alert.type}] ${alert.message}`);
-    }
-  }
-  return lines.join("\n");
-}
-function numCircle(n) {
-  const circles = ["\u2460", "\u2461", "\u2462", "\u2463", "\u2464", "\u2465", "\u2466", "\u2467", "\u2468", "\u2469"];
-  return circles[n - 1] ?? `(${n})`;
-}
-function padRight(str, len) {
-  if (str.length >= len) return str.slice(0, len);
-  return str + " ".repeat(len - str.length);
-}
-function formatStats(velocity, estimate, timeline) {
-  const lines = [];
-  lines.push(
-    `Velocity: ${velocity.daily.toFixed(1)} tasks/day (${velocity.total_completed} completed in last 7 days)`
-  );
-  if (estimate) {
-    lines.push(`Remaining: ${estimate.remaining_tasks} tasks`);
-    if (estimate.estimated_days !== null && estimate.estimated_date !== null) {
-      lines.push(`Estimated: ~${estimate.estimated_days} days (${estimate.estimated_date})`);
-    } else {
-      lines.push("Estimated: unknown (no velocity)");
-    }
-  }
-  if (timeline && timeline.length > 0) {
-    lines.push("");
-    lines.push("Timeline:");
-    const maxTasks = Math.max(...timeline.map((e) => e.tasks_completed));
-    const maxBarWidth = 10;
-    for (const entry of timeline) {
-      const datePart = entry.date.slice(5).replace("-", "/");
-      const barWidth = maxTasks > 0 ? Math.max(1, Math.round(entry.tasks_completed / maxTasks * maxBarWidth)) : 1;
-      const bar = FILLED.repeat(barWidth);
-      const label = entry.tasks_completed === 1 ? "1 task" : `${entry.tasks_completed} tasks`;
-      lines.push(`  ${datePart}  ${bar}  ${label}`);
-    }
-  }
-  return lines.join("\n");
-}
-function formatHistory(events) {
-  if (events.length === 0) {
-    return "No history found.";
-  }
-  const lines = ["History:"];
-  for (const event of events) {
-    const dt = event.created_at.replace("T", " ").slice(0, 16);
-    const oldPart = event.old_value ?? "";
-    const newPart = event.new_value ?? "";
-    let detail = "";
-    if (oldPart && newPart) {
-      detail = ` ${oldPart} \u2192 ${newPart}`;
-    } else if (newPart) {
-      detail = ` \u2192 ${newPart}`;
-    } else if (oldPart) {
-      detail = ` ${oldPart}`;
-    }
-    lines.push(
-      `  ${dt}  ${event.entity_type}    ${event.event_type}  ${detail}`.trimEnd()
-    );
-  }
-  return lines.join("\n");
-}
-var STATUS_ICONS = {
-  done: "[x]",
-  in_progress: "[>]",
-  blocked: "[!]",
-  todo: "[ ]",
-  skipped: "[-]"
-};
-function formatPlanTree(plan2, tasks) {
-  const lines = [];
-  const totalTasks = countTasks(tasks);
-  const doneTasks = countTasksByStatus(tasks, ["done", "skipped"]);
-  const pct = totalTasks === 0 ? 0 : Math.round(doneTasks / totalTasks * 100);
-  lines.push(`${plan2.title} (${plan2.status})${" ".repeat(5)}${pct}%`);
-  for (let i = 0; i < tasks.length; i++) {
-    const isLast = i === tasks.length - 1;
-    renderNode(tasks[i], "", isLast, lines);
-  }
-  return lines.join("\n");
-}
-function renderNode(node, prefix, isLast, lines) {
-  const connector = isLast ? "\u2514\u2500" : "\u251C\u2500";
-  const icon = STATUS_ICONS[node.status];
-  lines.push(`${prefix}${connector} ${icon} ${node.title}${" ".repeat(4)}${node.status}`);
-  const childPrefix = prefix + (isLast ? "   " : "\u2502  ");
-  for (let i = 0; i < node.children.length; i++) {
-    const childIsLast = i === node.children.length - 1;
-    renderNode(node.children[i], childPrefix, childIsLast, lines);
-  }
-}
-function countTasks(nodes) {
-  let count = 0;
-  for (const node of nodes) {
-    count += 1 + countTasks(node.children);
-  }
-  return count;
-}
-function countTasksByStatus(nodes, statuses) {
-  let count = 0;
-  for (const node of nodes) {
-    if (statuses.includes(node.status)) count++;
-    count += countTasksByStatus(node.children, statuses);
-  }
-  return count;
-}
-function formatPlanList(plans) {
-  if (plans.length === 0) return "No plans found.";
-  const lines = [];
-  const header = `${padRight("ID", 14)}${padRight("Title", 26)}${padRight("Status", 12)}Created`;
-  lines.push(header);
-  for (const plan2 of plans) {
-    const created = plan2.created_at?.split("T")[0] ?? "unknown";
-    lines.push(
-      `${padRight(plan2.id, 14)}${padRight(plan2.title, 26)}${padRight(plan2.status, 12)}${created}`
-    );
-  }
-  return lines.join("\n");
-}
-function formatErrorSearchResults(entries) {
-  if (entries.length === 0) return "No errors found.";
-  const lines = [];
-  const header = `${padRight("ID", 16)}${padRight("Severity", 12)}${padRight("Status", 12)}${padRight("Occ", 6)}Title`;
-  lines.push(header);
-  for (const entry of entries) {
-    lines.push(
-      `${padRight(entry.id, 16)}${padRight(entry.severity, 12)}${padRight(entry.status, 12)}${padRight(String(entry.occurrences), 6)}${entry.title}`
-    );
-  }
-  return lines.join("\n");
-}
-function formatErrorDetail(entry) {
-  const tagsStr = entry.tags.length > 0 ? entry.tags.join(", ") : "(none)";
-  const lines = [
-    `ID:          ${entry.id}`,
-    `Title:       ${entry.title}`,
-    `Severity:    ${entry.severity}`,
-    `Tags:        ${tagsStr}`,
-    `Status:      ${entry.status}`,
-    `Occurrences: ${entry.occurrences}`,
-    `First seen:  ${entry.first_seen}`,
-    `Last seen:   ${entry.last_seen}`
-  ];
-  if (entry.content && entry.content.trim().length > 0) {
-    lines.push("");
-    lines.push(entry.content.trim());
-  }
-  return lines.join("\n");
-}
-function formatErrorKBStats(stats) {
-  const lines = [];
-  lines.push(`Total: ${stats.total}`);
-  lines.push("");
-  lines.push("By Severity:");
-  lines.push(`  critical: ${stats.by_severity.critical}`);
-  lines.push(`  high:     ${stats.by_severity.high}`);
-  lines.push(`  medium:   ${stats.by_severity.medium}`);
-  lines.push(`  low:      ${stats.by_severity.low}`);
-  lines.push("");
-  lines.push("By Status:");
-  lines.push(`  open:      ${stats.by_status.open}`);
-  lines.push(`  resolved:  ${stats.by_status.resolved}`);
-  lines.push(`  recurring: ${stats.by_status.recurring}`);
-  lines.push(`  wontfix:   ${stats.by_status.wontfix}`);
-  if (stats.top_recurring.length > 0) {
-    lines.push("");
-    lines.push("Top Recurring:");
-    for (const entry of stats.top_recurring) {
-      lines.push(`  ${entry.title} (${entry.occurrences}x)`);
-    }
-  }
-  return lines.join("\n");
-}
-function formatSkillUsage(skillStats) {
-  if (skillStats.length === 0) return "";
-  const lines = [];
-  lines.push("Recent Skill Usage:");
-  for (let i = 0; i < skillStats.length; i++) {
-    const s = skillStats[i];
-    const label = s.count === 1 ? "1 time" : `${s.count} times`;
-    lines.push(`  ${numCircle(i + 1)} ${s.skill_name} (${label})`);
-  }
-  return lines.join("\n");
-}
-var PRIORITY_ICONS = {
-  critical: "!!!!",
-  high: "!!! ",
-  medium: "!!  ",
-  low: "!   "
-};
-var STATUS_LABELS = {
-  open: "open",
-  planned: "planned",
-  done: "done",
-  dropped: "dropped"
-};
-function formatBacklogList(items) {
-  if (items.length === 0) return "No backlog items found.";
-  const lines = [];
-  const header = `${padRight("ID", 14)}${padRight("Pri", 6)}${padRight("Category", 12)}${padRight("Status", 10)}Title`;
-  lines.push(header);
-  for (const item of items) {
-    const pri = PRIORITY_ICONS[item.priority] ?? "    ";
-    const cat = padRight(item.category ?? "-", 12);
-    const status = padRight(STATUS_LABELS[item.status] ?? item.status, 10);
-    lines.push(`${padRight(item.id, 14)}${padRight(pri, 6)}${cat}${status}${item.title}`);
-  }
-  return lines.join("\n");
-}
-function formatBacklogDetail(item) {
-  const tags = item.tags ? JSON.parse(item.tags).join(", ") : "(none)";
-  const lines = [
-    `ID:          ${item.id}`,
-    `Title:       ${item.title}`,
-    `Priority:    ${item.priority}`,
-    `Category:    ${item.category ?? "-"}`,
-    `Tags:        ${tags}`,
-    `Complexity:  ${item.complexity_hint ?? "-"}`,
-    `Source:      ${item.source ?? "-"}`,
-    `Status:      ${item.status}`,
-    `Plan:        ${item.plan_id ?? "-"}`,
-    `Created:     ${item.created_at}`,
-    `Updated:     ${item.updated_at}`
-  ];
-  if (item.description) {
-    lines.push("");
-    lines.push(item.description);
-  }
-  return lines.join("\n");
-}
-function formatBacklogStats(stats) {
-  const lines = [];
-  lines.push(`Total: ${stats.total}`);
-  lines.push("");
-  lines.push("By Priority:");
-  lines.push(`  critical: ${stats.by_priority.critical}`);
-  lines.push(`  high:     ${stats.by_priority.high}`);
-  lines.push(`  medium:   ${stats.by_priority.medium}`);
-  lines.push(`  low:      ${stats.by_priority.low}`);
-  lines.push("");
-  lines.push("By Status:");
-  lines.push(`  open:     ${stats.by_status.open}`);
-  lines.push(`  planned:  ${stats.by_status.planned}`);
-  lines.push(`  done:     ${stats.by_status.done}`);
-  lines.push(`  dropped:  ${stats.by_status.dropped}`);
-  if (Object.keys(stats.by_category).length > 0) {
-    lines.push("");
-    lines.push("By Category:");
-    for (const [cat, count] of Object.entries(stats.by_category)) {
-      lines.push(`  ${padRight(cat + ":", 16)}${count}`);
-    }
-  }
-  return lines.join("\n");
-}
-function formatBacklogBoard(items) {
-  if (items.length === 0) return "No backlog items found.";
-  const groups = {};
-  for (const item of items) {
-    const cat = item.category ?? "uncategorized";
-    if (!groups[cat]) groups[cat] = [];
-    groups[cat].push(item);
-  }
-  const lines = [];
-  const categories = Object.keys(groups).sort();
-  const colWidth = 30;
-  lines.push(categories.map((c) => padRight(`[${c}]`, colWidth)).join("  "));
-  lines.push(categories.map(() => "-".repeat(colWidth)).join("  "));
-  const maxRows = Math.max(...categories.map((c) => groups[c].length));
-  for (let row = 0; row < maxRows; row++) {
-    const cols = [];
-    for (const cat of categories) {
-      const item = groups[cat][row];
-      if (item) {
-        const pri = PRIORITY_ICONS[item.priority] ?? "    ";
-        const label = `${pri.trim()} ${item.title}`;
-        cols.push(padRight(label.length > colWidth ? label.slice(0, colWidth - 1) + ">" : label, colWidth));
-      } else {
-        cols.push(" ".repeat(colWidth));
+    if (existsSync2(scriptPath)) {
+      try {
+        chmodSync(scriptPath, 493);
+      } catch {
       }
     }
-    lines.push(cols.join("  "));
+  } else {
+    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
   }
-  return lines.join("\n");
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
-function formatImportPreview(result) {
-  const lines = [];
-  if (result.errors.length > 0) {
-    for (const err of result.errors) {
-      lines.push(`Error: ${err}`);
-    }
-    if (result.items.length === 0) return lines.join("\n");
-    lines.push("");
-  }
-  lines.push(`Import preview (${result.source_prefix}): ${result.items.length} items`);
-  lines.push("");
-  if (result.items.length === 0) {
-    lines.push("No items to import.");
-    return lines.join("\n");
-  }
-  const header = `${padRight("#", 4)}${padRight("Priority", 10)}${padRight("Category", 12)}Title`;
-  lines.push(header);
-  for (let i = 0; i < result.items.length; i++) {
-    const item = result.items[i];
-    const pri = padRight(item.priority ?? "medium", 10);
-    const cat = padRight(item.category ?? "-", 12);
-    lines.push(`${padRight(String(i + 1), 4)}${pri}${cat}${item.title}`);
-  }
-  return lines.join("\n");
+function registerGovernanceCommands(program2, _getModels) {
+  const careful = program2.command("careful").description("Manage careful mode (destructive command guard)");
+  careful.command("on").description("Enable careful mode").action(() => {
+    const db = initDb();
+    setConfig(db, "careful.enabled", "true");
+    const scriptPath = join(process.cwd(), "bin", "check-careful.sh");
+    manageHook("add", "vs-careful", "Bash", scriptPath);
+    output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
+  });
+  careful.command("off").description("Disable careful mode").action(() => {
+    const db = initDb();
+    setConfig(db, "careful.enabled", "false");
+    manageHook("remove", "vs-careful", "Bash", "");
+    output({ careful: false }, "careful \uBAA8\uB4DC \uBE44\uD65C\uC131\uD654\uB428.");
+  });
+  careful.command("status").description("Show careful mode status").action(() => {
+    const db = initDb();
+    const enabled = getConfig(db, "careful.enabled") === "true";
+    output({ careful: enabled }, enabled ? "\u26A0\uFE0F careful \uBAA8\uB4DC: \uD65C\uC131\uD654" : "careful \uBAA8\uB4DC: \uBE44\uD65C\uC131\uD654");
+  });
+  const freeze = program2.command("freeze").description("Manage freeze boundary (edit scope restriction)");
+  freeze.command("set").argument("<path>", "Directory path to restrict edits to").description("Set freeze boundary").action((inputPath) => {
+    const db = initDb();
+    const absPath = resolve2(inputPath);
+    setConfig(db, "freeze.path", absPath);
+    const scriptPath = join(process.cwd(), "bin", "check-freeze.sh");
+    manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
+    manageHook("add", "vs-freeze-write", "Write", scriptPath);
+    output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
+  });
+  freeze.command("off").description("Remove freeze boundary").action(() => {
+    const db = initDb();
+    deleteConfig(db, "freeze.path");
+    manageHook("remove", "vs-freeze-edit", "Edit", "");
+    manageHook("remove", "vs-freeze-write", "Write", "");
+    output({ freeze: null }, "freeze \uBE44\uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704 \uC81C\uD55C \uD574\uC81C.");
+  });
+  freeze.command("status").description("Show freeze boundary status").action(() => {
+    const db = initDb();
+    const freezePath = getConfig(db, "freeze.path");
+    output(
+      { freeze: freezePath },
+      freezePath ? `\u{1F512} freeze: ${freezePath}` : "freeze: \uBE44\uD65C\uC131\uD654"
+    );
+  });
+  const guard = program2.command("guard").description("Enable/disable careful + freeze combined");
+  guard.command("on").argument("<path>", "Directory path to restrict edits to").description("Enable careful mode and set freeze boundary").action((inputPath) => {
+    const db = initDb();
+    const absPath = resolve2(inputPath);
+    setConfig(db, "careful.enabled", "true");
+    setConfig(db, "freeze.path", absPath);
+    const carefulScript = join(process.cwd(), "bin", "check-careful.sh");
+    const freezeScript = join(process.cwd(), "bin", "check-freeze.sh");
+    manageHook("add", "vs-careful", "Bash", carefulScript);
+    manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
+    manageHook("add", "vs-freeze-write", "Write", freezeScript);
+    output(
+      { careful: true, freeze: absPath },
+      `\u{1F6E1}\uFE0F guard \uD65C\uC131\uD654\uB428 \u2014 careful + freeze: ${absPath}`
+    );
+  });
+  guard.command("off").description("Disable both careful mode and freeze boundary").action(() => {
+    const db = initDb();
+    setConfig(db, "careful.enabled", "false");
+    deleteConfig(db, "freeze.path");
+    manageHook("remove", "vs-careful", "Bash", "");
+    manageHook("remove", "vs-freeze-edit", "Edit", "");
+    manageHook("remove", "vs-freeze-write", "Write", "");
+    output({ careful: false, freeze: null }, "guard \uBE44\uD65C\uC131\uD654\uB428 \u2014 careful + freeze \uBAA8\uB450 \uD574\uC81C.");
+  });
+  guard.command("status").description("Show guard status").action(() => {
+    const db = initDb();
+    const carefulEnabled = getConfig(db, "careful.enabled") === "true";
+    const freezePath = getConfig(db, "freeze.path");
+    output(
+      { careful: carefulEnabled, freeze: freezePath },
+      `\u{1F6E1}\uFE0F guard: careful=${carefulEnabled ? "\uD65C\uC131\uD654" : "\uBE44\uD65C\uC131\uD654"}, freeze=${freezePath ?? "\uBE44\uD65C\uC131\uD654"}`
+    );
+  });
 }
 
 // src/cli/importers.ts
 import { execFileSync } from "child_process";
-import { readFileSync as readFileSync3, existsSync as existsSync4 } from "fs";
+import { readFileSync as readFileSync3, existsSync as existsSync3 } from "fs";
 var REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 function validateRepoFormat(repo) {
   const trimmed = repo.trim();
@@ -3066,7 +2844,7 @@ function inferCategoryFromLabels(labels) {
 }
 function importFromFile(filepath) {
   const errors = [];
-  if (!existsSync4(filepath)) {
+  if (!existsSync3(filepath)) {
     errors.push(`\uD30C\uC77C\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${filepath}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
@@ -3109,1019 +2887,529 @@ var VALID_BACKLOG_CATEGORIES = ["feature", "bugfix", "refactor", "chore", "idea"
 var VALID_BACKLOG_COMPLEXITIES = ["simple", "moderate", "complex"];
 var VALID_BACKLOG_STATUSES = ["open", "planned", "done", "dropped"];
 
-// src/cli/index.ts
-import { resolve as resolve2, join as join3 } from "path";
-import { existsSync as existsSync5, readFileSync as readFileSync4, writeFileSync as writeFileSync3, chmodSync } from "fs";
-var require2 = createRequire(import.meta.url);
-var pkg = require2("../../package.json");
-var jsonMode = false;
-function output(data, formatted) {
-  if (jsonMode) {
-    console.log(JSON.stringify(data, null, 2));
-  } else {
-    console.log(formatted ?? JSON.stringify(data, null, 2));
-  }
-}
-function outputError(message) {
-  if (jsonMode) {
-    console.log(JSON.stringify({ error: message }));
-  } else {
-    console.error(message);
-  }
-  process.exit(1);
-}
-function withErrorHandler(fn) {
-  try {
-    fn();
-  } catch (e) {
-    outputError(e instanceof Error ? e.message : String(e));
-  }
-}
-function initModels() {
-  const db = getDb();
-  initSchema(db);
-  const events = new EventModel(db);
-  const planModel = new PlanModel(db, events);
-  const taskModel = new TaskModel(db, events);
-  const contextModel = new ContextModel(db);
-  const taskMetricsModel = new TaskMetricsModel(db);
-  const skillUsageModel = new SkillUsageModel(db);
-  const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
-  const dashboard = new DashboardEngine(db, skillUsageModel);
-  const alerts = new AlertsEngine(db);
-  const stats = new StatsEngine(db);
-  const insights = new InsightsEngine(db);
-  const qaRunModel = new QARunModel(db);
-  const qaScenarioModel = new QAScenarioModel(db);
-  const qaFindingModel = new QAFindingModel(db);
-  const backlogModel = new BacklogModel(db, events);
-  const mergeReportModel = new MergeReportModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel };
-}
-var program = new Command();
-program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
-  jsonMode = program.opts().json === true;
-});
-program.command("dashboard").description("Show all active plans overview").action(() => {
-  const { dashboard, alerts } = initModels();
-  const overview = dashboard.getOverview();
-  const alertList = alerts.getAlerts();
-  const skillUsage = dashboard.getSkillUsageSummary(7);
-  const dashboardText = formatDashboard(overview, alertList);
-  const skillText = formatSkillUsage(skillUsage);
-  const combined = skillText ? `${dashboardText}
-
-${skillText}` : dashboardText;
-  output({ overview, alerts: alertList, skill_usage: skillUsage }, combined);
-});
-var plan = program.command("plan").description("Manage plans");
-plan.command("list").option("--status <status>", "Filter by status (draft, active, approved, completed, archived)").option("--branch <branch>", "Filter by branch").description("List plans").action((opts) => {
-  const { planModel } = initModels();
-  const filter = {};
-  if (opts.status) {
-    if (!VALID_PLAN_STATUSES.includes(opts.status)) {
-      return outputError(`Invalid status. Must be: ${VALID_PLAN_STATUSES.join(", ")}`);
+// src/cli/commands/backlog.ts
+function registerBacklogCommands(program2, getModels) {
+  const backlog = program2.command("backlog").description("Manage backlog items");
+  backlog.command("add").description("Add a backlog item").requiredOption("--title <title>", "Item title").option("--description <desc>", "Item description").option("--priority <priority>", "Priority: critical|high|medium|low", "medium").option("--category <category>", "Category: feature|bugfix|refactor|chore|idea").option("--tags <tags>", "Comma-separated tags").option("--complexity <complexity>", "Complexity hint: simple|moderate|complex").option("--source <source>", "Source of the item").action((opts) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    if (opts.priority && !VALID_BACKLOG_PRIORITIES.includes(opts.priority)) {
+      outputError(`Invalid priority: ${opts.priority}. Must be one of: ${VALID_BACKLOG_PRIORITIES.join(", ")}`);
     }
-    filter.status = opts.status;
-  }
-  if (opts.branch) filter.branch = opts.branch;
-  const plans = planModel.list(Object.keys(filter).length > 0 ? filter : void 0);
-  output(plans, formatPlanList(plans));
-});
-plan.command("show").argument("<id>", "Plan ID").description("Show plan details with task tree and waves").action((id) => {
-  const { planModel, taskModel } = initModels();
-  const p = planModel.getById(id);
-  if (!p) return outputError(`Plan not found: ${id}`);
-  const tree = taskModel.getTree(id);
-  const waves = taskModel.getWaves(id);
-  output({ plan: p, tasks: tree, waves }, formatPlanTree(p, tree));
-});
-plan.command("create").requiredOption("--title <title>", "Plan title").option("--spec <spec>", "Plan specification").option("--summary <summary>", "Plan summary").description("Create a new plan and activate it").action((opts) => {
-  const { planModel } = initModels();
-  const created = planModel.create(opts.title, opts.spec, opts.summary);
-  const activated = planModel.activate(created.id);
-  output(activated, `Created plan: ${activated.id} "${activated.title}" (${activated.status})`);
-});
-plan.command("edit").argument("<id>", "Plan ID").option("--title <title>", "New title").option("--spec <spec>", "Replace spec").option("--append-spec <text>", "Append text to existing spec").option("--summary <summary>", "New summary").description("Edit plan title, spec, or summary").action((id, opts) => {
-  const { planModel } = initModels();
-  const p = planModel.getById(id);
-  if (!p) return outputError(`Plan not found: ${id}`);
-  const updates = {};
-  if (opts.title) updates.title = opts.title;
-  if (opts.spec) updates.spec = opts.spec;
-  if (opts.appendSpec) updates.spec = (p.spec ?? "") + "\n\n" + opts.appendSpec;
-  if (opts.summary) updates.summary = opts.summary;
-  if (Object.keys(updates).length === 0) return outputError("No changes specified");
-  const updated = planModel.update(id, updates);
-  output(updated, `Plan updated: ${updated.id} "${updated.title}"`);
-});
-plan.command("complete").argument("<id>", "Plan ID").description("Complete a plan").action((id) => {
-  withErrorHandler(() => {
-    const { lifecycle } = initModels();
-    const completed = lifecycle.completePlan(id);
-    output(completed, `Plan completed: ${completed.id} "${completed.title}"`);
-  });
-});
-plan.command("approve").argument("<id>", "Plan ID").description("Approve a plan (active \u2192 approved)").action((id) => {
-  withErrorHandler(() => {
-    const { planModel } = initModels();
-    const approved = planModel.approve(id);
-    output(approved, `Plan approved: ${approved.id} "${approved.title}"`);
-  });
-});
-plan.command("archive").argument("<id>", "Plan ID").description("Archive a plan").action((id) => {
-  const { planModel } = initModels();
-  const p = planModel.getById(id);
-  if (!p) return outputError(`Plan not found: ${id}`);
-  const archived = planModel.archive(id);
-  output(archived, `Plan archived: ${archived.id} "${archived.title}"`);
-});
-plan.command("update").argument("<id>", "Plan ID").option("--title <title>", "New title").option("--spec <spec>", "New spec").option("--summary <summary>", "New summary").description("Update plan title, spec, or summary").action((id, opts) => {
-  const { planModel } = initModels();
-  const p = planModel.getById(id);
-  if (!p) return outputError(`Plan not found: ${id}`);
-  const updated = planModel.update(id, opts);
-  output(updated, `Plan updated: ${updated.id} "${updated.title}"`);
-});
-plan.command("delete").argument("<id>", "Plan ID").description("Delete a draft plan and all its tasks").action((id) => {
-  withErrorHandler(() => {
-    const { planModel } = initModels();
-    planModel.delete(id);
-    output({ deleted: true, plan_id: id }, `Plan deleted: ${id}`);
-  });
-});
-var task = program.command("task").description("Manage tasks");
-task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").option("--force", "Skip acceptance criteria validation warnings").description("Create a new task").action((opts) => {
-  withErrorHandler(() => {
-    const { taskModel } = initModels();
-    const dependsOn = opts.dependsOn ? opts.dependsOn.split(",").map((s) => s.trim()) : void 0;
-    const allowedFiles = opts.allowedFiles ? opts.allowedFiles.split(",").map((s) => s.trim()) : void 0;
-    const forbiddenPatterns = opts.forbiddenPatterns ? opts.forbiddenPatterns.split(",").map((s) => s.trim()) : void 0;
-    const created = taskModel.create(opts.plan, opts.title, {
-      parentId: opts.parent,
-      spec: opts.spec,
-      acceptance: opts.acceptance,
-      dependsOn,
-      allowedFiles,
-      forbiddenPatterns
+    if (opts.category && !VALID_BACKLOG_CATEGORIES.includes(opts.category)) {
+      outputError(`Invalid category: ${opts.category}. Must be one of: ${VALID_BACKLOG_CATEGORIES.join(", ")}`);
+    }
+    if (opts.complexity && !VALID_BACKLOG_COMPLEXITIES.includes(opts.complexity)) {
+      outputError(`Invalid complexity: ${opts.complexity}. Must be one of: ${VALID_BACKLOG_COMPLEXITIES.join(", ")}`);
+    }
+    const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : void 0;
+    const item = backlogModel.create({
+      title: opts.title,
+      description: opts.description,
+      priority: opts.priority,
+      category: opts.category,
+      tags,
+      complexity_hint: opts.complexity,
+      source: opts.source
     });
-    const { warnings, ...taskData } = created;
-    if (warnings.length > 0 && !opts.force) {
-      for (const w of warnings) {
-        console.error(`\u26A0 AC Warning: ${w}`);
+    output(item, `Created backlog item: ${item.id} \u2014 ${item.title}`);
+  }));
+  backlog.command("list").description("List backlog items").option("--status <status>", "Filter by status").option("--priority <priority>", "Filter by priority").option("--category <category>", "Filter by category").option("--tag <tag>", "Filter by tag").action((opts) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    const items = backlogModel.list({
+      status: opts.status,
+      priority: opts.priority,
+      category: opts.category,
+      tag: opts.tag
+    });
+    output(items, formatBacklogList(items));
+  }));
+  backlog.command("show").description("Show backlog item details").argument("<id>", "Backlog item ID").action((id) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    const item = backlogModel.getById(id);
+    if (!item) outputError(`Backlog item not found: ${id}`);
+    output(item, formatBacklogDetail(item));
+  }));
+  backlog.command("update").description("Update a backlog item").argument("<id>", "Backlog item ID").option("--title <title>", "New title").option("--description <desc>", "New description").option("--priority <priority>", "New priority").option("--category <category>", "New category").option("--tags <tags>", "New comma-separated tags").option("--complexity <complexity>", "New complexity hint").option("--source <source>", "New source").option("--status <status>", "New status").action((id, opts) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    const fields = {};
+    if (opts.title) fields.title = opts.title;
+    if (opts.description) fields.description = opts.description;
+    if (opts.priority) {
+      if (!VALID_BACKLOG_PRIORITIES.includes(opts.priority)) {
+        outputError(`Invalid priority: ${opts.priority}`);
       }
+      fields.priority = opts.priority;
     }
-    if (jsonMode) {
-      output({ ...taskData, warnings }, `Created task: ${created.id} "${created.title}" (${created.status})`);
-    } else {
-      output(taskData, `Created task: ${created.id} "${created.title}" (${created.status})`);
+    if (opts.category) {
+      if (!VALID_BACKLOG_CATEGORIES.includes(opts.category)) {
+        outputError(`Invalid category: ${opts.category}`);
+      }
+      fields.category = opts.category;
     }
-  });
-});
-task.command("update").argument("<id>", "Task ID").argument("<status>", "New status (todo, in_progress, done, blocked, skipped)").option("--impl-status <status>", "Implementation status (DONE, DONE_WITH_CONCERNS, BLOCKED)").option("--test-count <count>", "Number of tests written").option("--files-changed <count>", "Number of files changed").option("--has-concerns", "Whether there are concerns").option("--changed-files-detail <json>", "JSON string of changed files detail").option("--scope-violations <json>", "JSON string of scope violations").description("Update task status with optional metrics").action((id, status, opts) => {
-  const VALID = ["todo", "in_progress", "done", "blocked", "skipped"];
-  if (!VALID.includes(status)) {
-    return outputError(`Invalid status. Must be: ${VALID.join(", ")}`);
-  }
-  const { taskModel, taskMetricsModel, lifecycle } = initModels();
-  const t = taskModel.getById(id);
-  if (!t) return outputError(`Task not found: ${id}`);
-  const updated = taskModel.updateStatus(id, status);
-  const completionCheck = lifecycle.autoCheckCompletion(updated.plan_id);
-  if (["done", "blocked", "skipped"].includes(status)) {
-    try {
-      const metrics = {};
-      if (opts.implStatus) metrics.impl_status = opts.implStatus;
-      if (opts.testCount) metrics.test_count = parseInt(opts.testCount, 10);
-      if (opts.filesChanged) metrics.files_changed = parseInt(opts.filesChanged, 10);
-      if (opts.hasConcerns) metrics.has_concerns = true;
-      if (opts.changedFilesDetail) metrics.changed_files_detail = opts.changedFilesDetail;
-      if (opts.scopeViolations) metrics.scope_violations = opts.scopeViolations;
-      taskMetricsModel.record(id, updated.plan_id, status, Object.keys(metrics).length > 0 ? metrics : void 0);
-    } catch {
+    if (opts.tags) fields.tags = JSON.stringify(opts.tags.split(",").map((t) => t.trim()));
+    if (opts.complexity) {
+      if (!VALID_BACKLOG_COMPLEXITIES.includes(opts.complexity)) {
+        outputError(`Invalid complexity: ${opts.complexity}`);
+      }
+      fields.complexity_hint = opts.complexity;
     }
-  }
-  output(
-    { task: updated, completion_check: completionCheck },
-    `Task ${updated.id}: ${updated.title} \u2192 ${updated.status}`
-  );
-});
-task.command("next").argument("<plan_id>", "Plan ID").description("Get the next pending task").action((planId) => {
-  const { taskModel } = initModels();
-  const next = taskModel.getNextAvailable(planId);
-  if (!next) {
-    output(
-      { message: "No pending tasks", hint: "All tasks are done or blocked. Use vs plan complete to finish the plan." },
-      "No pending tasks."
-    );
-    return;
-  }
-  output(next, [
-    `Next: ${next.id} "${next.title}"`,
-    next.spec ? `Spec: ${next.spec}` : "",
-    next.acceptance ? `Acceptance: ${next.acceptance}` : ""
-  ].filter(Boolean).join("\n"));
-});
-task.command("show").argument("<id>", "Task ID").description("Show task details").action((id) => {
-  const { taskModel } = initModels();
-  const t = taskModel.getById(id);
-  if (!t) return outputError(`Task not found: ${id}`);
-  output(t, [
-    `ID:         ${t.id}`,
-    `Title:      ${t.title}`,
-    `Status:     ${t.status}`,
-    `Plan:       ${t.plan_id}`,
-    `Depth:      ${t.depth}`,
-    t.spec ? `Spec:       ${t.spec}` : "",
-    t.acceptance ? `Acceptance: ${t.acceptance}` : "",
-    t.allowed_files ? `Allowed:    ${t.allowed_files}` : "",
-    t.forbidden_patterns ? `Forbidden:  ${t.forbidden_patterns}` : "",
-    `Created:    ${t.created_at}`,
-    t.completed_at ? `Completed:  ${t.completed_at}` : ""
-  ].filter(Boolean).join("\n"));
-});
-task.command("block").argument("<id>", "Task ID").option("--reason <reason>", "Reason for blocking").description("Mark a task as blocked").action((id, opts) => {
-  const { taskModel, events } = initModels();
-  const t = taskModel.getById(id);
-  if (!t) return outputError(`Task not found: ${id}`);
-  const blocked = taskModel.updateStatus(id, "blocked");
-  if (opts.reason) {
-    events.record("task", id, "blocked_reason", null, JSON.stringify({ reason: opts.reason }));
-  }
-  output(
-    { ...blocked, block_reason: opts.reason ?? null },
-    `Task blocked: ${blocked.id} "${blocked.title}"${opts.reason ? ` (reason: ${opts.reason})` : ""}`
-  );
-});
-task.command("edit").argument("<id>", "Task ID").option("--title <title>", "New title").option("--spec <spec>", "New spec").option("--acceptance <acceptance>", "New acceptance criteria").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").description("Edit task title, spec, acceptance, or scope").action((id, opts) => {
-  const { taskModel } = initModels();
-  const t = taskModel.getById(id);
-  if (!t) return outputError(`Task not found: ${id}`);
-  const fields = {};
-  if (opts.title !== void 0) fields.title = opts.title;
-  if (opts.spec !== void 0) fields.spec = opts.spec;
-  if (opts.acceptance !== void 0) fields.acceptance = opts.acceptance;
-  if (opts.allowedFiles !== void 0) {
-    fields.allowed_files = JSON.stringify(opts.allowedFiles.split(",").map((s) => s.trim()));
-  }
-  if (opts.forbiddenPatterns !== void 0) {
-    fields.forbidden_patterns = JSON.stringify(opts.forbiddenPatterns.split(",").map((s) => s.trim()));
-  }
-  const edited = taskModel.update(id, fields);
-  output(edited, `Task edited: ${edited.id} "${edited.title}"`);
-});
-task.command("delete").argument("<id>", "Task ID").description("Delete a task and its subtasks").action((id) => {
-  const { taskModel } = initModels();
-  withErrorHandler(() => {
-    taskModel.delete(id);
-    output({ deleted: true, task_id: id }, `Task deleted: ${id}`);
-  });
-});
-var context = program.command("context").description("Manage session context");
-context.command("resume").option("--session-id <id>", "Optional session ID to filter").description("Resume context from previous sessions").action((opts) => {
-  const { contextModel, dashboard, alerts } = initModels();
-  const contextLogs = opts.sessionId ? [contextModel.getBySession(opts.sessionId)].filter(Boolean) : contextModel.getLatest(3);
-  const overview = dashboard.getOverview();
-  const alertList = alerts.getAlerts();
-  output({ context_logs: contextLogs, overview, alerts: alertList });
-});
-context.command("save").requiredOption("--summary <summary>", "Summary of context to save").option("--plan-id <id>", "Plan ID to link context to").option("--session-id <id>", "Session ID").description("Save a context log entry").action((opts) => {
-  const { contextModel } = initModels();
-  const log = contextModel.save(opts.summary, {
-    planId: opts.planId,
-    sessionId: opts.sessionId
-  });
-  output(log, `Context saved: ${log.id} "${log.summary.slice(0, 50)}..."`);
-});
-context.command("search").argument("<query>", "Search query (tag or keyword)").option("--limit <n>", "Max results", "10").description("Search context log entries by tag or keyword").action((query, opts) => {
-  const { contextModel } = initModels();
-  const results = contextModel.search(query);
-  const limited = results.slice(0, parseInt(opts.limit, 10));
-  if (limited.length === 0) {
-    output([], `No context logs matching "${query}".`);
-    return;
-  }
-  const formatted = limited.map(
-    (l, i) => `${i + 1}. [#${l.id}] ${l.summary.slice(0, 100)} (${l.created_at})`
-  ).join("\n");
-  output(limited, `## Context Search: "${query}"
-
-${formatted}`);
-});
-program.command("stats").argument("[plan_id]", "Optional plan ID").description("Show velocity and estimates").action((planId) => {
-  const { stats } = initModels();
-  const velocity = stats.getVelocity(planId);
-  const estimate = planId ? stats.getEstimatedCompletion(planId) : void 0;
-  const timeline = stats.getTimeline(planId);
-  output(
-    { velocity, ...estimate ? { estimated_completion: estimate } : {}, ...timeline.length > 0 ? { timeline } : {} },
-    formatStats(velocity, estimate, timeline.length > 0 ? timeline : void 0)
-  );
-});
-program.command("history").argument("<type>", "Entity type (plan, task)").argument("<id>", "Entity ID").description("Show change history").action((type, id) => {
-  const validTypes = ["plan", "task"];
-  if (!validTypes.includes(type)) {
-    return outputError(`Invalid entity type. Must be: ${validTypes.join(", ")}`);
-  }
-  const { events } = initModels();
-  const eventList = events.getByEntity(type, id);
-  output(eventList, formatHistory(eventList));
-});
-program.command("insights").option("--scope <scope>", "Scope: blocked_patterns, duration_stats, success_rates, all (default: all)").description("Get learning insights from task history").action((opts) => {
-  const { insights } = initModels();
-  const validScopes = ["blocked_patterns", "duration_stats", "success_rates", "all"];
-  const scope = opts.scope && validScopes.includes(opts.scope) ? opts.scope : "all";
-  const result = {};
-  if (scope === "all" || scope === "blocked_patterns") {
-    result.blocked_patterns = insights.getBlockedPatterns();
-  }
-  if (scope === "all" || scope === "duration_stats") {
-    result.duration_stats = insights.getDurationStats();
-  }
-  if (scope === "all" || scope === "success_rates") {
-    result.success_rates = insights.getSuccessRates();
-  }
-  if (scope === "all") {
-    result.recommendations = insights.getRecommendations();
-    result.confidence = insights.getConfidenceLevel();
-  }
-  output(result);
-});
-var config = program.command("config").description("Manage configuration");
-config.command("set").argument("<key>", "Config key").argument("<value>", "Config value").description("Set a configuration value").action((key, value) => {
-  const db = getDb();
-  initSchema(db);
-  setConfig(db, key, value);
-  output({ key, value }, `${key} = ${value}`);
-});
-config.command("get").argument("<key>", "Config key").description("Get a configuration value").action((key) => {
-  const db = getDb();
-  initSchema(db);
-  const value = getConfig(db, key);
-  if (value === null) return outputError(`Config not found: ${key}`);
-  output({ key, value }, `${key} = ${value}`);
-});
-config.command("list").description("List all configuration values").action(() => {
-  const db = getDb();
-  initSchema(db);
-  const items = listConfig(db);
-  if (items.length === 0) {
-    output(items, "No configuration values set.");
-    return;
-  }
-  const formatted = items.map((i) => `${i.key} = ${i.value}`).join("\n");
-  output(items, formatted);
-});
-config.command("delete").argument("<key>", "Config key").description("Delete a configuration value").action((key) => {
-  const db = getDb();
-  initSchema(db);
-  deleteConfig(db, key);
-  output({ deleted: true, key }, `Deleted: ${key}`);
-});
-function initDb() {
-  const db = getDb();
-  initSchema(db);
-  return db;
-}
-function manageHook(action, hookId, toolName, scriptPath) {
-  const settingsDir = join3(process.cwd(), ".claude");
-  const settingsPath = join3(settingsDir, "settings.local.json");
-  let settings = {};
-  if (existsSync5(settingsPath)) {
-    try {
-      settings = JSON.parse(readFileSync4(settingsPath, "utf8"));
-    } catch {
-      settings = {};
+    if (opts.source) fields.source = opts.source;
+    if (opts.status) {
+      if (!VALID_BACKLOG_STATUSES.includes(opts.status)) {
+        outputError(`Invalid status: ${opts.status}`);
+      }
+      fields.status = opts.status;
     }
-  }
-  if (!settings.hooks) settings.hooks = {};
-  const hooks = settings.hooks;
-  if (!hooks.PreToolUse) hooks.PreToolUse = [];
-  const preToolUse = hooks.PreToolUse;
-  if (action === "add") {
-    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
-    hooks.PreToolUse.push({
-      id: hookId,
-      type: "command",
-      matcher: toolName,
-      command: scriptPath
+    const item = backlogModel.update(id, fields);
+    output(item, formatBacklogDetail(item));
+  }));
+  backlog.command("delete").description("Delete a backlog item").argument("<id>", "Backlog item ID").action((id) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    backlogModel.delete(id);
+    output({ deleted: id }, `Deleted backlog item: ${id}`);
+  }));
+  backlog.command("promote").description("Promote a backlog item to a plan").argument("<id>", "Backlog item ID").requiredOption("--plan <planId>", "Plan ID to link").action((id, opts) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    const item = backlogModel.promote(id, opts.plan);
+    output(item, `Promoted backlog item ${item.id} \u2192 plan ${opts.plan}`);
+  }));
+  backlog.command("stats").description("Show backlog statistics").action(() => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    const statsData = backlogModel.getStats();
+    output(statsData, formatBacklogStats(statsData));
+  }));
+  backlog.command("board").description("Show backlog in kanban board view").option("--category <category>", "Filter by category").option("--status <status>", "Filter by status", "open").action((opts) => withErrorHandler(() => {
+    const { backlogModel } = getModels();
+    const items = backlogModel.list({
+      status: opts.status,
+      category: opts.category
     });
-    if (existsSync5(scriptPath)) {
+    output(items, formatBacklogBoard(items));
+  }));
+  const importCmd = backlog.command("import").description("Import backlog items from external sources");
+  importCmd.command("github").description("Import from GitHub Issues").requiredOption("--repo <repo>", "Repository (owner/repo)").option("--label <label>", "Filter by label").option("--state <state>", "Issue state", "open").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
+    const result = importFromGithub(opts.repo, { label: opts.label, state: opts.state });
+    if (opts.dryRun || result.items.length === 0) {
+      output(result, formatImportPreview(result));
+      return;
+    }
+    const { backlogModel } = getModels();
+    let imported = 0;
+    let skipped = 0;
+    const warnings = [];
+    for (const item of result.items) {
+      const existing = backlogModel.findByTitle(item.title, "open");
+      if (existing) {
+        warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
+        skipped++;
+        continue;
+      }
+      backlogModel.create(item);
+      imported++;
+    }
+    const summary = [`Imported ${imported} items from ${result.source_prefix}`];
+    if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
+    if (warnings.length > 0) summary.push(...warnings.map((w) => `  \u26A0 ${w}`));
+    output({ imported, skipped, warnings }, summary.join("\n"));
+  }));
+  importCmd.command("file").description("Import from a markdown/text file").requiredOption("--path <filepath>", "File path").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
+    const result = importFromFile(opts.path);
+    if (opts.dryRun || result.items.length === 0) {
+      output(result, formatImportPreview(result));
+      return;
+    }
+    const { backlogModel } = getModels();
+    let imported = 0;
+    let skipped = 0;
+    const warnings = [];
+    for (const item of result.items) {
+      const existing = backlogModel.findByTitle(item.title, "open");
+      if (existing) {
+        warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
+        skipped++;
+        continue;
+      }
+      backlogModel.create(item);
+      imported++;
+    }
+    const summary = [`Imported ${imported} items from ${result.source_prefix}`];
+    if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
+    if (warnings.length > 0) summary.push(...warnings.map((w) => `  \u26A0 ${w}`));
+    output({ imported, skipped, warnings }, summary.join("\n"));
+  }));
+  importCmd.command("slack").description("Import from Slack channel (requires MCP)").requiredOption("--channel <channel>", "Slack channel ID").option("--since <days>", "Days to look back", "7").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
+    const result = importFromSlack(opts.channel, { since: opts.since });
+    output(result, formatImportPreview(result));
+  }));
+}
+
+// src/cli/commands/planning.ts
+function registerPlanningCommands(program2, getModels) {
+  const plan = program2.command("plan").description("Manage plans");
+  plan.command("list").option("--status <status>", "Filter by status (draft, active, approved, completed, archived)").option("--branch <branch>", "Filter by branch").description("List plans").action((opts) => {
+    const { planModel } = getModels();
+    const filter = {};
+    if (opts.status) {
+      if (!VALID_PLAN_STATUSES.includes(opts.status)) {
+        return outputError(`Invalid status. Must be: ${VALID_PLAN_STATUSES.join(", ")}`);
+      }
+      filter.status = opts.status;
+    }
+    if (opts.branch) filter.branch = opts.branch;
+    const plans = planModel.list(Object.keys(filter).length > 0 ? filter : void 0);
+    output(plans, formatPlanList(plans));
+  });
+  plan.command("show").argument("<id>", "Plan ID").description("Show plan details with task tree and waves").action((id) => {
+    const { planModel, taskModel } = getModels();
+    const p = planModel.getById(id);
+    if (!p) return outputError(`Plan not found: ${id}`);
+    const tree = taskModel.getTree(id);
+    const waves = taskModel.getWaves(id);
+    output({ plan: p, tasks: tree, waves }, formatPlanTree(p, tree));
+  });
+  plan.command("create").requiredOption("--title <title>", "Plan title").option("--spec <spec>", "Plan specification").option("--summary <summary>", "Plan summary").description("Create a new plan and activate it").action((opts) => {
+    const { planModel } = getModels();
+    const created = planModel.create(opts.title, opts.spec, opts.summary);
+    const activated = planModel.activate(created.id);
+    output(activated, `Created plan: ${activated.id} "${activated.title}" (${activated.status})`);
+  });
+  plan.command("edit").argument("<id>", "Plan ID").option("--title <title>", "New title").option("--spec <spec>", "Replace spec").option("--append-spec <text>", "Append text to existing spec").option("--summary <summary>", "New summary").description("Edit plan title, spec, or summary").action((id, opts) => {
+    const { planModel } = getModels();
+    const p = planModel.getById(id);
+    if (!p) return outputError(`Plan not found: ${id}`);
+    const updates = {};
+    if (opts.title) updates.title = opts.title;
+    if (opts.spec) updates.spec = opts.spec;
+    if (opts.appendSpec) updates.spec = (p.spec ?? "") + "\n\n" + opts.appendSpec;
+    if (opts.summary) updates.summary = opts.summary;
+    if (Object.keys(updates).length === 0) return outputError("No changes specified");
+    const updated = planModel.update(id, updates);
+    output(updated, `Plan updated: ${updated.id} "${updated.title}"`);
+  });
+  plan.command("complete").argument("<id>", "Plan ID").description("Complete a plan").action((id) => {
+    withErrorHandler(() => {
+      const { lifecycle } = getModels();
+      const completed = lifecycle.completePlan(id);
+      output(completed, `Plan completed: ${completed.id} "${completed.title}"`);
+    });
+  });
+  plan.command("approve").argument("<id>", "Plan ID").description("Approve a plan (active \u2192 approved)").action((id) => {
+    withErrorHandler(() => {
+      const { planModel } = getModels();
+      const approved = planModel.approve(id);
+      output(approved, `Plan approved: ${approved.id} "${approved.title}"`);
+    });
+  });
+  plan.command("archive").argument("<id>", "Plan ID").description("Archive a plan").action((id) => {
+    const { planModel } = getModels();
+    const p = planModel.getById(id);
+    if (!p) return outputError(`Plan not found: ${id}`);
+    const archived = planModel.archive(id);
+    output(archived, `Plan archived: ${archived.id} "${archived.title}"`);
+  });
+  plan.command("update").argument("<id>", "Plan ID").option("--title <title>", "New title").option("--spec <spec>", "New spec").option("--summary <summary>", "New summary").description("Update plan title, spec, or summary").action((id, opts) => {
+    const { planModel } = getModels();
+    const p = planModel.getById(id);
+    if (!p) return outputError(`Plan not found: ${id}`);
+    const updated = planModel.update(id, opts);
+    output(updated, `Plan updated: ${updated.id} "${updated.title}"`);
+  });
+  plan.command("delete").argument("<id>", "Plan ID").description("Delete a draft plan and all its tasks").action((id) => {
+    withErrorHandler(() => {
+      const { planModel } = getModels();
+      planModel.delete(id);
+      output({ deleted: true, plan_id: id }, `Plan deleted: ${id}`);
+    });
+  });
+  const task = program2.command("task").description("Manage tasks");
+  task.command("create").requiredOption("--plan <plan_id>", "Plan ID").requiredOption("--title <title>", "Task title").option("--parent <parent_id>", "Parent task ID for subtasks").option("--spec <spec>", "Task specification").option("--acceptance <acceptance>", "Acceptance criteria").option("--depends-on <ids>", "Comma-separated task IDs this task depends on").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").option("--force", "Skip acceptance criteria validation warnings").description("Create a new task").action((opts) => {
+    withErrorHandler(() => {
+      const { taskModel } = getModels();
+      const dependsOn = opts.dependsOn ? opts.dependsOn.split(",").map((s) => s.trim()) : void 0;
+      const allowedFiles = opts.allowedFiles ? opts.allowedFiles.split(",").map((s) => s.trim()) : void 0;
+      const forbiddenPatterns = opts.forbiddenPatterns ? opts.forbiddenPatterns.split(",").map((s) => s.trim()) : void 0;
+      const created = taskModel.create(opts.plan, opts.title, {
+        parentId: opts.parent,
+        spec: opts.spec,
+        acceptance: opts.acceptance,
+        dependsOn,
+        allowedFiles,
+        forbiddenPatterns
+      });
+      const { warnings, ...taskData } = created;
+      if (warnings.length > 0 && !opts.force) {
+        for (const w of warnings) {
+          console.error(`\u26A0 AC Warning: ${w}`);
+        }
+      }
+      if (getJsonMode()) {
+        output({ ...taskData, warnings }, `Created task: ${created.id} "${created.title}" (${created.status})`);
+      } else {
+        output(taskData, `Created task: ${created.id} "${created.title}" (${created.status})`);
+      }
+    });
+  });
+  task.command("update").argument("<id>", "Task ID").argument("<status>", "New status (todo, in_progress, done, blocked, skipped)").option("--impl-status <status>", "Implementation status (DONE, DONE_WITH_CONCERNS, BLOCKED)").option("--test-count <count>", "Number of tests written").option("--files-changed <count>", "Number of files changed").option("--has-concerns", "Whether there are concerns").option("--changed-files-detail <json>", "JSON string of changed files detail").option("--scope-violations <json>", "JSON string of scope violations").description("Update task status with optional metrics").action((id, status, opts) => {
+    const VALID = ["todo", "in_progress", "done", "blocked", "skipped"];
+    if (!VALID.includes(status)) {
+      return outputError(`Invalid status. Must be: ${VALID.join(", ")}`);
+    }
+    const { taskModel, taskMetricsModel, lifecycle } = getModels();
+    const t = taskModel.getById(id);
+    if (!t) return outputError(`Task not found: ${id}`);
+    const updated = taskModel.updateStatus(id, status);
+    const completionCheck = lifecycle.autoCheckCompletion(updated.plan_id);
+    if (["done", "blocked", "skipped"].includes(status)) {
       try {
-        chmodSync(scriptPath, 493);
+        const metrics = {};
+        if (opts.implStatus) metrics.impl_status = opts.implStatus;
+        if (opts.testCount) metrics.test_count = parseInt(opts.testCount, 10);
+        if (opts.filesChanged) metrics.files_changed = parseInt(opts.filesChanged, 10);
+        if (opts.hasConcerns) metrics.has_concerns = true;
+        if (opts.changedFilesDetail) metrics.changed_files_detail = opts.changedFilesDetail;
+        if (opts.scopeViolations) metrics.scope_violations = opts.scopeViolations;
+        taskMetricsModel.record(id, updated.plan_id, status, Object.keys(metrics).length > 0 ? metrics : void 0);
       } catch {
       }
     }
-  } else {
-    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
-  }
-  writeFileSync3(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-}
-var careful = program.command("careful").description("Manage careful mode (destructive command guard)");
-careful.command("on").description("Enable careful mode").action(() => {
-  const db = initDb();
-  setConfig(db, "careful.enabled", "true");
-  const scriptPath = join3(process.cwd(), "bin", "check-careful.sh");
-  manageHook("add", "vs-careful", "Bash", scriptPath);
-  output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
-});
-careful.command("off").description("Disable careful mode").action(() => {
-  const db = initDb();
-  setConfig(db, "careful.enabled", "false");
-  manageHook("remove", "vs-careful", "Bash", "");
-  output({ careful: false }, "careful \uBAA8\uB4DC \uBE44\uD65C\uC131\uD654\uB428.");
-});
-careful.command("status").description("Show careful mode status").action(() => {
-  const db = initDb();
-  const enabled = getConfig(db, "careful.enabled") === "true";
-  output({ careful: enabled }, enabled ? "\u26A0\uFE0F careful \uBAA8\uB4DC: \uD65C\uC131\uD654" : "careful \uBAA8\uB4DC: \uBE44\uD65C\uC131\uD654");
-});
-var freeze = program.command("freeze").description("Manage freeze boundary (edit scope restriction)");
-freeze.command("set").argument("<path>", "Directory path to restrict edits to").description("Set freeze boundary").action((inputPath) => {
-  const db = initDb();
-  const absPath = resolve2(inputPath);
-  setConfig(db, "freeze.path", absPath);
-  const scriptPath = join3(process.cwd(), "bin", "check-freeze.sh");
-  manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
-  manageHook("add", "vs-freeze-write", "Write", scriptPath);
-  output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
-});
-freeze.command("off").description("Remove freeze boundary").action(() => {
-  const db = initDb();
-  deleteConfig(db, "freeze.path");
-  manageHook("remove", "vs-freeze-edit", "Edit", "");
-  manageHook("remove", "vs-freeze-write", "Write", "");
-  output({ freeze: null }, "freeze \uBE44\uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704 \uC81C\uD55C \uD574\uC81C.");
-});
-freeze.command("status").description("Show freeze boundary status").action(() => {
-  const db = initDb();
-  const freezePath = getConfig(db, "freeze.path");
-  output(
-    { freeze: freezePath },
-    freezePath ? `\u{1F512} freeze: ${freezePath}` : "freeze: \uBE44\uD65C\uC131\uD654"
-  );
-});
-var guard = program.command("guard").description("Enable/disable careful + freeze combined");
-guard.command("on").argument("<path>", "Directory path to restrict edits to").description("Enable careful mode and set freeze boundary").action((inputPath) => {
-  const db = initDb();
-  const absPath = resolve2(inputPath);
-  setConfig(db, "careful.enabled", "true");
-  setConfig(db, "freeze.path", absPath);
-  const carefulScript = join3(process.cwd(), "bin", "check-careful.sh");
-  const freezeScript = join3(process.cwd(), "bin", "check-freeze.sh");
-  manageHook("add", "vs-careful", "Bash", carefulScript);
-  manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
-  manageHook("add", "vs-freeze-write", "Write", freezeScript);
-  output(
-    { careful: true, freeze: absPath },
-    `\u{1F6E1}\uFE0F guard \uD65C\uC131\uD654\uB428 \u2014 careful + freeze: ${absPath}`
-  );
-});
-guard.command("off").description("Disable both careful mode and freeze boundary").action(() => {
-  const db = initDb();
-  setConfig(db, "careful.enabled", "false");
-  deleteConfig(db, "freeze.path");
-  manageHook("remove", "vs-careful", "Bash", "");
-  manageHook("remove", "vs-freeze-edit", "Edit", "");
-  manageHook("remove", "vs-freeze-write", "Write", "");
-  output({ careful: false, freeze: null }, "guard \uBE44\uD65C\uC131\uD654\uB428 \u2014 careful + freeze \uBAA8\uB450 \uD574\uC81C.");
-});
-guard.command("status").description("Show guard status").action(() => {
-  const db = initDb();
-  const carefulEnabled = getConfig(db, "careful.enabled") === "true";
-  const freezePath = getConfig(db, "freeze.path");
-  output(
-    { careful: carefulEnabled, freeze: freezePath },
-    `\u{1F6E1}\uFE0F guard: careful=${carefulEnabled ? "\uD65C\uC131\uD654" : "\uBE44\uD65C\uC131\uD654"}, freeze=${freezePath ?? "\uBE44\uD65C\uC131\uD654"}`
-  );
-});
-var errorKb = program.command("error-kb").description("Manage error knowledge base");
-function getErrorKBEngine() {
-  const root = findProjectRoot(process.cwd());
-  return new ErrorKBEngine(root);
-}
-errorKb.command("search").argument("<query>", "Search query").option("--tag <tag>", "Filter by tag").option("--severity <level>", "Filter by severity (critical, high, medium, low)").description("Search error knowledge base").action((query, opts) => {
-  const engine = getErrorKBEngine();
-  const searchOpts = {};
-  if (opts.tag) searchOpts.tags = [opts.tag];
-  if (opts.severity) searchOpts.severity = opts.severity;
-  const results = engine.search(query, searchOpts);
-  output(results, formatErrorSearchResults(results));
-});
-errorKb.command("add").requiredOption("--title <title>", "Error title").requiredOption("--cause <cause>", "Error cause").requiredOption("--solution <solution>", "Error solution").option("--tags <tags>", "Comma-separated tags").option("--severity <level>", "Severity level (critical, high, medium, low)", "medium").description("Add a new error entry").action((opts) => {
-  const engine = getErrorKBEngine();
-  const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : [];
-  const entry = engine.add({
-    title: opts.title,
-    cause: opts.cause,
-    solution: opts.solution,
-    tags,
-    severity: opts.severity
-  });
-  output(entry, `Created error: ${entry.id}
-Title: ${entry.title}
-File: .claude/error-kb/errors/${entry.id}.md`);
-});
-errorKb.command("show").argument("<id>", "Error ID").description("Show error entry details").action((id) => {
-  const engine = getErrorKBEngine();
-  const entry = engine.show(id);
-  if (!entry) return outputError(`Error not found: ${id}`);
-  output(entry, formatErrorDetail(entry));
-});
-errorKb.command("update").argument("<id>", "Error ID").option("--occurrence <context>", "Record a new occurrence with context").option("--status <status>", "Update status (open, resolved, recurring, wontfix)").option("--severity <level>", "Update severity (critical, high, medium, low)").description("Update an error entry or record occurrence").action((id, opts) => {
-  const engine = getErrorKBEngine();
-  const existing = engine.show(id);
-  if (!existing) return outputError(`Error not found: ${id}`);
-  if (opts.occurrence) {
-    engine.recordOccurrence(id, opts.occurrence);
-    const updated = engine.show(id);
-    output(updated, `Recorded occurrence for ${id}: ${opts.occurrence}`);
-  } else {
-    const patch = {};
-    if (opts.status) patch.status = opts.status;
-    if (opts.severity) patch.severity = opts.severity;
-    engine.update(id, patch);
-    const updated = engine.show(id);
-    output(updated, `Updated error: ${id}`);
-  }
-});
-errorKb.command("stats").description("Show error knowledge base statistics").action(() => {
-  const engine = getErrorKBEngine();
-  const stats = engine.getStats();
-  output(stats, formatErrorKBStats(stats));
-});
-errorKb.command("delete").argument("<id>", "Error ID").description("Delete an error entry").action((id) => {
-  const engine = getErrorKBEngine();
-  const deleted = engine.delete(id);
-  if (!deleted) return outputError(`Error not found: ${id}`);
-  output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
-});
-var selfImprove = program.command("self-improve").description("Self-improve rules management");
-function getSelfImproveEngine() {
-  const db = getDb();
-  initSchema(db);
-  const root = findProjectRoot(process.cwd());
-  return new SelfImproveEngine(db, root);
-}
-selfImprove.command("status").description("Show self-improve status (pending, rules, last run)").action(() => {
-  const engine = getSelfImproveEngine();
-  const pending = engine.getPendingCount();
-  const stats = engine.getRuleStats();
-  const lastRun = engine.getLastRunTimestamp();
-  const data = { pending, rules: stats, last_run: lastRun };
-  if (jsonMode) {
-    output(data);
-  } else {
-    const lines = [
-      `Pending: ${pending}\uAC74`,
-      `Rules: active ${stats.active}, archived ${stats.archived}, prevented ${stats.total_prevented}`,
-      `Last run: ${lastRun ?? "never"}`
-    ];
-    if (stats.active > engine.getMaxActiveRules()) {
-      lines.push(`\u26A0 \uD65C\uC131 \uADDC\uCE59\uC774 ${engine.getMaxActiveRules()}\uAC1C \uC0C1\uD55C\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4.`);
-    }
-    output(data, lines.join("\n"));
-  }
-});
-var rules = selfImprove.command("rules").description("Manage self-improve rules");
-rules.command("list").option("--status <status>", "Filter by status (active, archived)").description("List self-improve rules").action((opts) => {
-  const engine = getSelfImproveEngine();
-  const status = opts.status;
-  const ruleList = engine.listRules(status);
-  if (ruleList.length === 0) {
-    output(ruleList, "No rules found.");
-    return;
-  }
-  if (jsonMode) {
-    output(ruleList);
-  } else {
-    const lines = ruleList.map(
-      (r) => `[${r.status}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
+    output(
+      { task: updated, completion_check: completionCheck },
+      `Task ${updated.id}: ${updated.title} \u2192 ${updated.status}`
     );
-    output(ruleList, lines.join("\n"));
-  }
-});
-rules.command("show").argument("<id>", "Rule ID").description("Show rule details").action((id) => {
-  const engine = getSelfImproveEngine();
-  const rule = engine.getRule(id);
-  if (!rule) return outputError(`Rule not found: ${id}`);
-  output(rule);
-});
-rules.command("archive").argument("<id>", "Rule ID").description("Archive a rule").action((id) => {
-  const engine = getSelfImproveEngine();
-  const result = engine.archiveRule(id);
-  if (!result) return outputError(`Rule not found or already archived: ${id}`);
-  output({ archived: true, rule_id: id }, `Rule archived: ${id}`);
-});
-program.command("skill-log").argument("<name>", "Skill name to record").option("--plan-id <id>", "Plan ID to associate").option("--session-id <id>", "Session ID to associate").description("Record a skill usage").action((name, opts) => {
-  const { skillUsageModel } = initModels();
-  const record = skillUsageModel.record(name, {
-    planId: opts.planId,
-    sessionId: opts.sessionId
   });
-  output(record, `Recorded skill: ${record.skill_name} (${record.id})`);
-});
-program.command("skill-stats").option("--days <days>", "Filter by recent N days").description("Show skill usage statistics").action((opts) => {
-  const { skillUsageModel } = initModels();
-  const days = opts.days ? parseInt(opts.days, 10) : void 0;
-  const stats = skillUsageModel.getStats(days);
-  if (stats.length === 0) {
-    output(stats, "No skill usage data.");
-    return;
-  }
-  output(stats, formatSkillUsage(stats));
-});
-var qa = program.command("qa").description("Manage QA runs, scenarios, and findings");
-function getQAModels() {
-  const m = initModels();
-  return { qaRun: m.qaRunModel, qaScenario: m.qaScenarioModel, qaFinding: m.qaFindingModel, planModel: m.planModel };
+  task.command("next").argument("<plan_id>", "Plan ID").description("Get the next pending task").action((planId) => {
+    const { taskModel } = getModels();
+    const next = taskModel.getNextAvailable(planId);
+    if (!next) {
+      output(
+        { message: "No pending tasks", hint: "All tasks are done or blocked. Use vs plan complete to finish the plan." },
+        "No pending tasks."
+      );
+      return;
+    }
+    output(next, [
+      `Next: ${next.id} "${next.title}"`,
+      next.spec ? `Spec: ${next.spec}` : "",
+      next.acceptance ? `Acceptance: ${next.acceptance}` : ""
+    ].filter(Boolean).join("\n"));
+  });
+  task.command("show").argument("<id>", "Task ID").description("Show task details").action((id) => {
+    const { taskModel } = getModels();
+    const t = taskModel.getById(id);
+    if (!t) return outputError(`Task not found: ${id}`);
+    output(t, [
+      `ID:         ${t.id}`,
+      `Title:      ${t.title}`,
+      `Status:     ${t.status}`,
+      `Plan:       ${t.plan_id}`,
+      `Depth:      ${t.depth}`,
+      t.spec ? `Spec:       ${t.spec}` : "",
+      t.acceptance ? `Acceptance: ${t.acceptance}` : "",
+      t.allowed_files ? `Allowed:    ${t.allowed_files}` : "",
+      t.forbidden_patterns ? `Forbidden:  ${t.forbidden_patterns}` : "",
+      `Created:    ${t.created_at}`,
+      t.completed_at ? `Completed:  ${t.completed_at}` : ""
+    ].filter(Boolean).join("\n"));
+  });
+  task.command("block").argument("<id>", "Task ID").option("--reason <reason>", "Reason for blocking").description("Mark a task as blocked").action((id, opts) => {
+    const { taskModel, events } = getModels();
+    const t = taskModel.getById(id);
+    if (!t) return outputError(`Task not found: ${id}`);
+    const blocked = taskModel.updateStatus(id, "blocked");
+    if (opts.reason) {
+      events.record("task", id, "blocked_reason", null, JSON.stringify({ reason: opts.reason }));
+    }
+    output(
+      { ...blocked, block_reason: opts.reason ?? null },
+      `Task blocked: ${blocked.id} "${blocked.title}"${opts.reason ? ` (reason: ${opts.reason})` : ""}`
+    );
+  });
+  task.command("edit").argument("<id>", "Task ID").option("--title <title>", "New title").option("--spec <spec>", "New spec").option("--acceptance <acceptance>", "New acceptance criteria").option("--allowed-files <files>", "Comma-separated list of allowed files").option("--forbidden-patterns <patterns>", "Comma-separated list of forbidden patterns").description("Edit task title, spec, acceptance, or scope").action((id, opts) => {
+    const { taskModel } = getModels();
+    const t = taskModel.getById(id);
+    if (!t) return outputError(`Task not found: ${id}`);
+    const fields = {};
+    if (opts.title !== void 0) fields.title = opts.title;
+    if (opts.spec !== void 0) fields.spec = opts.spec;
+    if (opts.acceptance !== void 0) fields.acceptance = opts.acceptance;
+    if (opts.allowedFiles !== void 0) {
+      fields.allowed_files = JSON.stringify(opts.allowedFiles.split(",").map((s) => s.trim()));
+    }
+    if (opts.forbiddenPatterns !== void 0) {
+      fields.forbidden_patterns = JSON.stringify(opts.forbiddenPatterns.split(",").map((s) => s.trim()));
+    }
+    const edited = taskModel.update(id, fields);
+    output(edited, `Task edited: ${edited.id} "${edited.title}"`);
+  });
+  task.command("delete").argument("<id>", "Task ID").description("Delete a task and its subtasks").action((id) => {
+    const { taskModel } = getModels();
+    withErrorHandler(() => {
+      taskModel.delete(id);
+      output({ deleted: true, task_id: id }, `Task deleted: ${id}`);
+    });
+  });
 }
-var qaRun = qa.command("run").description("Manage QA runs");
-qaRun.command("create").argument("[plan_id]", "Plan ID (optional for --mode security-only)").option("--trigger <type>", "Trigger type (manual, auto, milestone)", "manual").option("--mode <mode>", "Run mode (full, security-only)").description("Create a new QA run").action((planId, opts) => withErrorHandler(() => {
-  const { qaRun: qaRunModel } = getQAModels();
-  if (opts.mode === "security-only") {
-    const { planModel: planModel2 } = initModels();
-    let sentinelPlan = planModel2.list({ status: "active" }).find((p) => p.title === "__security_audit__");
-    if (!sentinelPlan) {
-      sentinelPlan = planModel2.create("__security_audit__", "Auto-created sentinel plan for standalone security audits");
+
+// src/cli/commands/auxiliary.ts
+function registerAuxiliaryCommands(program2, getModels) {
+  const context = program2.command("context").description("Manage session context");
+  context.command("resume").option("--session-id <id>", "Optional session ID to filter").description("Resume context from previous sessions").action((opts) => {
+    const { contextModel, dashboard, alerts } = getModels();
+    const contextLogs = opts.sessionId ? [contextModel.getBySession(opts.sessionId)].filter(Boolean) : contextModel.getLatest(3);
+    const overview = dashboard.getOverview();
+    const alertList = alerts.getAlerts();
+    output({ context_logs: contextLogs, overview, alerts: alertList });
+  });
+  context.command("save").requiredOption("--summary <summary>", "Summary of context to save").option("--plan-id <id>", "Plan ID to link context to").option("--session-id <id>", "Session ID").description("Save a context log entry").action((opts) => {
+    const { contextModel } = getModels();
+    const log = contextModel.save(opts.summary, {
+      planId: opts.planId,
+      sessionId: opts.sessionId
+    });
+    output(log, `Context saved: ${log.id} "${log.summary.slice(0, 50)}..."`);
+  });
+  context.command("search").argument("<query>", "Search query (tag or keyword)").option("--limit <n>", "Max results", "10").description("Search context log entries by tag or keyword").action((query, opts) => {
+    const { contextModel } = getModels();
+    const results = contextModel.search(query);
+    const limited = results.slice(0, parseInt(opts.limit, 10));
+    if (limited.length === 0) {
+      output([], `No context logs matching "${query}".`);
+      return;
     }
-    const run2 = qaRunModel.create(sentinelPlan.id, opts.trigger);
-    output(run2, `Created security-only QA run: ${run2.id} (sentinel plan: ${sentinelPlan.id})`);
-    return;
-  }
-  if (!planId) return outputError("Plan ID is required (use --mode security-only for standalone)");
-  const { planModel } = initModels();
-  const plan2 = planModel.getById(planId);
-  if (!plan2) return outputError(`Plan not found: ${planId}`);
-  const run = qaRunModel.create(planId, opts.trigger);
-  output(run, `Created QA run: ${run.id} (plan: ${planId}, trigger: ${opts.trigger})`);
-}));
-qaRun.command("list").option("--plan <plan_id>", "Filter by plan ID").description("List QA runs").action((opts) => withErrorHandler(() => {
-  const { qaRun: qaRunModel } = getQAModels();
-  const runs = qaRunModel.list(opts.plan);
-  if (runs.length === 0) {
-    output(runs, "No QA runs found.");
-    return;
-  }
-  output(runs, runs.map(
-    (r) => `${r.id}  ${r.status.padEnd(10)}  risk:${r.risk_score.toFixed(2)}  ${r.passed_scenarios}/${r.total_scenarios} passed  ${r.created_at}`
-  ).join("\n"));
-}));
-qaRun.command("show").argument("<run_id>", "QA Run ID").description("Show QA run details with scenarios and findings").action((runId) => withErrorHandler(() => {
-  const { qaRun: qaRunModel, qaScenario, qaFinding } = getQAModels();
-  const run = qaRunModel.get(runId);
-  if (!run) return outputError(`QA run not found: ${runId}`);
-  const summary = qaRunModel.getSummary(runId);
-  const scenarios = qaScenario.listByRun(runId);
-  const findings = qaFinding.list({ runId });
-  output({ run, summary, scenarios, findings }, [
-    `QA Run: ${run.id} (${run.status})`,
-    `Plan: ${run.plan_id} | Trigger: ${run.trigger} | Risk: ${run.risk_score.toFixed(2)}`,
-    `Scenarios: ${run.passed_scenarios}/${run.total_scenarios} passed, ${run.failed_scenarios} failed`,
-    findings.length > 0 ? `Findings: ${findings.length} total` : "Findings: none",
-    run.summary ? `Summary: ${run.summary}` : ""
-  ].filter(Boolean).join("\n"));
-}));
-qaRun.command("complete").argument("<run_id>", "QA Run ID").option("--summary <text>", "Summary of the QA run results").option("--status <status>", "Final status (completed, failed)", "completed").description("Complete a QA run and set its final status").action((runId, opts) => withErrorHandler(() => {
-  const statusInput = opts.status;
-  if (!VALID_QA_RUN_TERMINAL_STATUSES.includes(statusInput)) {
-    return outputError(`Invalid status: ${statusInput}. Must be one of: ${VALID_QA_RUN_TERMINAL_STATUSES.join(", ")}`);
-  }
-  const status = statusInput;
-  const { qaRun: qaRunModel } = getQAModels();
-  const run = qaRunModel.get(runId);
-  if (!run) return outputError(`QA run not found: ${runId}`);
-  if (VALID_QA_RUN_TERMINAL_STATUSES.includes(run.status)) {
-    return outputError(`QA run ${runId} is already ${run.status}`);
-  }
-  const updated = qaRunModel.updateStatus(runId, status, opts.summary);
-  output(updated, `QA run ${runId} marked as ${status}${opts.summary ? ` \u2014 ${opts.summary}` : ""}`);
-}));
-var qaScenarioCmd = qa.command("scenario").description("Manage QA scenarios");
-qaScenarioCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Scenario title").requiredOption("--description <desc>", "Scenario description").requiredOption("--category <cat>", "Category (functional, integration, flow, regression, edge_case)").option("--priority <p>", "Priority (critical, high, medium, low)", "medium").option("--related-tasks <ids>", "Comma-separated related task IDs").option("--agent <name>", "Assigned agent name").description("Create a QA scenario").action((runId, opts) => withErrorHandler(() => {
-  const { qaRun: qaRunModel, qaScenario } = getQAModels();
-  const run = qaRunModel.get(runId);
-  if (!run) return outputError(`QA run not found: ${runId}`);
-  if (run.status !== "pending" && run.status !== "running") {
-    return outputError(`Cannot add scenarios to ${run.status} run`);
-  }
-  const scenario = qaScenario.create(runId, {
-    category: opts.category,
-    title: opts.title,
-    description: opts.description,
-    priority: opts.priority,
-    related_tasks: opts.relatedTasks ? JSON.stringify(opts.relatedTasks.split(",").map((s) => s.trim())) : void 0
-  });
-  output(scenario, `Created scenario: ${scenario.id} [${scenario.category}] ${scenario.title}`);
-}));
-qaScenarioCmd.command("update").argument("<id>", "Scenario ID").requiredOption("--status <status>", "Status (pending, running, pass, fail, skip, warn)").option("--evidence <text>", "Evidence text").description("Update scenario status").action((id, opts) => withErrorHandler(() => {
-  const { qaScenario } = getQAModels();
-  const existing = qaScenario.get(id);
-  if (!existing) return outputError(`Scenario not found: ${id}`);
-  qaScenario.updateStatus(id, opts.status, opts.evidence);
-  const updated = qaScenario.get(id);
-  output(updated, `Updated scenario ${id}: ${updated.status}`);
-}));
-qaScenarioCmd.command("list").argument("<run_id>", "QA Run ID").option("--category <cat>", "Filter by category").option("--status <status>", "Filter by status").description("List scenarios for a QA run").action((runId, opts) => withErrorHandler(() => {
-  const { qaScenario } = getQAModels();
-  const scenarios = qaScenario.listByRun(runId, {
-    category: opts.category,
-    status: opts.status
-  });
-  if (scenarios.length === 0) {
-    output(scenarios, "No scenarios found.");
-    return;
-  }
-  output(scenarios, scenarios.map(
-    (s) => `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  ${s.title}`
-  ).join("\n"));
-}));
-var qaFindingCmd = qa.command("finding").description("Manage QA findings");
-qaFindingCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Finding title").requiredOption("--description <desc>", "Finding description").requiredOption("--severity <s>", "Severity (critical, high, medium, low)").requiredOption("--category <cat>", "Category (bug, regression, missing_feature, inconsistency, performance, security, ux_issue, spec_gap)").option("--scenario-id <id>", "Related scenario ID").option("--affected-files <files>", "Comma-separated affected files").option("--related-task-id <id>", "Related task ID").option("--fix-suggestion <text>", "Fix suggestion").description("Create a QA finding").action((runId, opts) => withErrorHandler(() => {
-  const { qaRun: qaRunModel, qaFinding } = getQAModels();
-  const run = qaRunModel.get(runId);
-  if (!run) return outputError(`QA run not found: ${runId}`);
-  const finding = qaFinding.create(runId, {
-    scenario_id: opts.scenarioId,
-    severity: opts.severity,
-    category: opts.category,
-    title: opts.title,
-    description: opts.description,
-    affected_files: opts.affectedFiles ? JSON.stringify(opts.affectedFiles.split(",").map((s) => s.trim())) : void 0,
-    related_task_id: opts.relatedTaskId,
-    fix_suggestion: opts.fixSuggestion
-  });
-  output(finding, `Created finding: ${finding.id} [${finding.severity}] ${finding.title}`);
-}));
-qaFindingCmd.command("update").argument("<id>", "Finding ID").requiredOption("--status <status>", "Status (open, planned, fixed, wontfix, duplicate)").option("--fix-plan-id <id>", "Fix plan ID").description("Update finding status").action((id, opts) => withErrorHandler(() => {
-  const { qaFinding } = getQAModels();
-  const existing = qaFinding.get(id);
-  if (!existing) return outputError(`Finding not found: ${id}`);
-  qaFinding.updateStatus(id, opts.status, opts.fixPlanId);
-  const updated = qaFinding.get(id);
-  output(updated, `Updated finding ${id}: ${updated.status}`);
-}));
-qaFindingCmd.command("list").option("--run <run_id>", "Filter by QA run ID").option("--severity <s>", "Filter by severity").option("--status <s>", "Filter by status").option("--category <cat>", "Filter by category").description("List QA findings").action((opts) => withErrorHandler(() => {
-  const { qaFinding } = getQAModels();
-  const findings = qaFinding.list({
-    runId: opts.run,
-    severity: opts.severity,
-    status: opts.status,
-    category: opts.category
-  });
-  if (findings.length === 0) {
-    output(findings, "No findings found.");
-    return;
-  }
-  output(findings, findings.map(
-    (f) => `${f.id}  [${f.severity}]  ${f.status.padEnd(9)}  ${f.category.padEnd(16)}  ${f.title}`
-  ).join("\n"));
-}));
-qa.command("stats").option("--plan <plan_id>", "Filter by plan ID").description("Show QA statistics").action((opts) => withErrorHandler(() => {
-  const { qaRun: qaRunModel, qaFinding } = getQAModels();
-  const runs = qaRunModel.list(opts.plan);
-  const completedRuns = runs.filter((r) => r.status === "completed");
-  const avgRisk = completedRuns.length > 0 ? completedRuns.reduce((sum, r) => sum + r.risk_score, 0) / completedRuns.length : 0;
-  const allFindings = opts.plan ? runs.flatMap((r) => qaFinding.list({ runId: r.id })) : qaFinding.list();
-  const openFindings = allFindings.filter((f) => f.status === "open");
-  const statsData = {
-    total_runs: runs.length,
-    completed_runs: completedRuns.length,
-    avg_risk_score: Math.round(avgRisk * 100) / 100,
-    total_findings: allFindings.length,
-    open_findings: openFindings.length,
-    findings_by_severity: {
-      critical: openFindings.filter((f) => f.severity === "critical").length,
-      high: openFindings.filter((f) => f.severity === "high").length,
-      medium: openFindings.filter((f) => f.severity === "medium").length,
-      low: openFindings.filter((f) => f.severity === "low").length
-    }
-  };
-  output(statsData, [
-    `QA Statistics${opts.plan ? ` (plan: ${opts.plan})` : ""}`,
-    `Runs: ${statsData.total_runs} total, ${statsData.completed_runs} completed`,
-    `Avg Risk Score: ${statsData.avg_risk_score}`,
-    `Findings: ${statsData.total_findings} total, ${statsData.open_findings} open`,
-    `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`
-  ].join("\n"));
-}));
-var ideate = program.command("ideate").description("Manage ideation records");
-ideate.command("list").description("List ideation records from context log").action(() => {
-  const { contextModel } = initModels();
-  const ideations = contextModel.search("[ideation]");
-  if (ideations.length === 0) {
-    output([], "ideation \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-ideate\uB85C \uC544\uC774\uB514\uC5B4\uB97C \uC815\uB9AC\uD574\uBCF4\uC138\uC694.");
-    return;
-  }
-  const formatted = ideations.map(
-    (l, i) => `${i + 1}. [#${l.id}] ${l.summary.replace("[ideation] ", "")} (${l.created_at})`
-  ).join("\n");
-  output(ideations, `## Ideation \uC774\uB825
+    const formatted = limited.map(
+      (l, i) => `${i + 1}. [#${l.id}] ${l.summary.slice(0, 100)} (${l.created_at})`
+    ).join("\n");
+    output(limited, `## Context Search: "${query}"
 
 ${formatted}`);
-});
-ideate.command("show").argument("<id>", "Context log ID").description("Show ideation detail").action((id) => {
-  withErrorHandler(() => {
-    const { contextModel } = initModels();
-    const log = contextModel.getById(parseInt(id, 10));
-    if (!log) return outputError(`Ideation not found: ${id}`);
-    output(log, `## Ideation #${log.id}
-
-**Created**: ${log.created_at}
-
-${log.summary}`);
   });
-});
-var backlog = program.command("backlog").description("Manage backlog items");
-backlog.command("add").description("Add a backlog item").requiredOption("--title <title>", "Item title").option("--description <desc>", "Item description").option("--priority <priority>", "Priority: critical|high|medium|low", "medium").option("--category <category>", "Category: feature|bugfix|refactor|chore|idea").option("--tags <tags>", "Comma-separated tags").option("--complexity <complexity>", "Complexity hint: simple|moderate|complex").option("--source <source>", "Source of the item").action((opts) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  if (opts.priority && !VALID_BACKLOG_PRIORITIES.includes(opts.priority)) {
-    outputError(`Invalid priority: ${opts.priority}. Must be one of: ${VALID_BACKLOG_PRIORITIES.join(", ")}`);
-  }
-  if (opts.category && !VALID_BACKLOG_CATEGORIES.includes(opts.category)) {
-    outputError(`Invalid category: ${opts.category}. Must be one of: ${VALID_BACKLOG_CATEGORIES.join(", ")}`);
-  }
-  if (opts.complexity && !VALID_BACKLOG_COMPLEXITIES.includes(opts.complexity)) {
-    outputError(`Invalid complexity: ${opts.complexity}. Must be one of: ${VALID_BACKLOG_COMPLEXITIES.join(", ")}`);
-  }
-  const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : void 0;
-  const item = backlogModel.create({
-    title: opts.title,
-    description: opts.description,
-    priority: opts.priority,
-    category: opts.category,
-    tags,
-    complexity_hint: opts.complexity,
-    source: opts.source
+  const config = program2.command("config").description("Manage configuration");
+  config.command("set").argument("<key>", "Config key").argument("<value>", "Config value").description("Set a configuration value").action((key, value) => {
+    const db = getDb();
+    initSchema(db);
+    setConfig(db, key, value);
+    output({ key, value }, `${key} = ${value}`);
   });
-  output(item, `Created backlog item: ${item.id} \u2014 ${item.title}`);
-}));
-backlog.command("list").description("List backlog items").option("--status <status>", "Filter by status").option("--priority <priority>", "Filter by priority").option("--category <category>", "Filter by category").option("--tag <tag>", "Filter by tag").action((opts) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  const items = backlogModel.list({
-    status: opts.status,
-    priority: opts.priority,
-    category: opts.category,
-    tag: opts.tag
+  config.command("get").argument("<key>", "Config key").description("Get a configuration value").action((key) => {
+    const db = getDb();
+    initSchema(db);
+    const value = getConfig(db, key);
+    if (value === null) return outputError(`Config not found: ${key}`);
+    output({ key, value }, `${key} = ${value}`);
   });
-  output(items, formatBacklogList(items));
-}));
-backlog.command("show").description("Show backlog item details").argument("<id>", "Backlog item ID").action((id) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  const item = backlogModel.getById(id);
-  if (!item) outputError(`Backlog item not found: ${id}`);
-  output(item, formatBacklogDetail(item));
-}));
-backlog.command("update").description("Update a backlog item").argument("<id>", "Backlog item ID").option("--title <title>", "New title").option("--description <desc>", "New description").option("--priority <priority>", "New priority").option("--category <category>", "New category").option("--tags <tags>", "New comma-separated tags").option("--complexity <complexity>", "New complexity hint").option("--source <source>", "New source").option("--status <status>", "New status").action((id, opts) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  const fields = {};
-  if (opts.title) fields.title = opts.title;
-  if (opts.description) fields.description = opts.description;
-  if (opts.priority) {
-    if (!VALID_BACKLOG_PRIORITIES.includes(opts.priority)) {
-      outputError(`Invalid priority: ${opts.priority}`);
+  config.command("list").description("List all configuration values").action(() => {
+    const db = getDb();
+    initSchema(db);
+    const items = listConfig(db);
+    if (items.length === 0) {
+      output(items, "No configuration values set.");
+      return;
     }
-    fields.priority = opts.priority;
-  }
-  if (opts.category) {
-    if (!VALID_BACKLOG_CATEGORIES.includes(opts.category)) {
-      outputError(`Invalid category: ${opts.category}`);
-    }
-    fields.category = opts.category;
-  }
-  if (opts.tags) fields.tags = JSON.stringify(opts.tags.split(",").map((t) => t.trim()));
-  if (opts.complexity) {
-    if (!VALID_BACKLOG_COMPLEXITIES.includes(opts.complexity)) {
-      outputError(`Invalid complexity: ${opts.complexity}`);
-    }
-    fields.complexity_hint = opts.complexity;
-  }
-  if (opts.source) fields.source = opts.source;
-  if (opts.status) {
-    if (!VALID_BACKLOG_STATUSES.includes(opts.status)) {
-      outputError(`Invalid status: ${opts.status}`);
-    }
-    fields.status = opts.status;
-  }
-  const item = backlogModel.update(id, fields);
-  output(item, formatBacklogDetail(item));
-}));
-backlog.command("delete").description("Delete a backlog item").argument("<id>", "Backlog item ID").action((id) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  backlogModel.delete(id);
-  output({ deleted: id }, `Deleted backlog item: ${id}`);
-}));
-backlog.command("promote").description("Promote a backlog item to a plan").argument("<id>", "Backlog item ID").requiredOption("--plan <planId>", "Plan ID to link").action((id, opts) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  const item = backlogModel.promote(id, opts.plan);
-  output(item, `Promoted backlog item ${item.id} \u2192 plan ${opts.plan}`);
-}));
-backlog.command("stats").description("Show backlog statistics").action(() => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  const stats = backlogModel.getStats();
-  output(stats, formatBacklogStats(stats));
-}));
-backlog.command("board").description("Show backlog in kanban board view").option("--category <category>", "Filter by category").option("--status <status>", "Filter by status", "open").action((opts) => withErrorHandler(() => {
-  const { backlogModel } = initModels();
-  const items = backlogModel.list({
-    status: opts.status,
-    category: opts.category
+    const formatted = items.map((i) => `${i.key} = ${i.value}`).join("\n");
+    output(items, formatted);
   });
-  output(items, formatBacklogBoard(items));
-}));
-var importCmd = backlog.command("import").description("Import backlog items from external sources");
-importCmd.command("github").description("Import from GitHub Issues").requiredOption("--repo <repo>", "Repository (owner/repo)").option("--label <label>", "Filter by label").option("--state <state>", "Issue state", "open").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
-  const result = importFromGithub(opts.repo, { label: opts.label, state: opts.state });
-  if (opts.dryRun || result.items.length === 0) {
-    output(result, formatImportPreview(result));
-    return;
-  }
-  const { backlogModel } = initModels();
-  let imported = 0;
-  let skipped = 0;
-  const warnings = [];
-  for (const item of result.items) {
-    const existing = backlogModel.findByTitle(item.title, "open");
-    if (existing) {
-      warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
-      skipped++;
-      continue;
-    }
-    backlogModel.create(item);
-    imported++;
-  }
-  const summary = [`Imported ${imported} items from ${result.source_prefix}`];
-  if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
-  if (warnings.length > 0) summary.push(...warnings.map((w) => `  \u26A0 ${w}`));
-  output({ imported, skipped, warnings }, summary.join("\n"));
-}));
-importCmd.command("file").description("Import from a markdown/text file").requiredOption("--path <filepath>", "File path").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
-  const result = importFromFile(opts.path);
-  if (opts.dryRun || result.items.length === 0) {
-    output(result, formatImportPreview(result));
-    return;
-  }
-  const { backlogModel } = initModels();
-  let imported = 0;
-  let skipped = 0;
-  const warnings = [];
-  for (const item of result.items) {
-    const existing = backlogModel.findByTitle(item.title, "open");
-    if (existing) {
-      warnings.push(`Duplicate: "${item.title}" (existing: ${existing.id})`);
-      skipped++;
-      continue;
-    }
-    backlogModel.create(item);
-    imported++;
-  }
-  const summary = [`Imported ${imported} items from ${result.source_prefix}`];
-  if (skipped > 0) summary.push(`Skipped ${skipped} duplicates`);
-  if (warnings.length > 0) summary.push(...warnings.map((w) => `  \u26A0 ${w}`));
-  output({ imported, skipped, warnings }, summary.join("\n"));
-}));
-importCmd.command("slack").description("Import from Slack channel (requires MCP)").requiredOption("--channel <channel>", "Slack channel ID").option("--since <days>", "Days to look back", "7").option("--dry-run", "Preview without importing").action((opts) => withErrorHandler(() => {
-  const result = importFromSlack(opts.channel, { since: opts.since });
-  output(result, formatImportPreview(result));
-}));
-var mergeReport = program.command("merge-report").description("Manage merge reports");
-mergeReport.command("show").argument("<id>", "Report ID or commit hash").description("Show a merge report").action((id) => withErrorHandler(() => {
-  const { mergeReportModel } = initModels();
-  const report = mergeReportModel.get(id) ?? mergeReportModel.getByCommit(id);
-  if (!report) return outputError(`Merge report not found: ${id}`);
-  output(report, formatMergeReportSummary(report));
-}));
-mergeReport.command("list").option("--plan-id <plan_id>", "Filter by plan ID").option("--limit <n>", "Limit results", "20").description("List merge reports").action((opts) => withErrorHandler(() => {
-  const { mergeReportModel } = initModels();
-  const reports = mergeReportModel.list({ planId: opts.planId, limit: parseInt(opts.limit, 10) });
-  output(reports, formatMergeReportList(reports));
-}));
-mergeReport.command("latest").description("Show the latest merge report").action(() => withErrorHandler(() => {
-  const { mergeReportModel } = initModels();
-  const reports = mergeReportModel.getLatest(1);
-  if (reports.length === 0) {
-    output(null, "\uB9AC\uD3EC\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. vs-merge\uB85C \uBA38\uC9C0\uB97C \uC644\uB8CC\uD558\uBA74 \uC790\uB3D9\uC73C\uB85C \uC0DD\uC131\uB429\uB2C8\uB2E4.");
-    return;
-  }
-  output(reports[0], formatMergeReportSummary(reports[0]));
-}));
-mergeReport.command("create").description("Create a merge report (used internally by vs-merge)").requiredOption("--commit <hash>", "Commit hash").requiredOption("--source <branch>", "Source branch").requiredOption("--target <branch>", "Target branch").requiredOption("--changes <json>", "Changes summary JSON").requiredOption("--checklist <json>", "Review checklist JSON").requiredOption("--verification <json>", "Verification result JSON").requiredOption("--report-path <path>", "Path to MD report file").option("--plan-id <id>", "Plan ID").option("--conflict-log <json>", "Conflict log JSON").option("--ai-judgments <json>", "AI judgments JSON").option("--task-ids <json>", "Task IDs JSON").action((opts) => withErrorHandler(() => {
-  const { mergeReportModel } = initModels();
-  const report = mergeReportModel.create({
-    commit_hash: opts.commit,
-    source_branch: opts.source,
-    target_branch: opts.target,
-    changes_summary: JSON.parse(opts.changes),
-    review_checklist: JSON.parse(opts.checklist),
-    verification: JSON.parse(opts.verification),
-    report_path: opts.reportPath,
-    plan_id: opts.planId,
-    conflict_log: opts.conflictLog ? JSON.parse(opts.conflictLog) : void 0,
-    ai_judgments: opts.aiJudgments ? JSON.parse(opts.aiJudgments) : void 0,
-    task_ids: opts.taskIds ? JSON.parse(opts.taskIds) : void 0
+  config.command("delete").argument("<key>", "Config key").description("Delete a configuration value").action((key) => {
+    const db = getDb();
+    initSchema(db);
+    deleteConfig(db, key);
+    output({ deleted: true, key }, `Deleted: ${key}`);
   });
-  output(report, `Created merge report: ${report.id}`);
-}));
+  program2.command("stats").argument("[plan_id]", "Optional plan ID").description("Show velocity and estimates").action((planId) => {
+    const { stats } = getModels();
+    const velocity = stats.getVelocity(planId);
+    const estimate = planId ? stats.getEstimatedCompletion(planId) : void 0;
+    const timeline = stats.getTimeline(planId);
+    output(
+      { velocity, ...estimate ? { estimated_completion: estimate } : {}, ...timeline.length > 0 ? { timeline } : {} },
+      formatStats(velocity, estimate, timeline.length > 0 ? timeline : void 0)
+    );
+  });
+  program2.command("history").argument("<type>", "Entity type (plan, task)").argument("<id>", "Entity ID").description("Show change history").action((type, id) => {
+    const validTypes = ["plan", "task"];
+    if (!validTypes.includes(type)) {
+      return outputError(`Invalid entity type. Must be: ${validTypes.join(", ")}`);
+    }
+    const { events } = getModels();
+    const eventList = events.getByEntity(type, id);
+    output(eventList, formatHistory(eventList));
+  });
+  program2.command("insights").option("--scope <scope>", "Scope: blocked_patterns, duration_stats, success_rates, all (default: all)").description("Get learning insights from task history").action((opts) => {
+    const { insights } = getModels();
+    const validScopes = ["blocked_patterns", "duration_stats", "success_rates", "all"];
+    const scope = opts.scope && validScopes.includes(opts.scope) ? opts.scope : "all";
+    const result = {};
+    if (scope === "all" || scope === "blocked_patterns") {
+      result.blocked_patterns = insights.getBlockedPatterns();
+    }
+    if (scope === "all" || scope === "duration_stats") {
+      result.duration_stats = insights.getDurationStats();
+    }
+    if (scope === "all" || scope === "success_rates") {
+      result.success_rates = insights.getSuccessRates();
+    }
+    if (scope === "all") {
+      result.recommendations = insights.getRecommendations();
+      result.confidence = insights.getConfidenceLevel();
+    }
+    output(result);
+  });
+  program2.command("skill-log").argument("<name>", "Skill name to record").option("--plan-id <id>", "Plan ID to associate").option("--session-id <id>", "Session ID to associate").description("Record a skill usage").action((name, opts) => {
+    const { skillUsageModel } = getModels();
+    const record = skillUsageModel.record(name, {
+      planId: opts.planId,
+      sessionId: opts.sessionId
+    });
+    output(record, `Recorded skill: ${record.skill_name} (${record.id})`);
+  });
+  program2.command("skill-stats").option("--days <days>", "Filter by recent N days").description("Show skill usage statistics").action((opts) => {
+    const { skillUsageModel } = getModels();
+    const days = opts.days ? parseInt(opts.days, 10) : void 0;
+    const skillStats = skillUsageModel.getStats(days);
+    if (skillStats.length === 0) {
+      output(skillStats, "No skill usage data.");
+      return;
+    }
+    output(skillStats, formatSkillUsage(skillStats));
+  });
+  const mergeReport = program2.command("merge-report").description("Manage merge reports");
+  mergeReport.command("show").argument("<id>", "Report ID or commit hash").description("Show a merge report").action((id) => withErrorHandler(() => {
+    const { mergeReportModel } = getModels();
+    const report = mergeReportModel.get(id) ?? mergeReportModel.getByCommit(id);
+    if (!report) return outputError(`Merge report not found: ${id}`);
+    output(report, formatMergeReportSummary(report));
+  }));
+  mergeReport.command("list").option("--plan-id <plan_id>", "Filter by plan ID").option("--limit <n>", "Limit results", "20").description("List merge reports").action((opts) => withErrorHandler(() => {
+    const { mergeReportModel } = getModels();
+    const reports = mergeReportModel.list({ planId: opts.planId, limit: parseInt(opts.limit, 10) });
+    output(reports, formatMergeReportList(reports));
+  }));
+  mergeReport.command("latest").description("Show the latest merge report").action(() => withErrorHandler(() => {
+    const { mergeReportModel } = getModels();
+    const reports = mergeReportModel.getLatest(1);
+    if (reports.length === 0) {
+      output(null, "\uB9AC\uD3EC\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. vs-merge\uB85C \uBA38\uC9C0\uB97C \uC644\uB8CC\uD558\uBA74 \uC790\uB3D9\uC73C\uB85C \uC0DD\uC131\uB429\uB2C8\uB2E4.");
+      return;
+    }
+    output(reports[0], formatMergeReportSummary(reports[0]));
+  }));
+  mergeReport.command("create").description("Create a merge report (used internally by vs-merge)").requiredOption("--commit <hash>", "Commit hash").requiredOption("--source <branch>", "Source branch").requiredOption("--target <branch>", "Target branch").requiredOption("--changes <json>", "Changes summary JSON").requiredOption("--checklist <json>", "Review checklist JSON").requiredOption("--verification <json>", "Verification result JSON").requiredOption("--report-path <path>", "Path to MD report file").option("--plan-id <id>", "Plan ID").option("--conflict-log <json>", "Conflict log JSON").option("--ai-judgments <json>", "AI judgments JSON").option("--task-ids <json>", "Task IDs JSON").action((opts) => withErrorHandler(() => {
+    const { mergeReportModel } = getModels();
+    const report = mergeReportModel.create({
+      commit_hash: opts.commit,
+      source_branch: opts.source,
+      target_branch: opts.target,
+      changes_summary: JSON.parse(opts.changes),
+      review_checklist: JSON.parse(opts.checklist),
+      verification: JSON.parse(opts.verification),
+      report_path: opts.reportPath,
+      plan_id: opts.planId,
+      conflict_log: opts.conflictLog ? JSON.parse(opts.conflictLog) : void 0,
+      ai_judgments: opts.aiJudgments ? JSON.parse(opts.aiJudgments) : void 0,
+      task_ids: opts.taskIds ? JSON.parse(opts.taskIds) : void 0
+    });
+    output(report, `Created merge report: ${report.id}`);
+  }));
+}
 function formatMergeReportSummary(r) {
   const lines = [];
   lines.push(`# Merge Report: ${r.source_branch} \u2192 ${r.target_branch}`);
@@ -4182,5 +3470,775 @@ function formatMergeReportList(reports) {
   });
   return [header, sep, ...rows].join("\n");
 }
+
+// src/core/engine/error-kb.ts
+import * as fs from "fs";
+import * as path from "path";
+var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
+var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
+var VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+function parseFrontmatter(raw) {
+  const defaultMeta = {
+    title: "",
+    severity: "medium",
+    tags: [],
+    status: "open",
+    occurrences: 0,
+    first_seen: "",
+    last_seen: ""
+  };
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    return { meta: defaultMeta, body: raw };
+  }
+  const yamlBlock = match[1];
+  const body = match[2];
+  const meta = { ...defaultMeta };
+  for (const line of yamlBlock.split("\n")) {
+    const colonIdx = line.indexOf(":");
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    if (key === "title") {
+      meta.title = value;
+    } else if (key === "severity") {
+      if (VALID_SEVERITIES.has(value)) meta.severity = value;
+    } else if (key === "status") {
+      if (VALID_STATUSES.has(value)) meta.status = value;
+    } else if (key === "occurrences") {
+      meta.occurrences = parseInt(value, 10) || 0;
+    } else if (key === "first_seen") {
+      meta.first_seen = value;
+    } else if (key === "last_seen") {
+      meta.last_seen = value;
+    } else if (key === "tags") {
+      const bracketMatch = value.match(/^\[(.*)\]$/);
+      if (bracketMatch) {
+        meta.tags = bracketMatch[1].split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+      } else if (value === "" || value === "[]") {
+        meta.tags = [];
+      }
+    }
+  }
+  return { meta, body };
+}
+function serializeFrontmatter(meta) {
+  const tagsStr = meta.tags.length > 0 ? `[${meta.tags.join(", ")}]` : "[]";
+  const lines = [
+    "---",
+    `title: ${meta.title}`,
+    `severity: ${meta.severity}`,
+    `tags: ${tagsStr}`,
+    `status: ${meta.status}`,
+    `occurrences: ${meta.occurrences}`,
+    `first_seen: ${meta.first_seen}`,
+    `last_seen: ${meta.last_seen}`,
+    "---"
+  ];
+  return lines.join("\n");
+}
+var ErrorKBEngine = class {
+  kbRoot;
+  errorsDir;
+  constructor(projectRoot) {
+    this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
+    this.errorsDir = path.join(this.kbRoot, "errors");
+    fs.mkdirSync(this.errorsDir, { recursive: true });
+  }
+  resolveFilePath(id) {
+    if (!VALID_ID_PATTERN.test(id)) return null;
+    return path.join(this.errorsDir, `${id}.md`);
+  }
+  add(newEntry) {
+    const id = generateId();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const meta = {
+      title: newEntry.title,
+      severity: newEntry.severity,
+      tags: newEntry.tags,
+      status: "open",
+      occurrences: 1,
+      first_seen: now,
+      last_seen: now
+    };
+    let body = "\n";
+    if (newEntry.cause) {
+      body += `## Cause
+
+${newEntry.cause}
+
+`;
+    }
+    if (newEntry.solution) {
+      body += `## Solution
+
+${newEntry.solution}
+
+`;
+    }
+    const content = serializeFrontmatter(meta) + "\n" + body;
+    const filePath = path.join(this.errorsDir, `${id}.md`);
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+    return this.toErrorEntry(id, meta, body);
+  }
+  show(id) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null;
+    }
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    return this.toErrorEntry(id, meta, body);
+  }
+  search(query, opts) {
+    const files = this.listErrorFiles();
+    const results = [];
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      const entry = this.show(id);
+      if (!entry) continue;
+      if (opts?.tags && opts.tags.length > 0) {
+        const hasMatchingTag = opts.tags.some((t) => entry.tags.includes(t));
+        if (!hasMatchingTag) continue;
+      }
+      if (opts?.severity && entry.severity !== opts.severity) {
+        continue;
+      }
+      if (query && query.length > 0) {
+        const searchable = `${entry.title} ${entry.content}`.toLowerCase();
+        if (!searchable.includes(query.toLowerCase())) {
+          continue;
+        }
+      }
+      results.push(entry);
+    }
+    return results;
+  }
+  delete(id) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return false;
+    fs.unlinkSync(filePath);
+    this.updateIndex();
+    return true;
+  }
+  update(id, patch) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    if (patch.severity !== void 0) meta.severity = patch.severity;
+    if (patch.status !== void 0) meta.status = patch.status;
+    if (patch.occurrences !== void 0) meta.occurrences = patch.occurrences;
+    if (patch.last_seen !== void 0) meta.last_seen = patch.last_seen;
+    if (patch.tags !== void 0) meta.tags = patch.tags;
+    const content = serializeFrontmatter(meta) + "\n" + body;
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+  }
+  recordOccurrence(id, context) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    meta.occurrences += 1;
+    meta.last_seen = (/* @__PURE__ */ new Date()).toISOString();
+    let updatedBody = body;
+    const historyEntry = `- ${meta.last_seen}: ${context}`;
+    const historyIdx = updatedBody.lastIndexOf("## History");
+    if (historyIdx !== -1) {
+      const headerEnd = updatedBody.indexOf("\n", historyIdx);
+      if (headerEnd !== -1) {
+        updatedBody = updatedBody.slice(0, headerEnd + 1) + historyEntry + "\n" + updatedBody.slice(headerEnd + 1);
+      }
+    } else {
+      updatedBody = updatedBody.trimEnd() + "\n\n## History\n" + historyEntry + "\n";
+    }
+    const content = serializeFrontmatter(meta) + "\n" + updatedBody;
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+  }
+  getStats() {
+    const files = this.listErrorFiles();
+    const stats = {
+      total: 0,
+      by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
+      by_status: { open: 0, resolved: 0, recurring: 0, wontfix: 0 },
+      top_recurring: []
+    };
+    const entries = [];
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      const raw = fs.readFileSync(file, "utf-8");
+      const { meta } = parseFrontmatter(raw);
+      stats.total++;
+      stats.by_severity[meta.severity]++;
+      stats.by_status[meta.status]++;
+      entries.push({ id, title: meta.title, occurrences: meta.occurrences });
+    }
+    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10);
+    return stats;
+  }
+  toErrorEntry(id, meta, body) {
+    return {
+      id,
+      title: meta.title,
+      severity: meta.severity,
+      tags: meta.tags,
+      status: meta.status,
+      occurrences: meta.occurrences,
+      first_seen: meta.first_seen,
+      last_seen: meta.last_seen,
+      content: body
+    };
+  }
+  listErrorFiles() {
+    if (!fs.existsSync(this.errorsDir)) return [];
+    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && f !== "_index.md").map((f) => path.join(this.errorsDir, f));
+  }
+  updateIndex() {
+    const stats = this.getStats();
+    const lines = [
+      "# Error Knowledge Base Index",
+      "",
+      `Total: ${stats.total}`,
+      "",
+      "## By Severity",
+      `- Critical: ${stats.by_severity.critical}`,
+      `- High: ${stats.by_severity.high}`,
+      `- Medium: ${stats.by_severity.medium}`,
+      `- Low: ${stats.by_severity.low}`,
+      "",
+      "## By Status",
+      `- Open: ${stats.by_status.open}`,
+      `- Resolved: ${stats.by_status.resolved}`,
+      `- Recurring: ${stats.by_status.recurring}`,
+      `- Won't Fix: ${stats.by_status.wontfix}`,
+      ""
+    ];
+    if (stats.top_recurring.length > 0) {
+      lines.push("## Top Recurring");
+      for (const entry of stats.top_recurring.slice(0, 10)) {
+        lines.push(`- ${entry.title} (${entry.occurrences}x)`);
+      }
+      lines.push("");
+    }
+    const indexPath = path.join(this.kbRoot, "_index.md");
+    fs.writeFileSync(indexPath, lines.join("\n"), "utf-8");
+  }
+};
+
+// src/core/engine/self-improve.ts
+import * as fs2 from "fs";
+import * as path2 from "path";
+var RULES_DIR = ".claude/rules";
+var ARCHIVE_DIR = ".claude/rules/archive";
+var PENDING_DIR = ".claude/self-improve/pending";
+var PROCESSED_DIR = ".claude/self-improve/processed";
+var CONFIG_LAST_RUN = "self_improve_last_run";
+var MAX_ACTIVE_RULES = 30;
+var SelfImproveEngine = class {
+  db;
+  projectRoot;
+  rulesDir;
+  archiveDir;
+  pendingDir;
+  processedDir;
+  constructor(db, projectRoot) {
+    this.db = db;
+    this.projectRoot = projectRoot;
+    this.rulesDir = path2.join(projectRoot, RULES_DIR);
+    this.archiveDir = path2.join(projectRoot, ARCHIVE_DIR);
+    this.pendingDir = path2.join(projectRoot, PENDING_DIR);
+    this.processedDir = path2.join(projectRoot, PROCESSED_DIR);
+    this.ensureDirectories();
+  }
+  ensureDirectories() {
+    fs2.mkdirSync(this.rulesDir, { recursive: true });
+    fs2.mkdirSync(this.archiveDir, { recursive: true });
+    fs2.mkdirSync(this.pendingDir, { recursive: true });
+    fs2.mkdirSync(this.processedDir, { recursive: true });
+  }
+  createRule(newRule) {
+    const id = generateId();
+    const slug = newRule.title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
+    const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
+    const rulePath = path2.join(RULES_DIR, filename);
+    const fullPath = path2.join(this.projectRoot, rulePath);
+    fs2.writeFileSync(fullPath, newRule.ruleContent, "utf-8");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(`
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, now);
+    return {
+      id,
+      error_kb_id: newRule.error_kb_id ?? null,
+      title: newRule.title,
+      category: newRule.category,
+      rule_path: rulePath,
+      occurrences: 0,
+      prevented: 0,
+      status: "active",
+      created_at: now,
+      last_triggered_at: null
+    };
+  }
+  listRules(status) {
+    if (status) {
+      return this.db.prepare(
+        "SELECT * FROM self_improve_rules WHERE status = ? ORDER BY created_at DESC"
+      ).all(status);
+    }
+    return this.db.prepare(
+      "SELECT * FROM self_improve_rules ORDER BY status ASC, created_at DESC"
+    ).all();
+  }
+  getRule(id) {
+    return this.db.prepare(
+      "SELECT * FROM self_improve_rules WHERE id = ?"
+    ).get(id) ?? null;
+  }
+  archiveRule(id) {
+    const rule = this.getRule(id);
+    if (!rule || rule.status === "archived") return false;
+    const srcPath = path2.join(this.projectRoot, rule.rule_path);
+    const destPath = path2.join(this.archiveDir, path2.basename(rule.rule_path));
+    if (fs2.existsSync(srcPath)) {
+      fs2.renameSync(srcPath, destPath);
+    }
+    const newRulePath = path2.join(ARCHIVE_DIR, path2.basename(rule.rule_path));
+    this.db.prepare(
+      "UPDATE self_improve_rules SET status = ?, rule_path = ? WHERE id = ?"
+    ).run("archived", newRulePath, id);
+    return true;
+  }
+  incrementPrevented(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
+  updateOccurrences(id, occurrences) {
+    this.db.prepare(
+      "UPDATE self_improve_rules SET occurrences = ? WHERE id = ?"
+    ).run(occurrences, id);
+  }
+  getPendingCount() {
+    if (!fs2.existsSync(this.pendingDir)) return 0;
+    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).length;
+  }
+  listPending() {
+    if (!fs2.existsSync(this.pendingDir)) return [];
+    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).map((f) => path2.join(this.pendingDir, f)).sort();
+  }
+  movePendingToProcessed(pendingPath) {
+    const filename = path2.basename(pendingPath);
+    const destPath = path2.join(this.processedDir, filename);
+    if (fs2.existsSync(pendingPath)) {
+      fs2.renameSync(pendingPath, destPath);
+    }
+  }
+  getLastRunTimestamp() {
+    return getConfig(this.db, CONFIG_LAST_RUN);
+  }
+  setLastRunTimestamp() {
+    setConfig(this.db, CONFIG_LAST_RUN, (/* @__PURE__ */ new Date()).toISOString());
+  }
+  getRuleStats() {
+    const row = this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
+        COALESCE(SUM(prevented), 0) AS total_prevented
+      FROM self_improve_rules
+    `).get();
+    return {
+      active: row?.active ?? 0,
+      archived: row?.archived ?? 0,
+      total_prevented: row?.total_prevented ?? 0
+    };
+  }
+  getEffectiveness(id) {
+    const rule = this.getRule(id);
+    if (!rule) return 0;
+    const total = rule.prevented + rule.occurrences;
+    if (total === 0) return 0;
+    return rule.prevented / total;
+  }
+  isAtCapacity() {
+    const stats = this.getRuleStats();
+    return stats.active >= MAX_ACTIVE_RULES;
+  }
+  getMaxActiveRules() {
+    return MAX_ACTIVE_RULES;
+  }
+  getRulesDir() {
+    return this.rulesDir;
+  }
+  getPendingDir() {
+    return this.pendingDir;
+  }
+  getProcessedDir() {
+    return this.processedDir;
+  }
+};
+
+// src/cli/commands/knowledge.ts
+function getErrorKBEngine() {
+  const root = findProjectRoot(process.cwd());
+  return new ErrorKBEngine(root);
+}
+function getSelfImproveEngine() {
+  const db = initDb();
+  const root = findProjectRoot(process.cwd());
+  return new SelfImproveEngine(db, root);
+}
+function registerKnowledgeCommands(program2, getModels) {
+  const errorKb = program2.command("error-kb").description("Manage error knowledge base");
+  errorKb.command("search").argument("<query>", "Search query").option("--tag <tag>", "Filter by tag").option("--severity <level>", "Filter by severity (critical, high, medium, low)").description("Search error knowledge base").action((query, opts) => {
+    const engine = getErrorKBEngine();
+    const searchOpts = {};
+    if (opts.tag) searchOpts.tags = [opts.tag];
+    if (opts.severity) searchOpts.severity = opts.severity;
+    const results = engine.search(query, searchOpts);
+    output(results, formatErrorSearchResults(results));
+  });
+  errorKb.command("add").requiredOption("--title <title>", "Error title").requiredOption("--cause <cause>", "Error cause").requiredOption("--solution <solution>", "Error solution").option("--tags <tags>", "Comma-separated tags").option("--severity <level>", "Severity level (critical, high, medium, low)", "medium").description("Add a new error entry").action((opts) => {
+    const engine = getErrorKBEngine();
+    const tags = opts.tags ? opts.tags.split(",").map((t) => t.trim()) : [];
+    const entry = engine.add({
+      title: opts.title,
+      cause: opts.cause,
+      solution: opts.solution,
+      tags,
+      severity: opts.severity
+    });
+    output(entry, `Created error: ${entry.id}
+Title: ${entry.title}
+File: .claude/error-kb/errors/${entry.id}.md`);
+  });
+  errorKb.command("show").argument("<id>", "Error ID").description("Show error entry details").action((id) => {
+    const engine = getErrorKBEngine();
+    const entry = engine.show(id);
+    if (!entry) return outputError(`Error not found: ${id}`);
+    output(entry, formatErrorDetail(entry));
+  });
+  errorKb.command("update").argument("<id>", "Error ID").option("--occurrence <context>", "Record a new occurrence with context").option("--status <status>", "Update status (open, resolved, recurring, wontfix)").option("--severity <level>", "Update severity (critical, high, medium, low)").description("Update an error entry or record occurrence").action((id, opts) => {
+    const engine = getErrorKBEngine();
+    const existing = engine.show(id);
+    if (!existing) return outputError(`Error not found: ${id}`);
+    if (opts.occurrence) {
+      engine.recordOccurrence(id, opts.occurrence);
+      const updated = engine.show(id);
+      output(updated, `Recorded occurrence for ${id}: ${opts.occurrence}`);
+    } else {
+      const patch = {};
+      if (opts.status) patch.status = opts.status;
+      if (opts.severity) patch.severity = opts.severity;
+      engine.update(id, patch);
+      const updated = engine.show(id);
+      output(updated, `Updated error: ${id}`);
+    }
+  });
+  errorKb.command("stats").description("Show error knowledge base statistics").action(() => {
+    const engine = getErrorKBEngine();
+    const stats = engine.getStats();
+    output(stats, formatErrorKBStats(stats));
+  });
+  errorKb.command("delete").argument("<id>", "Error ID").description("Delete an error entry").action((id) => {
+    const engine = getErrorKBEngine();
+    const deleted = engine.delete(id);
+    if (!deleted) return outputError(`Error not found: ${id}`);
+    output({ deleted: true, error_id: id }, `Error deleted: ${id}`);
+  });
+  const selfImprove = program2.command("self-improve").description("Self-improve rules management");
+  selfImprove.command("status").description("Show self-improve status (pending, rules, last run)").action(() => {
+    const engine = getSelfImproveEngine();
+    const pending = engine.getPendingCount();
+    const stats = engine.getRuleStats();
+    const lastRun = engine.getLastRunTimestamp();
+    const data = { pending, rules: stats, last_run: lastRun };
+    if (getJsonMode()) {
+      output(data);
+    } else {
+      const lines = [
+        `Pending: ${pending}\uAC74`,
+        `Rules: active ${stats.active}, archived ${stats.archived}, prevented ${stats.total_prevented}`,
+        `Last run: ${lastRun ?? "never"}`
+      ];
+      if (stats.active > engine.getMaxActiveRules()) {
+        lines.push(`\u26A0 \uD65C\uC131 \uADDC\uCE59\uC774 ${engine.getMaxActiveRules()}\uAC1C \uC0C1\uD55C\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4.`);
+      }
+      output(data, lines.join("\n"));
+    }
+  });
+  const rules = selfImprove.command("rules").description("Manage self-improve rules");
+  rules.command("list").option("--status <status>", "Filter by status (active, archived)").description("List self-improve rules").action((opts) => {
+    const engine = getSelfImproveEngine();
+    const status = opts.status;
+    const ruleList = engine.listRules(status);
+    if (ruleList.length === 0) {
+      output(ruleList, "No rules found.");
+      return;
+    }
+    if (getJsonMode()) {
+      output(ruleList);
+    } else {
+      const lines = ruleList.map(
+        (r) => `[${r.status}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
+      );
+      output(ruleList, lines.join("\n"));
+    }
+  });
+  rules.command("show").argument("<id>", "Rule ID").description("Show rule details").action((id) => {
+    const engine = getSelfImproveEngine();
+    const rule = engine.getRule(id);
+    if (!rule) return outputError(`Rule not found: ${id}`);
+    output(rule);
+  });
+  rules.command("archive").argument("<id>", "Rule ID").description("Archive a rule").action((id) => {
+    const engine = getSelfImproveEngine();
+    const result = engine.archiveRule(id);
+    if (!result) return outputError(`Rule not found or already archived: ${id}`);
+    output({ archived: true, rule_id: id }, `Rule archived: ${id}`);
+  });
+}
+
+// src/cli/commands/quality.ts
+function getQAModels() {
+  const m = initModels();
+  return { qaRun: m.qaRunModel, qaScenario: m.qaScenarioModel, qaFinding: m.qaFindingModel, planModel: m.planModel };
+}
+function registerQualityCommands(program2, getModels) {
+  const qa = program2.command("qa").description("Manage QA runs, scenarios, and findings");
+  const qaRun = qa.command("run").description("Manage QA runs");
+  qaRun.command("create").argument("[plan_id]", "Plan ID (optional for --mode security-only)").option("--trigger <type>", "Trigger type (manual, auto, milestone)", "manual").option("--mode <mode>", "Run mode (full, security-only)").description("Create a new QA run").action((planId, opts) => withErrorHandler(() => {
+    const { qaRun: qaRunModel } = getQAModels();
+    if (opts.mode === "security-only") {
+      const { planModel: planModel2 } = initModels();
+      let sentinelPlan = planModel2.list({ status: "active" }).find((p) => p.title === "__security_audit__");
+      if (!sentinelPlan) {
+        sentinelPlan = planModel2.create("__security_audit__", "Auto-created sentinel plan for standalone security audits");
+      }
+      const run2 = qaRunModel.create(sentinelPlan.id, opts.trigger);
+      output(run2, `Created security-only QA run: ${run2.id} (sentinel plan: ${sentinelPlan.id})`);
+      return;
+    }
+    if (!planId) return outputError("Plan ID is required (use --mode security-only for standalone)");
+    const { planModel } = initModels();
+    const plan = planModel.getById(planId);
+    if (!plan) return outputError(`Plan not found: ${planId}`);
+    const run = qaRunModel.create(planId, opts.trigger);
+    output(run, `Created QA run: ${run.id} (plan: ${planId}, trigger: ${opts.trigger})`);
+  }));
+  qaRun.command("list").option("--plan <plan_id>", "Filter by plan ID").description("List QA runs").action((opts) => withErrorHandler(() => {
+    const { qaRun: qaRunModel } = getQAModels();
+    const runs = qaRunModel.list(opts.plan);
+    if (runs.length === 0) {
+      output(runs, "No QA runs found.");
+      return;
+    }
+    output(runs, runs.map(
+      (r) => `${r.id}  ${r.status.padEnd(10)}  risk:${r.risk_score.toFixed(2)}  ${r.passed_scenarios}/${r.total_scenarios} passed  ${r.created_at}`
+    ).join("\n"));
+  }));
+  qaRun.command("show").argument("<run_id>", "QA Run ID").description("Show QA run details with scenarios and findings").action((runId) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaScenario, qaFinding } = getQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    const summary = qaRunModel.getSummary(runId);
+    const scenarios = qaScenario.listByRun(runId);
+    const findings = qaFinding.list({ runId });
+    output({ run, summary, scenarios, findings }, [
+      `QA Run: ${run.id} (${run.status})`,
+      `Plan: ${run.plan_id} | Trigger: ${run.trigger} | Risk: ${run.risk_score.toFixed(2)}`,
+      `Scenarios: ${run.passed_scenarios}/${run.total_scenarios} passed, ${run.failed_scenarios} failed`,
+      findings.length > 0 ? `Findings: ${findings.length} total` : "Findings: none",
+      run.summary ? `Summary: ${run.summary}` : ""
+    ].filter(Boolean).join("\n"));
+  }));
+  qaRun.command("complete").argument("<run_id>", "QA Run ID").option("--summary <text>", "Summary of the QA run results").option("--status <status>", "Final status (completed, failed)", "completed").description("Complete a QA run and set its final status").action((runId, opts) => withErrorHandler(() => {
+    const statusInput = opts.status;
+    if (!VALID_QA_RUN_TERMINAL_STATUSES.includes(statusInput)) {
+      return outputError(`Invalid status: ${statusInput}. Must be one of: ${VALID_QA_RUN_TERMINAL_STATUSES.join(", ")}`);
+    }
+    const status = statusInput;
+    const { qaRun: qaRunModel } = getQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    if (VALID_QA_RUN_TERMINAL_STATUSES.includes(run.status)) {
+      return outputError(`QA run ${runId} is already ${run.status}`);
+    }
+    const updated = qaRunModel.updateStatus(runId, status, opts.summary);
+    output(updated, `QA run ${runId} marked as ${status}${opts.summary ? ` \u2014 ${opts.summary}` : ""}`);
+  }));
+  const qaScenarioCmd = qa.command("scenario").description("Manage QA scenarios");
+  qaScenarioCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Scenario title").requiredOption("--description <desc>", "Scenario description").requiredOption("--category <cat>", "Category (functional, integration, flow, regression, edge_case)").option("--priority <p>", "Priority (critical, high, medium, low)", "medium").option("--related-tasks <ids>", "Comma-separated related task IDs").option("--agent <name>", "Assigned agent name").description("Create a QA scenario").action((runId, opts) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaScenario } = getQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    if (run.status !== "pending" && run.status !== "running") {
+      return outputError(`Cannot add scenarios to ${run.status} run`);
+    }
+    const scenario = qaScenario.create(runId, {
+      category: opts.category,
+      title: opts.title,
+      description: opts.description,
+      priority: opts.priority,
+      related_tasks: opts.relatedTasks ? JSON.stringify(opts.relatedTasks.split(",").map((s) => s.trim())) : void 0
+    });
+    output(scenario, `Created scenario: ${scenario.id} [${scenario.category}] ${scenario.title}`);
+  }));
+  qaScenarioCmd.command("update").argument("<id>", "Scenario ID").requiredOption("--status <status>", "Status (pending, running, pass, fail, skip, warn)").option("--evidence <text>", "Evidence text").description("Update scenario status").action((id, opts) => withErrorHandler(() => {
+    const { qaScenario } = getQAModels();
+    const existing = qaScenario.get(id);
+    if (!existing) return outputError(`Scenario not found: ${id}`);
+    qaScenario.updateStatus(id, opts.status, opts.evidence);
+    const updated = qaScenario.get(id);
+    output(updated, `Updated scenario ${id}: ${updated.status}`);
+  }));
+  qaScenarioCmd.command("list").argument("<run_id>", "QA Run ID").option("--category <cat>", "Filter by category").option("--status <status>", "Filter by status").description("List scenarios for a QA run").action((runId, opts) => withErrorHandler(() => {
+    const { qaScenario } = getQAModels();
+    const scenarios = qaScenario.listByRun(runId, {
+      category: opts.category,
+      status: opts.status
+    });
+    if (scenarios.length === 0) {
+      output(scenarios, "No scenarios found.");
+      return;
+    }
+    output(scenarios, scenarios.map(
+      (s) => `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  ${s.title}`
+    ).join("\n"));
+  }));
+  const qaFindingCmd = qa.command("finding").description("Manage QA findings");
+  qaFindingCmd.command("create").argument("<run_id>", "QA Run ID").requiredOption("--title <title>", "Finding title").requiredOption("--description <desc>", "Finding description").requiredOption("--severity <s>", "Severity (critical, high, medium, low)").requiredOption("--category <cat>", "Category (bug, regression, missing_feature, inconsistency, performance, security, ux_issue, spec_gap)").option("--scenario-id <id>", "Related scenario ID").option("--affected-files <files>", "Comma-separated affected files").option("--related-task-id <id>", "Related task ID").option("--fix-suggestion <text>", "Fix suggestion").description("Create a QA finding").action((runId, opts) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaFinding } = getQAModels();
+    const run = qaRunModel.get(runId);
+    if (!run) return outputError(`QA run not found: ${runId}`);
+    const finding = qaFinding.create(runId, {
+      scenario_id: opts.scenarioId,
+      severity: opts.severity,
+      category: opts.category,
+      title: opts.title,
+      description: opts.description,
+      affected_files: opts.affectedFiles ? JSON.stringify(opts.affectedFiles.split(",").map((s) => s.trim())) : void 0,
+      related_task_id: opts.relatedTaskId,
+      fix_suggestion: opts.fixSuggestion
+    });
+    output(finding, `Created finding: ${finding.id} [${finding.severity}] ${finding.title}`);
+  }));
+  qaFindingCmd.command("update").argument("<id>", "Finding ID").requiredOption("--status <status>", "Status (open, planned, fixed, wontfix, duplicate)").option("--fix-plan-id <id>", "Fix plan ID").description("Update finding status").action((id, opts) => withErrorHandler(() => {
+    const { qaFinding } = getQAModels();
+    const existing = qaFinding.get(id);
+    if (!existing) return outputError(`Finding not found: ${id}`);
+    qaFinding.updateStatus(id, opts.status, opts.fixPlanId);
+    const updated = qaFinding.get(id);
+    output(updated, `Updated finding ${id}: ${updated.status}`);
+  }));
+  qaFindingCmd.command("list").option("--run <run_id>", "Filter by QA run ID").option("--severity <s>", "Filter by severity").option("--status <s>", "Filter by status").option("--category <cat>", "Filter by category").description("List QA findings").action((opts) => withErrorHandler(() => {
+    const { qaFinding } = getQAModels();
+    const findings = qaFinding.list({
+      runId: opts.run,
+      severity: opts.severity,
+      status: opts.status,
+      category: opts.category
+    });
+    if (findings.length === 0) {
+      output(findings, "No findings found.");
+      return;
+    }
+    output(findings, findings.map(
+      (f) => `${f.id}  [${f.severity}]  ${f.status.padEnd(9)}  ${f.category.padEnd(16)}  ${f.title}`
+    ).join("\n"));
+  }));
+  qa.command("stats").option("--plan <plan_id>", "Filter by plan ID").description("Show QA statistics").action((opts) => withErrorHandler(() => {
+    const { qaRun: qaRunModel, qaFinding } = getQAModels();
+    const runs = qaRunModel.list(opts.plan);
+    const completedRuns = runs.filter((r) => r.status === "completed");
+    const avgRisk = completedRuns.length > 0 ? completedRuns.reduce((sum, r) => sum + r.risk_score, 0) / completedRuns.length : 0;
+    const allFindings = opts.plan ? runs.flatMap((r) => qaFinding.list({ runId: r.id })) : qaFinding.list();
+    const openFindings = allFindings.filter((f) => f.status === "open");
+    const statsData = {
+      total_runs: runs.length,
+      completed_runs: completedRuns.length,
+      avg_risk_score: Math.round(avgRisk * 100) / 100,
+      total_findings: allFindings.length,
+      open_findings: openFindings.length,
+      findings_by_severity: {
+        critical: openFindings.filter((f) => f.severity === "critical").length,
+        high: openFindings.filter((f) => f.severity === "high").length,
+        medium: openFindings.filter((f) => f.severity === "medium").length,
+        low: openFindings.filter((f) => f.severity === "low").length
+      }
+    };
+    output(statsData, [
+      `QA Statistics${opts.plan ? ` (plan: ${opts.plan})` : ""}`,
+      `Runs: ${statsData.total_runs} total, ${statsData.completed_runs} completed`,
+      `Avg Risk Score: ${statsData.avg_risk_score}`,
+      `Findings: ${statsData.total_findings} total, ${statsData.open_findings} open`,
+      `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`
+    ].join("\n"));
+  }));
+}
+
+// src/cli/commands/generation.ts
+function registerGenerationCommands(program2, getModels) {
+  const ideate = program2.command("ideate").description("Manage ideation records");
+  ideate.command("list").description("List ideation records from context log").action(() => {
+    const { contextModel } = initModels();
+    const ideations = contextModel.search("[ideation]");
+    if (ideations.length === 0) {
+      output([], "ideation \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-ideate\uB85C \uC544\uC774\uB514\uC5B4\uB97C \uC815\uB9AC\uD574\uBCF4\uC138\uC694.");
+      return;
+    }
+    const formatted = ideations.map(
+      (l, i) => `${i + 1}. [#${l.id}] ${l.summary.replace("[ideation] ", "")} (${l.created_at})`
+    ).join("\n");
+    output(ideations, `## Ideation \uC774\uB825
+
+${formatted}`);
+  });
+  ideate.command("show").argument("<id>", "Context log ID").description("Show ideation detail").action((id) => {
+    withErrorHandler(() => {
+      const { contextModel } = initModels();
+      const log = contextModel.getById(parseInt(id, 10));
+      if (!log) return outputError(`Ideation not found: ${id}`);
+      output(log, `## Ideation #${log.id}
+
+**Created**: ${log.created_at}
+
+${log.summary}`);
+    });
+  });
+}
+
+// src/cli/index.ts
+var require2 = createRequire(import.meta.url);
+var pkg = require2("../../package.json");
+var program = new Command();
+program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").hook("preAction", () => {
+  setJsonMode(program.opts().json === true);
+});
+program.command("dashboard").description("Show all active plans overview").action(() => {
+  const { dashboard, alerts } = initModels();
+  const overview = dashboard.getOverview();
+  const alertList = alerts.getAlerts();
+  const skillUsage = dashboard.getSkillUsageSummary(7);
+  const dashboardText = formatDashboard(overview, alertList);
+  const skillText = formatSkillUsage(skillUsage);
+  const combined = skillText ? `${dashboardText}
+
+${skillText}` : dashboardText;
+  output({ overview, alerts: alertList, skill_usage: skillUsage }, combined);
+});
+registerPlanningCommands(program, initModels);
+registerAuxiliaryCommands(program, initModels);
+registerGovernanceCommands(program, initModels);
+registerKnowledgeCommands(program, initModels);
+registerQualityCommands(program, initModels);
+registerGenerationCommands(program, initModels);
+registerBacklogCommands(program, initModels);
 program.parse();
 //# sourceMappingURL=index.js.map
