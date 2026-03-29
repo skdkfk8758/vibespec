@@ -7,6 +7,11 @@ import { EventModel } from '../../models/event.js';
 import { LifecycleEngine } from '../lifecycle.js';
 import type Database from 'better-sqlite3';
 
+function markDone(taskModel: TaskModel, id: string) {
+  taskModel.updateStatus(id, 'in_progress');
+  taskModel.updateStatus(id, 'done');
+}
+
 describe('LifecycleEngine', () => {
   let db: Database.Database;
   let planModel: PlanModel;
@@ -31,8 +36,8 @@ describe('LifecycleEngine', () => {
       taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
       const t3 = taskModel.create(plan.id, 'Task 3');
-      taskModel.updateStatus(t2.id, 'done');
-      taskModel.updateStatus(t3.id, 'done');
+      markDone(taskModel, t2.id);
+      markDone(taskModel, t3.id);
 
       const result = engine.canComplete(plan.id);
 
@@ -47,9 +52,9 @@ describe('LifecycleEngine', () => {
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
       const t3 = taskModel.create(plan.id, 'Task 3');
-      taskModel.updateStatus(t1.id, 'done');
-      taskModel.updateStatus(t2.id, 'done');
-      taskModel.updateStatus(t3.id, 'done');
+      markDone(taskModel, t1.id);
+      markDone(taskModel, t2.id);
+      markDone(taskModel, t3.id);
 
       const result = engine.canComplete(plan.id);
 
@@ -64,9 +69,9 @@ describe('LifecycleEngine', () => {
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
       const t3 = taskModel.create(plan.id, 'Task 3');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       taskModel.updateStatus(t2.id, 'skipped');
-      taskModel.updateStatus(t3.id, 'done');
+      markDone(taskModel, t3.id);
 
       const result = engine.canComplete(plan.id);
 
@@ -82,8 +87,8 @@ describe('LifecycleEngine', () => {
       const child1 = taskModel.create(plan.id, 'Child 1', { parentId: parent.id });
       const child2 = taskModel.create(plan.id, 'Child 2', { parentId: parent.id });
       // Parent is still 'todo' but children are done - should be completable
-      taskModel.updateStatus(child1.id, 'done');
-      taskModel.updateStatus(child2.id, 'done');
+      markDone(taskModel, child1.id);
+      markDone(taskModel, child2.id);
 
       const result = engine.canComplete(plan.id);
 
@@ -99,8 +104,8 @@ describe('LifecycleEngine', () => {
 
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
-      taskModel.updateStatus(t1.id, 'done');
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t1.id);
+      markDone(taskModel, t2.id);
 
       const completed = engine.completePlan(plan.id);
 
@@ -114,7 +119,7 @@ describe('LifecycleEngine', () => {
 
       const t1 = taskModel.create(plan.id, 'Task 1');
       taskModel.create(plan.id, 'Task 2');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
 
       expect(() => engine.completePlan(plan.id)).toThrow(
         /Plan cannot be completed/,
@@ -126,7 +131,7 @@ describe('LifecycleEngine', () => {
       planModel.activate(plan.id);
 
       const t1 = taskModel.create(plan.id, 'Task 1');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
 
       engine.completePlan(plan.id);
 
@@ -146,8 +151,8 @@ describe('LifecycleEngine', () => {
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
       taskModel.create(plan.id, 'Task 3');
-      taskModel.updateStatus(t1.id, 'done');
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t1.id);
+      markDone(taskModel, t2.id);
 
       const result = engine.autoCheckCompletion(plan.id);
 
@@ -163,8 +168,8 @@ describe('LifecycleEngine', () => {
 
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
-      taskModel.updateStatus(t1.id, 'done');
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t1.id);
+      markDone(taskModel, t2.id);
 
       const result = engine.autoCheckCompletion(plan.id);
 
@@ -180,7 +185,7 @@ describe('LifecycleEngine', () => {
 
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       taskModel.updateStatus(t2.id, 'skipped');
 
       const result = engine.autoCheckCompletion(plan.id);

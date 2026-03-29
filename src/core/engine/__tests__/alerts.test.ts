@@ -81,7 +81,9 @@ describe('AlertsEngine', () => {
       planModel.activate(plan.id);
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
+      taskModel.updateStatus(t1.id, 'in_progress');
       taskModel.updateStatus(t1.id, 'done');
+      taskModel.updateStatus(t2.id, 'in_progress');
       taskModel.updateStatus(t2.id, 'done');
 
       const completable = alerts.getCompletablePlans();
@@ -95,6 +97,7 @@ describe('AlertsEngine', () => {
       planModel.activate(plan.id);
       const t1 = taskModel.create(plan.id, 'Task 1');
       taskModel.create(plan.id, 'Task 2');
+      taskModel.updateStatus(t1.id, 'in_progress');
       taskModel.updateStatus(t1.id, 'done');
 
       const completable = alerts.getCompletablePlans();
@@ -153,6 +156,7 @@ describe('AlertsEngine', () => {
       const plan3 = planModel.create('Completable Plan');
       planModel.activate(plan3.id);
       const doneTask = taskModel.create(plan3.id, 'Done Task');
+      taskModel.updateStatus(doneTask.id, 'in_progress');
       taskModel.updateStatus(doneTask.id, 'done');
 
       // Forgotten plan

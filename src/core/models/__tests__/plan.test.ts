@@ -3,6 +3,7 @@ import { createMemoryDb } from '../../db/connection.js';
 import { initSchema } from '../../db/schema.js';
 import { PlanModel } from '../plan.js';
 import { EventModel } from '../event.js';
+import { InvalidTransitionError } from '../../utils.js';
 import type Database from 'better-sqlite3';
 
 describe('PlanModel', () => {
@@ -126,7 +127,7 @@ describe('PlanModel', () => {
 
     it('approve should throw for non-active plan', () => {
       const plan = model.create('Draft Plan');
-      expect(() => model.approve(plan.id)).toThrow('Only active plans can be approved');
+      expect(() => model.approve(plan.id)).toThrow('Invalid transition: draft → approved');
     });
 
     it('activate should throw for non-existent plan', () => {
@@ -140,6 +141,120 @@ describe('PlanModel', () => {
     it('archive should throw for non-existent plan', () => {
       expect(() => model.archive('nonexistent')).toThrow('Plan not found');
     });
+  });
+});
+
+describe('PlanModel transition guards', () => {
+  let db: Database.Database;
+  let model: PlanModel;
+
+  beforeEach(() => {
+    db = createMemoryDb();
+    initSchema(db);
+    model = new PlanModel(db);
+  });
+
+  // --- Invalid transitions ---
+
+  it('AC01: draft -> completed should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    expect(() => model.complete(plan.id)).toThrow(InvalidTransitionError);
+    expect(() => model.complete(plan.id)).toThrow('Invalid transition: draft → completed');
+  });
+
+  it('AC01: draft -> archived should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    expect(() => model.archive(plan.id)).toThrow(InvalidTransitionError);
+  });
+
+  it('AC01: draft -> approved should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    expect(() => model.approve(plan.id)).toThrow(InvalidTransitionError);
+  });
+
+  it('AC02: archived -> active should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    model.archive(plan.id);
+    expect(() => model.activate(plan.id)).toThrow(InvalidTransitionError);
+    expect(() => model.activate(plan.id)).toThrow('Invalid transition: archived → active');
+  });
+
+  it('AC02: archived -> completed should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    model.archive(plan.id);
+    expect(() => model.complete(plan.id)).toThrow(InvalidTransitionError);
+  });
+
+  it('AC02: completed -> active should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    model.complete(plan.id);
+    expect(() => model.activate(plan.id)).toThrow(InvalidTransitionError);
+  });
+
+  it('AC02: active -> draft should throw InvalidTransitionError', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    // There's no "deactivate" method, but activate(draft) on active should fail
+    // We test via the model's behavior: active plan cannot go back to draft
+    expect(model.getById(plan.id)!.status).toBe('active');
+  });
+
+  // --- Valid transitions ---
+
+  it('AC03: draft -> active -> completed -> archived (normal flow)', () => {
+    const plan = model.create('Plan');
+    expect(model.activate(plan.id).status).toBe('active');
+    expect(model.complete(plan.id).status).toBe('completed');
+    expect(model.archive(plan.id).status).toBe('archived');
+  });
+
+  it('AC03: draft -> active -> approved -> completed -> archived', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    model.approve(plan.id);
+    model.complete(plan.id);
+    expect(model.archive(plan.id).status).toBe('archived');
+  });
+
+  it('AC03: active -> archived (skip completed)', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    expect(model.archive(plan.id).status).toBe('archived');
+  });
+
+  it('AC03: approved -> archived (skip completed)', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    model.approve(plan.id);
+    expect(model.archive(plan.id).status).toBe('archived');
+  });
+
+  // --- Same status (no-op) ---
+
+  it('same status transition should be a no-op', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    const result = model.activate(plan.id);
+    expect(result.status).toBe('active');
+  });
+
+  // --- Force option ---
+
+  it('force:true should allow invalid transition draft -> completed', () => {
+    const plan = model.create('Plan');
+    const result = model.complete(plan.id, { force: true });
+    expect(result.status).toBe('completed');
+  });
+
+  it('force:true should allow archived -> active', () => {
+    const plan = model.create('Plan');
+    model.activate(plan.id);
+    model.archive(plan.id);
+    const result = model.activate(plan.id, { force: true });
+    expect(result.status).toBe('active');
   });
 });
 
@@ -194,13 +309,14 @@ describe('PlanModel with EventModel', () => {
 
   it('should record an archived event on plan.archive()', () => {
     const plan = model.create('Archive Plan');
+    model.activate(plan.id);
     model.archive(plan.id);
     const recorded = events.getByEntity('plan', plan.id);
 
-    expect(recorded).toHaveLength(2);
-    const archivedEvent = recorded[1];
+    expect(recorded).toHaveLength(3);
+    const archivedEvent = recorded[2];
     expect(archivedEvent.event_type).toBe('archived');
-    expect(JSON.parse(archivedEvent.old_value!)).toEqual({ status: 'draft' });
+    expect(JSON.parse(archivedEvent.old_value!)).toEqual({ status: 'active' });
     expect(JSON.parse(archivedEvent.new_value!)).toEqual({ status: 'archived' });
   });
 

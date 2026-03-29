@@ -7,6 +7,11 @@ import { EventModel } from '../../models/event.js';
 import { StatsEngine } from '../stats.js';
 import type Database from 'better-sqlite3';
 
+function markDone(taskModel: TaskModel, id: string) {
+  taskModel.updateStatus(id, 'in_progress');
+  taskModel.updateStatus(id, 'done');
+}
+
 describe('StatsEngine', () => {
   let db: Database.Database;
   let planModel: PlanModel;
@@ -38,18 +43,18 @@ describe('StatsEngine', () => {
       // Day 1 (2일 전): 2 tasks completed
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(2));
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t2.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(2));
 
       // Day 2 (1일 전): 1 task completed
       const t3 = taskModel.create(plan.id, 'Task 3');
-      taskModel.updateStatus(t3.id, 'done');
+      markDone(taskModel, t3.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(1));
@@ -58,15 +63,15 @@ describe('StatsEngine', () => {
       const t4 = taskModel.create(plan.id, 'Task 4');
       const t5 = taskModel.create(plan.id, 'Task 5');
       const t6 = taskModel.create(plan.id, 'Task 6');
-      taskModel.updateStatus(t4.id, 'done');
+      markDone(taskModel, t4.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(0));
-      taskModel.updateStatus(t5.id, 'done');
+      markDone(taskModel, t5.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(0));
-      taskModel.updateStatus(t6.id, 'done');
+      markDone(taskModel, t6.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(0));
@@ -90,11 +95,11 @@ describe('StatsEngine', () => {
 
       const t1 = taskModel.create(plan1.id, 'Task A1');
       const t2 = taskModel.create(plan2.id, 'Task B1');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(0));
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t2.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run(daysAgo(0));
@@ -117,7 +122,7 @@ describe('StatsEngine', () => {
       };
       for (let i = 1; i <= 6; i++) {
         const t = taskModel.create(plan.id, `Done Task ${i}`);
-        taskModel.updateStatus(t.id, 'done');
+        markDone(taskModel, t.id);
         db.prepare(
           "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
         ).run(estDaysAgo(0));
@@ -159,7 +164,7 @@ describe('StatsEngine', () => {
       taskModel.create(plan.id, 'Todo Task');
       const t4 = taskModel.create(plan.id, 'In Progress Task');
 
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       taskModel.updateStatus(t2.id, 'skipped');
       taskModel.updateStatus(t4.id, 'in_progress');
 
@@ -177,18 +182,18 @@ describe('StatsEngine', () => {
       // Day 1: 2 completions
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-14');
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t2.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-14');
 
       // Day 2: 1 completion
       const t3 = taskModel.create(plan.id, 'Task 3');
-      taskModel.updateStatus(t3.id, 'done');
+      markDone(taskModel, t3.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-15');
@@ -197,15 +202,15 @@ describe('StatsEngine', () => {
       const t4 = taskModel.create(plan.id, 'Task 4');
       const t5 = taskModel.create(plan.id, 'Task 5');
       const t6 = taskModel.create(plan.id, 'Task 6');
-      taskModel.updateStatus(t4.id, 'done');
+      markDone(taskModel, t4.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-16');
-      taskModel.updateStatus(t5.id, 'done');
+      markDone(taskModel, t5.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-16');
-      taskModel.updateStatus(t6.id, 'done');
+      markDone(taskModel, t6.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-16');
@@ -242,11 +247,11 @@ describe('StatsEngine', () => {
 
       const t1 = taskModel.create(plan1.id, 'Task A1');
       const t2 = taskModel.create(plan2.id, 'Task B1');
-      taskModel.updateStatus(t1.id, 'done');
+      markDone(taskModel, t1.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-16');
-      taskModel.updateStatus(t2.id, 'done');
+      markDone(taskModel, t2.id);
       db.prepare(
         "UPDATE events SET created_at = ? WHERE id = (SELECT MAX(id) FROM events)",
       ).run('2026-03-16');

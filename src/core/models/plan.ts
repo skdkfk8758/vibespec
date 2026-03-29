@@ -2,7 +2,15 @@ import type Database from 'better-sqlite3';
 import type { Plan, PlanStatus } from '../types.js';
 import type { EventModel } from './event.js';
 import { detectGitContext } from '../db/connection.js';
-import { generateId, buildUpdateQuery } from '../utils.js';
+import { generateId, buildUpdateQuery, validateTransition, type AllowedTransitions } from '../utils.js';
+
+export const PLAN_TRANSITIONS: AllowedTransitions = {
+  draft: ['active'],
+  active: ['approved', 'completed', 'archived'],
+  approved: ['completed', 'archived'],
+  completed: ['archived'],
+  archived: [],
+};
 
 export class PlanModel {
   private db: Database.Database;
@@ -78,8 +86,11 @@ export class PlanModel {
     eventType: 'activated' | 'completed' | 'approved' | 'archived',
     guard?: (plan: Plan) => void,
     extra?: string,
+    opts?: { force?: boolean },
   ): Plan {
     const plan = this.requireById(id);
+    if (plan.status === newStatus) return plan;
+    validateTransition(PLAN_TRANSITIONS, plan.status, newStatus, opts);
     if (guard) guard(plan);
     const oldStatus = plan.status;
 
@@ -95,24 +106,20 @@ export class PlanModel {
     return this.requireById(id);
   }
 
-  activate(id: string): Plan {
-    return this.transitionStatus(id, 'active', 'activated');
+  activate(id: string, opts?: { force?: boolean }): Plan {
+    return this.transitionStatus(id, 'active', 'activated', undefined, undefined, opts);
   }
 
-  complete(id: string): Plan {
-    return this.transitionStatus(id, 'completed', 'completed', undefined, 'completed_at = CURRENT_TIMESTAMP');
+  complete(id: string, opts?: { force?: boolean }): Plan {
+    return this.transitionStatus(id, 'completed', 'completed', undefined, 'completed_at = CURRENT_TIMESTAMP', opts);
   }
 
-  approve(id: string): Plan {
-    return this.transitionStatus(id, 'approved', 'approved', (plan) => {
-      if (plan.status !== 'active') {
-        throw new Error(`Only active plans can be approved. Current status: ${plan.status}`);
-      }
-    });
+  approve(id: string, opts?: { force?: boolean }): Plan {
+    return this.transitionStatus(id, 'approved', 'approved', undefined, undefined, opts);
   }
 
-  archive(id: string): Plan {
-    return this.transitionStatus(id, 'archived', 'archived');
+  archive(id: string, opts?: { force?: boolean }): Plan {
+    return this.transitionStatus(id, 'archived', 'archived', undefined, undefined, opts);
   }
 
   delete(id: string): void {

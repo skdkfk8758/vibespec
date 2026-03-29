@@ -33,7 +33,9 @@ describe('DashboardEngine', () => {
       const t3 = taskModel.create(plan.id, 'Task 3');
       const t4 = taskModel.create(plan.id, 'Task 4');
 
+      taskModel.updateStatus(t1.id, 'in_progress');
       taskModel.updateStatus(t1.id, 'done');
+      taskModel.updateStatus(t2.id, 'in_progress');
       taskModel.updateStatus(t2.id, 'done');
       taskModel.updateStatus(t3.id, 'in_progress');
       taskModel.updateStatus(t4.id, 'blocked');
@@ -68,6 +70,7 @@ describe('DashboardEngine', () => {
 
       const t1 = taskModel.create(plan.id, 'Task 1');
       const t2 = taskModel.create(plan.id, 'Task 2');
+      taskModel.updateStatus(t1.id, 'in_progress');
       taskModel.updateStatus(t1.id, 'done');
       taskModel.updateStatus(t2.id, 'in_progress');
 

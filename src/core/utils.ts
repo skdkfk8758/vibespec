@@ -2,6 +2,41 @@ import { nanoid } from 'nanoid';
 import type Database from 'better-sqlite3';
 
 /**
+ * Allowed transitions map type: maps each state to its valid target states.
+ */
+export type AllowedTransitions = Record<string, string[]>;
+
+/**
+ * Custom error for invalid state transitions.
+ */
+export class InvalidTransitionError extends Error {
+  constructor(current: string, target: string) {
+    super(`Invalid transition: ${current} → ${target}`);
+    this.name = 'InvalidTransitionError';
+  }
+}
+
+/**
+ * Validate a state transition against an allowed transitions map.
+ * - Same state (current === target) is a no-op (returns silently).
+ * - If force is true, the transition is always allowed.
+ * - Otherwise, throws InvalidTransitionError if the transition is not in the allowed map.
+ */
+export function validateTransition(
+  allowed: AllowedTransitions,
+  current: string,
+  target: string,
+  opts?: { force?: boolean },
+): void {
+  if (current === target) return;
+  if (opts?.force) return;
+  const validTargets = allowed[current];
+  if (!validTargets || !validTargets.includes(target)) {
+    throw new InvalidTransitionError(current, target);
+  }
+}
+
+/**
  * Generate a 12-character unique ID.
  */
 export function generateId(): string {

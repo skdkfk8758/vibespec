@@ -3,6 +3,7 @@ import { createMemoryDb } from '../../db/connection.js';
 import { initSchema } from '../../db/schema.js';
 import { TaskModel, validateAcceptance } from '../task.js';
 import { EventModel } from '../event.js';
+import { InvalidTransitionError } from '../../utils.js';
 import type Database from 'better-sqlite3';
 
 describe('TaskModel', () => {
@@ -252,18 +253,20 @@ describe('TaskModel', () => {
   describe('updateStatus', () => {
     it('should set completed_at when status is done', () => {
       const task = taskModel.create('test-plan', 'Task');
+      taskModel.updateStatus(task.id, 'in_progress');
       const updated = taskModel.updateStatus(task.id, 'done');
 
       expect(updated.status).toBe('done');
       expect(updated.completed_at).not.toBeNull();
     });
 
-    it('should clear completed_at when status is not done', () => {
+    it('should clear completed_at when transitioning back to todo via blocked recovery', () => {
       const task = taskModel.create('test-plan', 'Task');
-      taskModel.updateStatus(task.id, 'done');
-      const updated = taskModel.updateStatus(task.id, 'in_progress');
+      taskModel.updateStatus(task.id, 'in_progress');
+      taskModel.updateStatus(task.id, 'blocked');
+      const updated = taskModel.updateStatus(task.id, 'todo');
 
-      expect(updated.status).toBe('in_progress');
+      expect(updated.status).toBe('todo');
       expect(updated.completed_at).toBeNull();
     });
   });
@@ -282,6 +285,7 @@ describe('TaskModel', () => {
       const t1 = taskModel.create('test-plan', 'Task 1');
       taskModel.create('test-plan', 'Task 2');
       taskModel.create('test-plan', 'Task 3');
+      taskModel.updateStatus(t1.id, 'in_progress');
       taskModel.updateStatus(t1.id, 'done');
 
       const doneTasks = taskModel.getByPlan('test-plan', { status: 'done' });
@@ -548,6 +552,7 @@ describe('getNextAvailable', () => {
   it('should return task when all dependencies are done', () => {
     const tA = taskModel.create('test-plan', 'A', { sortOrder: 0 });
     const tB = taskModel.create('test-plan', 'B', { sortOrder: 1, dependsOn: [tA.id] });
+    taskModel.updateStatus(tA.id, 'in_progress');
     taskModel.updateStatus(tA.id, 'done');
 
     const next = taskModel.getNextAvailable('test-plan');
@@ -596,6 +601,7 @@ describe('getNextAvailable', () => {
 
   it('should return null when all tasks are done', () => {
     const t1 = taskModel.create('test-plan', 'Task 1');
+    taskModel.updateStatus(t1.id, 'in_progress');
     taskModel.updateStatus(t1.id, 'done');
 
     const next = taskModel.getNextAvailable('test-plan');
@@ -641,13 +647,14 @@ describe('TaskModel with EventModel', () => {
 
   it('should record a status_changed event on task.updateStatus()', () => {
     const task = taskModel.create('test-plan', 'Status Task');
+    taskModel.updateStatus(task.id, 'in_progress');
     taskModel.updateStatus(task.id, 'done');
     const recorded = events.getByEntity('task', task.id);
 
-    expect(recorded).toHaveLength(2);
-    const statusEvent = recorded[1];
+    expect(recorded).toHaveLength(3);
+    const statusEvent = recorded[2];
     expect(statusEvent.event_type).toBe('status_changed');
-    expect(statusEvent.old_value).toBe('{"status":"todo"}');
+    expect(statusEvent.old_value).toBe('{"status":"in_progress"}');
     expect(statusEvent.new_value).toBe('{"status":"done"}');
   });
 });
@@ -778,5 +785,141 @@ describe('validateAcceptance', () => {
 - 세번째 기능`;
     const result = validateAcceptance(ac);
     expect(result.warnings.some(w => w.includes('1') && w.includes('3') && w.includes('검증 가능한 동사'))).toBe(true);
+  });
+});
+
+describe('Task transition guards', () => {
+  let db: Database.Database;
+  let taskModel: TaskModel;
+
+  beforeEach(() => {
+    db = createMemoryDb();
+    initSchema(db);
+    db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run(
+      'test-plan',
+      'Test Plan',
+      'active',
+    );
+    taskModel = new TaskModel(db);
+  });
+
+  // --- Invalid transitions ---
+
+  it('AC01: done -> todo should throw InvalidTransitionError', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'in_progress');
+    taskModel.updateStatus(task.id, 'done');
+    expect(() => taskModel.updateStatus(task.id, 'todo')).toThrow(InvalidTransitionError);
+    expect(() => taskModel.updateStatus(task.id, 'todo')).toThrow('Invalid transition: done → todo');
+  });
+
+  it('AC01: done -> in_progress should throw InvalidTransitionError', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'in_progress');
+    taskModel.updateStatus(task.id, 'done');
+    expect(() => taskModel.updateStatus(task.id, 'in_progress')).toThrow(InvalidTransitionError);
+  });
+
+  it('AC01: done -> blocked should throw InvalidTransitionError', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'in_progress');
+    taskModel.updateStatus(task.id, 'done');
+    expect(() => taskModel.updateStatus(task.id, 'blocked')).toThrow(InvalidTransitionError);
+  });
+
+  it('AC01: skipped -> todo should throw InvalidTransitionError', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'skipped');
+    expect(() => taskModel.updateStatus(task.id, 'todo')).toThrow(InvalidTransitionError);
+  });
+
+  it('AC01: skipped -> in_progress should throw InvalidTransitionError', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'skipped');
+    expect(() => taskModel.updateStatus(task.id, 'in_progress')).toThrow(InvalidTransitionError);
+  });
+
+  it('AC01: todo -> done (skip in_progress) should throw InvalidTransitionError', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    expect(() => taskModel.updateStatus(task.id, 'done')).toThrow(InvalidTransitionError);
+  });
+
+  // --- Valid transitions ---
+
+  it('AC02: todo -> in_progress -> done (normal flow)', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    expect(taskModel.updateStatus(task.id, 'in_progress').status).toBe('in_progress');
+    expect(taskModel.updateStatus(task.id, 'done').status).toBe('done');
+  });
+
+  it('AC02: todo -> blocked -> in_progress -> done', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'blocked');
+    taskModel.updateStatus(task.id, 'in_progress');
+    expect(taskModel.updateStatus(task.id, 'done').status).toBe('done');
+  });
+
+  it('AC03: blocked -> todo (recovery) should be allowed', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'blocked');
+    const recovered = taskModel.updateStatus(task.id, 'todo');
+    expect(recovered.status).toBe('todo');
+  });
+
+  it('AC03: blocked -> in_progress (recovery) should be allowed', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'blocked');
+    const recovered = taskModel.updateStatus(task.id, 'in_progress');
+    expect(recovered.status).toBe('in_progress');
+  });
+
+  it('AC03: blocked -> skipped should be allowed', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'blocked');
+    expect(taskModel.updateStatus(task.id, 'skipped').status).toBe('skipped');
+  });
+
+  it('AC02: in_progress -> todo (reset) should be allowed', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'in_progress');
+    expect(taskModel.updateStatus(task.id, 'todo').status).toBe('todo');
+  });
+
+  // --- Same status (no-op) ---
+
+  it('same status transition should be a no-op', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'in_progress');
+    const result = taskModel.updateStatus(task.id, 'in_progress');
+    expect(result.status).toBe('in_progress');
+  });
+
+  it('same status todo -> todo should be a no-op', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    const result = taskModel.updateStatus(task.id, 'todo');
+    expect(result.status).toBe('todo');
+  });
+
+  // --- Force option ---
+
+  it('force:true should allow invalid transition done -> todo', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'in_progress');
+    taskModel.updateStatus(task.id, 'done');
+    const result = taskModel.updateStatus(task.id, 'todo', { force: true });
+    expect(result.status).toBe('todo');
+  });
+
+  it('force:true should allow invalid transition todo -> done', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    const result = taskModel.updateStatus(task.id, 'done', { force: true });
+    expect(result.status).toBe('done');
+  });
+
+  it('force:true should allow invalid transition skipped -> in_progress', () => {
+    const task = taskModel.create('test-plan', 'Task');
+    taskModel.updateStatus(task.id, 'skipped');
+    const result = taskModel.updateStatus(task.id, 'in_progress', { force: true });
+    expect(result.status).toBe('in_progress');
   });
 });

@@ -1,7 +1,15 @@
 import type Database from 'better-sqlite3';
 import type { Task, TaskStatus, TaskTreeNode, Wave } from '../types.js';
 import type { EventModel } from './event.js';
-import { generateId } from '../utils.js';
+import { generateId, validateTransition, type AllowedTransitions } from '../utils.js';
+
+export const TASK_TRANSITIONS: AllowedTransitions = {
+  todo: ['in_progress', 'blocked', 'skipped'],
+  in_progress: ['done', 'blocked', 'todo'],
+  blocked: ['todo', 'in_progress', 'skipped'],
+  done: [],
+  skipped: [],
+};
 
 export interface AcceptanceValidationResult {
   valid: boolean;
@@ -277,9 +285,12 @@ export class TaskModel {
     return Object.assign(this.getById(id)!, { warnings });
   }
 
-  updateStatus(id: string, status: TaskStatus): Task {
+  updateStatus(id: string, status: TaskStatus, opts?: { force?: boolean }): Task {
     const oldTask = this.getById(id);
-    const oldStatus = oldTask?.status;
+    if (!oldTask) throw new Error(`Task not found: ${id}`);
+    if (oldTask.status === status) return oldTask;
+    validateTransition(TASK_TRANSITIONS, oldTask.status, status, opts);
+    const oldStatus = oldTask.status;
     const completedAt = status === 'done' ? new Date().toISOString() : null;
 
     this.db

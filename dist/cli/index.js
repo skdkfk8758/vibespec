@@ -105,6 +105,20 @@ function nanoid(size = 21) {
 }
 
 // src/core/utils.ts
+var InvalidTransitionError = class extends Error {
+  constructor(current, target) {
+    super(`Invalid transition: ${current} \u2192 ${target}`);
+    this.name = "InvalidTransitionError";
+  }
+};
+function validateTransition(allowed, current, target, opts) {
+  if (current === target) return;
+  if (opts?.force) return;
+  const validTargets = allowed[current];
+  if (!validTargets || !validTargets.includes(target)) {
+    throw new InvalidTransitionError(current, target);
+  }
+}
 function generateId() {
   return nanoid(12);
 }
@@ -1445,6 +1459,13 @@ var SelfImproveEngine = class {
 };
 
 // src/core/models/task.ts
+var TASK_TRANSITIONS = {
+  todo: ["in_progress", "blocked", "skipped"],
+  in_progress: ["done", "blocked", "todo"],
+  blocked: ["todo", "in_progress", "skipped"],
+  done: [],
+  skipped: []
+};
 var ACTION_VERBS_KO = /(?:반환|표시|생성|포함|존재|동작|출력|실행|저장|삭제|변경|확인|처리|전달|호출|설정|검증|수행|발생|제공|응답|보여|보고|판정|매핑|이동)(?:한다|된다|하다|된다|합니다|됩니다|해야)/;
 var ACTION_VERBS_EN = /\b(?:return|display|create|contain|exist|output|run|save|delete|change|verify|should|must|shall|throw|fail|pass|handle|accept|reject|render|show|send|receive|include|produce|emit|dispatch|call|update|remove|add|store|load|fetch|respond|report|generate|trigger|prevent|allow|deny|block|skip)s?\b/i;
 var GIVEN_WHEN_THEN = /\b(?:given|when|then)\b/i;
@@ -1639,9 +1660,12 @@ var TaskModel = class {
     this.db.prepare(`UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
     return Object.assign(this.getById(id), { warnings });
   }
-  updateStatus(id, status) {
+  updateStatus(id, status, opts) {
     const oldTask = this.getById(id);
-    const oldStatus = oldTask?.status;
+    if (!oldTask) throw new Error(`Task not found: ${id}`);
+    if (oldTask.status === status) return oldTask;
+    validateTransition(TASK_TRANSITIONS, oldTask.status, status, opts);
+    const oldStatus = oldTask.status;
     const completedAt = status === "done" ? (/* @__PURE__ */ new Date()).toISOString() : null;
     this.db.prepare("UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?").run(status, completedAt, id);
     this.events?.record("task", id, "status_changed", JSON.stringify({ status: oldStatus }), JSON.stringify({ status }));
@@ -1841,6 +1865,13 @@ var EventModel = class {
 };
 
 // src/core/models/plan.ts
+var PLAN_TRANSITIONS = {
+  draft: ["active"],
+  active: ["approved", "completed", "archived"],
+  approved: ["completed", "archived"],
+  completed: ["archived"],
+  archived: []
+};
 var PlanModel = class {
   db;
   events;
@@ -1897,8 +1928,10 @@ var PlanModel = class {
     this.events?.record("plan", id, "updated", JSON.stringify(oldFields), JSON.stringify(newFields));
     return this.requireById(id);
   }
-  transitionStatus(id, newStatus, eventType, guard2, extra) {
+  transitionStatus(id, newStatus, eventType, guard2, extra, opts) {
     const plan2 = this.requireById(id);
+    if (plan2.status === newStatus) return plan2;
+    validateTransition(PLAN_TRANSITIONS, plan2.status, newStatus, opts);
     if (guard2) guard2(plan2);
     const oldStatus = plan2.status;
     const sql = extra ? `UPDATE plans SET status = ?, ${extra} WHERE id = ?` : `UPDATE plans SET status = ? WHERE id = ?`;
@@ -1912,21 +1945,17 @@ var PlanModel = class {
     );
     return this.requireById(id);
   }
-  activate(id) {
-    return this.transitionStatus(id, "active", "activated");
+  activate(id, opts) {
+    return this.transitionStatus(id, "active", "activated", void 0, void 0, opts);
   }
-  complete(id) {
-    return this.transitionStatus(id, "completed", "completed", void 0, "completed_at = CURRENT_TIMESTAMP");
+  complete(id, opts) {
+    return this.transitionStatus(id, "completed", "completed", void 0, "completed_at = CURRENT_TIMESTAMP", opts);
   }
-  approve(id) {
-    return this.transitionStatus(id, "approved", "approved", (plan2) => {
-      if (plan2.status !== "active") {
-        throw new Error(`Only active plans can be approved. Current status: ${plan2.status}`);
-      }
-    });
+  approve(id, opts) {
+    return this.transitionStatus(id, "approved", "approved", void 0, void 0, opts);
   }
-  archive(id) {
-    return this.transitionStatus(id, "archived", "archived");
+  archive(id, opts) {
+    return this.transitionStatus(id, "archived", "archived", void 0, void 0, opts);
   }
   delete(id) {
     const plan2 = this.requireById(id);
@@ -2935,21 +2964,50 @@ function formatImportPreview(result) {
 }
 
 // src/cli/importers.ts
-import { execSync as execSync2 } from "child_process";
+import { execFileSync } from "child_process";
 import { readFileSync as readFileSync3, existsSync as existsSync4 } from "fs";
+var REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
+function validateRepoFormat(repo) {
+  const trimmed = repo.trim();
+  if (!trimmed) {
+    throw new Error('repo \uD30C\uB77C\uBBF8\uD130\uAC00 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. "owner/repo" \uD615\uC2DD\uC73C\uB85C \uC785\uB825\uD558\uC138\uC694.');
+  }
+  if (!REPO_FORMAT_RE.test(trimmed)) {
+    throw new Error(
+      `\uC798\uBABB\uB41C repo \uD615\uC2DD\uC785\uB2C8\uB2E4: "${repo}". "owner/repo" \uD615\uC2DD(\uC608: octocat/Hello-World)\uB9CC \uD5C8\uC6A9\uB429\uB2C8\uB2E4.`
+    );
+  }
+}
 function importFromGithub(repo, options) {
   const errors = [];
+  try {
+    validateRepoFormat(repo);
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e));
+    return { items: [], source_prefix: `github:${repo}`, errors };
+  }
   const state = options?.state ?? "open";
-  const labelArg = options?.label ? `--label "${options.label}"` : "";
+  const args = [
+    "issue",
+    "list",
+    "--repo",
+    repo,
+    "--state",
+    state,
+    "--json",
+    "number,title,body,labels",
+    "--limit",
+    "50"
+  ];
+  if (options?.label) {
+    args.push("--label", options.label);
+  }
   let jsonStr;
   try {
-    jsonStr = execSync2(
-      `gh issue list --repo ${repo} --state ${state} ${labelArg} --json number,title,body,labels --limit 50`,
-      { encoding: "utf-8", timeout: 3e4 }
-    );
+    jsonStr = execFileSync("gh", args, { encoding: "utf-8", timeout: 3e4 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("command not found") || msg.includes("not found")) {
+    if (msg.includes("command not found") || msg.includes("not found") || msg.includes("ENOENT")) {
       errors.push("gh CLI\uAC00 \uC124\uCE58\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. https://cli.github.com \uC5D0\uC11C \uC124\uCE58\uD558\uC138\uC694.");
     } else {
       errors.push(`GitHub API \uC624\uB958: ${msg.slice(0, 200)}`);
