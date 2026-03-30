@@ -10,6 +10,38 @@ invocation: user
 qa-coordinator가 시나리오를 생성하고, qa-func-tester/qa-flow-tester가 병렬 검증하며,
 qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 
+## When to Use
+
+**사용하세요:**
+- 구현 중/후 시나리오 기반 결함 탐지가 필요할 때
+- 새 기능 구현 후 다양한 사용자 플로우를 검증할 때
+- 이슈 수집 및 수정 플래닝이 필요할 때
+
+**사용하지 마세요:**
+- 플랜 완료 최종 판정 → `vs-plan-verify` 사용
+- 개별 태스크 완료 검증 → `verification` 에이전트 자동 실행 (vs-next에 포함)
+- 보안 취약점 점검 → `vs-security` 사용
+
+**모드별 한 줄 가이드:**
+
+| 모드 | 상황 |
+|------|------|
+| Full | 플랜의 모든 완료 태스크를 종합 검증할 때 |
+| Incremental | 마지막 QA 이후 변경분만 빠르게 재검증할 때 |
+| Targeted | 특정 태스크만 집중 검증할 때 |
+| Visual | 브라우저 기반 시각/기능 검증이 필요할 때 |
+| Design Verification | DESIGN.md 준수 여부와 디자인 일관성을 확인할 때 |
+
+**vs-qa vs vs-plan-verify 비교:**
+
+| 관점 | vs-qa | vs-plan-verify |
+|------|-------|----------------|
+| 목적 | 결함 발견 및 이슈 수집 | 플랜 완료 최종 게이트 |
+| 시점 | 구현 중/후 언제든 | 모든 태스크 완료 후 |
+| 방법 | QA 에이전트 팀 위임 | 직접 npm test/build/lint 실행 |
+| 결과 | QA findings + 수정 플랜 | Pass/Fail 판정 |
+| 트리거 | 수동 (`/vs-qa`) | 수동 (`/vs-plan-verify`) 또는 vs-dashboard 알림 |
+
 ## CLI Reference
 
 - `vs --json qa run create <plan_id> [--trigger <type>]` — QA Run 생성

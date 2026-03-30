@@ -17,8 +17,21 @@ invocation: user
 - `vs-dashboard`에서 "completable" 알림이 뜬 플랜에 대해
 
 **사용하지 마세요:**
+- 시나리오 기반 결함 탐지 → `vs-qa` 사용 (결함 발견 도구)
 - 개별 태스크 검증 → `verification` 스킬 사용
 - 아직 in_progress/todo 태스크가 남아있을 때 (Step 1에서 FAIL 처리됨)
+
+> **vs-qa와의 차이:** `vs-qa`는 시나리오 기반으로 결함을 **발견**하는 도구이고, `vs-plan-verify`는 플랜 완료를 **판정**하는 게이트입니다. 일반적으로 `vs-qa` → `vs-plan-verify` 순서로 실행합니다.
+
+**vs-qa vs vs-plan-verify 비교:**
+
+| 관점 | vs-qa | vs-plan-verify |
+|------|-------|----------------|
+| 목적 | 결함 발견 및 이슈 수집 | 플랜 완료 최종 게이트 |
+| 시점 | 구현 중/후 언제든 | 모든 태스크 완료 후 |
+| 방법 | QA 에이전트 팀 위임 | 직접 npm test/build/lint 실행 |
+| 결과 | QA findings + 수정 플랜 | Pass/Fail 판정 |
+| 트리거 | 수동 (`/vs-qa`) | 수동 (`/vs-plan-verify`) 또는 vs-dashboard 알림 |
 
 ## Input
 
@@ -38,6 +51,14 @@ invocation: user
    - 모든 태스크가 skipped → **WARN** ("모든 태스크가 건너뛰어졌습니다")
 
 2. **회귀 테스트 실행**
+   **vs-qa 실행 이력 확인:**
+   - `vs --json qa run list --plan <plan_id>`를 Bash 도구로 실행하여 최근 QA Run을 확인하세요
+   - 최근 `completed` QA Run이 있으면:
+     - QA Run 완료 시점 이후 코드 변경이 있는지 `git log --since="{qa_completed_at}" --oneline`으로 확인
+     - 변경 없음 → "이미 vs-qa로 검증을 거쳤습니다. 회귀 테스트는 코드 변경분만 확인합니다" 안내
+     - 변경 있음 → "vs-qa 이후 코드가 변경되었으므로 전체 회귀 테스트가 필요합니다" 안내
+   - QA Run이 없으면 안내 없이 기존 로직 진행
+
    프로젝트 전체에 대해 기술 검증을 실행하세요:
 
    **a. 테스트:**
