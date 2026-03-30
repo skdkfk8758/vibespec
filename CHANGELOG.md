@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.30.0] - 2026-03-30
+
+### 새 기능
+- **vs-plan**: Step 1c에 비판적 검토 선택지 및 가이드라인 추가 (287e6b0)
+
+### 문서
+- **skills**: vs-qa/vs-plan-verify에 When to Use 가이드 및 비교 테이블 추가 (0da305d)
+- **README**: 누락 스킬(adhoc, vs-recap), CLI 명령(ideate, merge-report, context search), 구조 동기화
+
 ## [0.29.0] - 2026-03-29
 
 ### 새 기능
