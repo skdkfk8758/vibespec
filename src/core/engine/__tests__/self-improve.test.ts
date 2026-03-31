@@ -267,4 +267,186 @@ describe('SelfImproveEngine', () => {
       expect(engine.isAtCapacity()).toBe(true);
     });
   });
+
+  describe('AC02: createRule with enforcement parameter', () => {
+    it('AC02: createRule defaults enforcement to SOFT', () => {
+      const rule = engine.createRule({
+        title: 'Default enforcement',
+        category: 'LOGIC_ERROR',
+        ruleContent: '## Rule\nTest\n',
+      });
+      expect(rule.enforcement).toBe('SOFT');
+      expect(rule.escalated_at).toBeNull();
+
+      const dbRule = engine.getRule(rule.id);
+      expect(dbRule!.enforcement).toBe('SOFT');
+    });
+
+    it('AC02: createRule accepts explicit HARD enforcement', () => {
+      const rule = engine.createRule({
+        title: 'Hard rule',
+        category: 'LOGIC_ERROR',
+        ruleContent: '## Rule\nTest\n',
+        enforcement: 'HARD',
+      });
+      expect(rule.enforcement).toBe('HARD');
+
+      const dbRule = engine.getRule(rule.id);
+      expect(dbRule!.enforcement).toBe('HARD');
+    });
+  });
+
+  describe('AC03: escalateRule()', () => {
+    it('AC03: escalateRule updates DB enforcement to HARD and sets escalated_at', () => {
+      const rule = engine.createRule({
+        title: 'Escalate test',
+        category: 'LOGIC_ERROR',
+        ruleContent: '---\nApplies When: always\nEnforcement: SOFT\n---\n## Rule\nTest\n',
+      });
+
+      const result = engine.escalateRule(rule.id);
+      expect(result).toBe(true);
+
+      const updated = engine.getRule(rule.id);
+      expect(updated!.enforcement).toBe('HARD');
+      expect(updated!.escalated_at).not.toBeNull();
+    });
+
+    it('AC03: escalateRule updates Enforcement line in rule file', () => {
+      const rule = engine.createRule({
+        title: 'File update test',
+        category: 'LOGIC_ERROR',
+        ruleContent: '---\nApplies When: always\nEnforcement: SOFT\n---\n## Rule\nTest\n',
+      });
+
+      engine.escalateRule(rule.id);
+
+      const filePath = path.join(tmpDir, rule.rule_path);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      expect(content).toContain('Enforcement: HARD');
+      expect(content).not.toContain('Enforcement: SOFT');
+    });
+
+    it('AC03: escalateRule returns false for non-existent rule', () => {
+      expect(engine.escalateRule('nonexistent')).toBe(false);
+    });
+
+    it('AC03: escalateRule returns false for already HARD rule', () => {
+      const rule = engine.createRule({
+        title: 'Already hard',
+        category: 'LOGIC_ERROR',
+        ruleContent: '---\nEnforcement: HARD\n---\nTest',
+        enforcement: 'HARD',
+      });
+      expect(engine.escalateRule(rule.id)).toBe(false);
+    });
+  });
+
+  describe('AC04: checkEscalation()', () => {
+    it('AC04: returns rules matching 30d+violations>=3+prevented=0 criteria', () => {
+      // Create a rule that matches criteria: 31 days old, 3 occurrences, 0 prevented
+      const rule = engine.createRule({
+        title: 'Should escalate',
+        category: 'LOGIC_ERROR',
+        ruleContent: 'test',
+      });
+
+      // Manually set created_at to 31 days ago and occurrences to 3
+      const daysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare('UPDATE self_improve_rules SET created_at = ?, occurrences = 3, prevented = 0 WHERE id = ?')
+        .run(daysAgo, rule.id);
+
+      const candidates = engine.checkEscalation();
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].id).toBe(rule.id);
+      expect(candidates[0].title).toBe('Should escalate');
+      expect(candidates[0].occurrences).toBe(3);
+      expect(candidates[0].prevented).toBe(0);
+      expect(candidates[0].days_since_creation).toBeGreaterThanOrEqual(31);
+    });
+
+    it('AC04: excludes rules that do not meet all criteria', () => {
+      // Rule with prevented > 0
+      const rule1 = engine.createRule({ title: 'Has prevention', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      const daysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare('UPDATE self_improve_rules SET created_at = ?, occurrences = 5, prevented = 1 WHERE id = ?')
+        .run(daysAgo, rule1.id);
+
+      // Rule with < 3 occurrences
+      const rule2 = engine.createRule({ title: 'Few occurrences', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      db.prepare('UPDATE self_improve_rules SET created_at = ?, occurrences = 2, prevented = 0 WHERE id = ?')
+        .run(daysAgo, rule2.id);
+
+      // Rule too young (< 30 days)
+      const rule3 = engine.createRule({ title: 'Too young', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      db.prepare('UPDATE self_improve_rules SET occurrences = 5, prevented = 0 WHERE id = ?')
+        .run(rule3.id);
+
+      // Rule that is archived
+      const rule4 = engine.createRule({ title: 'Archived', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      db.prepare('UPDATE self_improve_rules SET created_at = ?, occurrences = 5, prevented = 0, status = ? WHERE id = ?')
+        .run(daysAgo, 'archived', rule4.id);
+
+      const candidates = engine.checkEscalation();
+      expect(candidates).toHaveLength(0);
+    });
+  });
+
+  describe('AC05: autoArchiveStale()', () => {
+    it('AC05: archives rules with 0 occurrences and 0 prevented older than threshold', () => {
+      const rule = engine.createRule({ title: 'Stale rule', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      const daysAgo = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare('UPDATE self_improve_rules SET created_at = ?, occurrences = 0, prevented = 0 WHERE id = ?')
+        .run(daysAgo, rule.id);
+
+      const archived = engine.autoArchiveStale(60);
+      expect(archived).toContain(rule.id);
+
+      const updated = engine.getRule(rule.id);
+      expect(updated!.status).toBe('archived');
+    });
+
+    it('AC05: does not archive rules with occurrences > 0', () => {
+      const rule = engine.createRule({ title: 'Active rule', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      const daysAgo = new Date(Date.now() - 61 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare('UPDATE self_improve_rules SET created_at = ?, occurrences = 1, prevented = 0 WHERE id = ?')
+        .run(daysAgo, rule.id);
+
+      const archived = engine.autoArchiveStale(60);
+      expect(archived).toHaveLength(0);
+    });
+
+    it('AC05: does not archive rules younger than threshold', () => {
+      const rule = engine.createRule({ title: 'Young rule', category: 'LOGIC_ERROR', ruleContent: 'test' });
+
+      const archived = engine.autoArchiveStale(60);
+      expect(archived).toHaveLength(0);
+    });
+  });
+
+  describe('AC06: recordViolation and recordPrevention', () => {
+    it('AC06: recordViolation increments occurrences and updates last_triggered_at', () => {
+      const rule = engine.createRule({ title: 'Violation test', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      expect(engine.getRule(rule.id)!.occurrences).toBe(0);
+
+      engine.recordViolation(rule.id);
+      const after1 = engine.getRule(rule.id)!;
+      expect(after1.occurrences).toBe(1);
+      expect(after1.last_triggered_at).not.toBeNull();
+
+      engine.recordViolation(rule.id);
+      expect(engine.getRule(rule.id)!.occurrences).toBe(2);
+    });
+
+    it('AC06: recordPrevention increments prevented counter', () => {
+      const rule = engine.createRule({ title: 'Prevention test', category: 'LOGIC_ERROR', ruleContent: 'test' });
+      expect(engine.getRule(rule.id)!.prevented).toBe(0);
+
+      engine.recordPrevention(rule.id);
+      expect(engine.getRule(rule.id)!.prevented).toBe(1);
+
+      engine.recordPrevention(rule.id);
+      expect(engine.getRule(rule.id)!.prevented).toBe(2);
+    });
+  });
 });

@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { hasColumn } from '../utils.js';
+import { loadVec } from '../engine/embeddings.js';
 
 const PLAN_PROGRESS_VIEW_SQL = `
   SELECT
@@ -122,8 +123,8 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
 
     CREATE TABLE IF NOT EXISTS vs_config (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
+      "key"   TEXT PRIMARY KEY,
+      "value" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS backlog_items (
@@ -293,7 +294,7 @@ export function applyMigrations(db: Database.Database): void {
       CREATE TABLE IF NOT EXISTS qa_runs (
         id                TEXT PRIMARY KEY,
         plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-        trigger           TEXT NOT NULL CHECK(trigger IN ('manual', 'auto', 'milestone')),
+        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone')),
         status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
         summary           TEXT,
         total_scenarios   INTEGER DEFAULT 0,
@@ -412,5 +413,39 @@ export function applyMigrations(db: Database.Database): void {
     `);
 
     db.pragma('user_version = 10');
+  }
+
+  if (version < 11) {
+    if (!hasColumn(db, 'self_improve_rules', 'enforcement')) {
+      db.exec("ALTER TABLE self_improve_rules ADD COLUMN enforcement TEXT DEFAULT 'SOFT' CHECK(enforcement IN ('SOFT', 'HARD'))");
+    }
+    if (!hasColumn(db, 'self_improve_rules', 'escalated_at')) {
+      db.exec('ALTER TABLE self_improve_rules ADD COLUMN escalated_at TEXT');
+    }
+
+    // Fix SQL reserved words in vs_config (key, value)
+    // SQLite treats unquoted reserved words as column names in most contexts,
+    // but the schema definition is updated in initSchema above for new DBs.
+    // Existing DBs work without recreation since SQLite is lenient here.
+
+    db.pragma('user_version = 11');
+  }
+
+  if (version < 12) {
+    const vecLoaded = loadVec(db);
+    if (vecLoaded) {
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_errors USING vec0(embedding float[384]);
+        CREATE TABLE IF NOT EXISTS error_embeddings (
+          error_id TEXT PRIMARY KEY,
+          vec_rowid INTEGER NOT NULL,
+          model TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_error_embeddings_vec ON error_embeddings(vec_rowid);
+      `);
+    }
+
+    db.pragma('user_version = 12');
   }
 }

@@ -7,6 +7,7 @@ import type {
   SelfImproveRule,
   RuleStats,
   NewRule,
+  EscalationCandidate,
 } from '../types.js';
 
 const RULES_DIR = '.claude/rules';
@@ -52,6 +53,7 @@ export class SelfImproveEngine {
     const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
     const rulePath = path.join(RULES_DIR, filename);
     const fullPath = path.join(this.projectRoot, rulePath);
+    const enforcement = newRule.enforcement ?? 'SOFT';
 
     // Write rule file
     fs.writeFileSync(fullPath, newRule.ruleContent, 'utf-8');
@@ -59,9 +61,9 @@ export class SelfImproveEngine {
     // Insert DB record
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, created_at)
-      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?)
-    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, now);
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, enforcement, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, enforcement, now);
 
     return {
       id,
@@ -72,6 +74,8 @@ export class SelfImproveEngine {
       occurrences: 0,
       prevented: 0,
       status: 'active',
+      enforcement,
+      escalated_at: null,
       created_at: now,
       last_triggered_at: null,
     };
@@ -190,6 +194,75 @@ export class SelfImproveEngine {
 
   getMaxActiveRules(): number {
     return MAX_ACTIVE_RULES;
+  }
+
+  escalateRule(id: string): boolean {
+    const rule = this.getRule(id);
+    if (!rule || rule.enforcement === 'HARD') return false;
+
+    const now = new Date().toISOString();
+    this.db.prepare(
+      'UPDATE self_improve_rules SET enforcement = ?, escalated_at = ? WHERE id = ?'
+    ).run('HARD', now, id);
+
+    // Update rule file: replace Enforcement: SOFT with Enforcement: HARD
+    const fullPath = path.join(this.projectRoot, rule.rule_path);
+    if (fs.existsSync(fullPath)) {
+      let content = fs.readFileSync(fullPath, 'utf-8');
+      content = content.replace(/Enforcement:\s*SOFT/g, 'Enforcement: HARD');
+      fs.writeFileSync(fullPath, content, 'utf-8');
+    }
+
+    return true;
+  }
+
+  checkEscalation(): EscalationCandidate[] {
+    const rows = this.db.prepare(`
+      SELECT id, title, rule_path, created_at, occurrences, prevented,
+        CAST((julianday('now') - julianday(created_at)) AS INTEGER) AS days_since_creation
+      FROM self_improve_rules
+      WHERE status = 'active'
+        AND enforcement = 'SOFT'
+        AND occurrences >= 3
+        AND prevented = 0
+        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= 30
+      ORDER BY occurrences DESC
+    `).all() as EscalationCandidate[];
+
+    return rows;
+  }
+
+  autoArchiveStale(days: number = 60): string[] {
+    const rows = this.db.prepare(`
+      SELECT id, rule_path FROM self_improve_rules
+      WHERE status = 'active'
+        AND occurrences = 0
+        AND prevented = 0
+        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= ?
+    `).all(days) as Array<{ id: string; rule_path: string }>;
+
+    const archivedIds: string[] = [];
+    for (const row of rows) {
+      if (this.archiveRule(row.id)) {
+        archivedIds.push(row.id);
+      }
+    }
+
+    return archivedIds;
+  }
+
+  recordViolation(id: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare(
+      'UPDATE self_improve_rules SET occurrences = occurrences + 1, last_triggered_at = ? WHERE id = ?'
+    ).run(now, id);
+  }
+
+  recordPrevention(id: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare(
+      'UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?'
+    ).run(now, id);
   }
 
   getRulesDir(): string {

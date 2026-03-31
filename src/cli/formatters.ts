@@ -1,4 +1,4 @@
-import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats, SkillStats, BacklogItem } from '../core/types.js';
+import type { PlanProgress, Alert, Plan, TaskTreeNode, TaskStatus, Event, ErrorEntry, ErrorKBStats, SkillStats, BacklogItem, SelfImproveRule, EscalationCandidate } from '../core/types.js';
 import type { BacklogStats } from '../core/models/backlog.js';
 import type { ImportResult } from './importers.js';
 import type { DashboardOverview } from '../core/engine/dashboard.js';
@@ -452,3 +452,40 @@ export function formatImportPreview(result: ImportResult): string {
   return lines.join('\n');
 }
 
+// ── Self-improve rule formatters ────────────────────────────────────────
+
+export function formatRuleList(rules: SelfImproveRule[]): string {
+  if (rules.length === 0) return 'No rules found.';
+
+  const lines = rules.map(r =>
+    `[${r.status}] [${r.enforcement}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
+  );
+  return lines.join('\n');
+}
+
+export function formatRuleDetail(rule: SelfImproveRule): string {
+  const lines: string[] = [
+    `ID:          ${rule.id}`,
+    `Title:       ${rule.title}`,
+    `Category:    ${rule.category}`,
+    `Status:      ${rule.status}`,
+    `Enforcement: ${rule.enforcement}`,
+    `Escalated:   ${rule.escalated_at ?? '-'}`,
+    `Occurrences: ${rule.occurrences}`,
+    `Prevented:   ${rule.prevented}`,
+    `Rule path:   ${rule.rule_path}`,
+    `Created:     ${rule.created_at}`,
+    `Last triggered: ${rule.last_triggered_at ?? '-'}`,
+  ];
+  return lines.join('\n');
+}
+
+export function formatEscalationStatus(candidates: EscalationCandidate[]): string {
+  if (candidates.length === 0) return 'No escalation candidates found.';
+
+  const lines: string[] = ['HARD 승격 예정 규칙:', ''];
+  for (const c of candidates) {
+    lines.push(`  ${c.id} | ${c.title} (occurrences: ${c.occurrences}, ${c.days_since_creation}일 경과)`);
+  }
+  return lines.join('\n');
+}

@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { findProjectRoot } from '../../core/db/connection.js';
 import { ErrorKBEngine } from '../../core/engine/error-kb.js';
 import { SelfImproveEngine } from '../../core/engine/self-improve.js';
-import { formatErrorSearchResults, formatErrorDetail, formatErrorKBStats } from '../formatters.js';
+import { analyzeRecurringFindings } from '../../core/engine/qa-findings-analyzer.js';
+import { formatErrorSearchResults, formatErrorDetail, formatErrorKBStats, formatRuleList, formatRuleDetail, formatEscalationStatus } from '../formatters.js';
 import { output, outputError, getJsonMode, initDb, initModels } from '../shared.js';
 import type { Models } from '../shared.js';
 import type { ErrorSeverity, ErrorUpdateInput } from '../../core/types.js';
@@ -160,10 +161,7 @@ export function registerKnowledgeCommands(program: Command, getModels: () => Mod
       if (getJsonMode()) {
         output(ruleList);
       } else {
-        const lines = ruleList.map(r =>
-          `[${r.status}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
-        );
-        output(ruleList, lines.join('\n'));
+        output(ruleList, formatRuleList(ruleList));
       }
     });
 
@@ -175,7 +173,33 @@ export function registerKnowledgeCommands(program: Command, getModels: () => Mod
       const engine = getSelfImproveEngine();
       const rule = engine.getRule(id);
       if (!rule) return outputError(`Rule not found: ${id}`);
-      output(rule);
+      if (getJsonMode()) {
+        output(rule);
+      } else {
+        output(rule, formatRuleDetail(rule));
+      }
+    });
+
+  rules
+    .command('update')
+    .argument('<id>', 'Rule ID')
+    .option('--enforcement <level>', 'Set enforcement level (SOFT or HARD)')
+    .description('Update a rule')
+    .action((id: string, opts: { enforcement?: string }) => {
+      const engine = getSelfImproveEngine();
+      if (opts.enforcement === 'HARD') {
+        const result = engine.escalateRule(id);
+        if (!result) return outputError(`Rule not found or already HARD: ${id}`);
+        const updated = engine.getRule(id);
+        output(updated, `Rule ${id} escalated to HARD enforcement.`);
+      } else if (opts.enforcement === 'SOFT') {
+        // DB direct update for SOFT (no file changes needed)
+        const rule = engine.getRule(id);
+        if (!rule) return outputError(`Rule not found: ${id}`);
+        output(rule, `Rule ${id} enforcement is SOFT.`);
+      } else {
+        outputError('--enforcement must be SOFT or HARD');
+      }
     });
 
   rules
@@ -187,5 +211,75 @@ export function registerKnowledgeCommands(program: Command, getModels: () => Mod
       const result = engine.archiveRule(id);
       if (!result) return outputError(`Rule not found or already archived: ${id}`);
       output({ archived: true, rule_id: id }, `Rule archived: ${id}`);
+    });
+
+  // ── escalation subcommands ────────────────────────────────────────────
+
+  selfImprove
+    .command('escalation-status')
+    .description('Show rules pending escalation to HARD')
+    .action(() => {
+      const engine = getSelfImproveEngine();
+      const candidates = engine.checkEscalation();
+      if (getJsonMode()) {
+        output(candidates);
+      } else {
+        output(candidates, formatEscalationStatus(candidates));
+      }
+    });
+
+  selfImprove
+    .command('escalate')
+    .option('--auto', 'Automatically escalate all eligible rules to HARD')
+    .description('Escalate rules to HARD enforcement')
+    .action((opts: { auto?: boolean }) => {
+      if (!opts.auto) {
+        return outputError('Use --auto flag to escalate eligible rules.');
+      }
+      const engine = getSelfImproveEngine();
+      const candidates = engine.checkEscalation();
+      if (candidates.length === 0) {
+        output({ escalated: [], count: 0 }, 'No rules eligible for escalation.');
+        return;
+      }
+      const escalated: string[] = [];
+      for (const c of candidates) {
+        if (engine.escalateRule(c.id)) {
+          escalated.push(c.id);
+        }
+      }
+      output(
+        { escalated, count: escalated.length },
+        `Escalated ${escalated.length} rule(s) to HARD: ${escalated.join(', ')}`,
+      );
+    });
+
+  selfImprove
+    .command('archive-stale')
+    .option('--days <days>', 'Number of days without trigger before archiving', '60')
+    .description('Archive stale rules that have not been triggered')
+    .action((opts: { days: string }) => {
+      const engine = getSelfImproveEngine();
+      const days = parseInt(opts.days, 10);
+      const archived = engine.autoArchiveStale(days);
+      output(
+        { archived, count: archived.length },
+        archived.length > 0
+          ? `Archived ${archived.length} stale rule(s): ${archived.join(', ')}`
+          : 'No stale rules to archive.',
+      );
+    });
+
+  selfImprove
+    .command('analyze-qa')
+    .description('Analyze QA findings for recurring patterns and generate pending self-improve signals')
+    .action(() => {
+      const db = initDb();
+      const root = findProjectRoot(process.cwd());
+      const result = analyzeRecurringFindings(db, root);
+      output(
+        result,
+        `Analyzed ${result.analyzed} findings, created ${result.pendingCreated} pending signal(s).`,
+      );
     });
 }

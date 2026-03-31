@@ -2,13 +2,16 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { generateId } from '../utils.js';
 import type {
+  AddResult,
   ErrorEntry,
   ErrorKBStats,
   ErrorSeverity,
   ErrorStatus,
   ErrorUpdateInput,
   NewErrorEntry,
+  VectorSearchResult,
 } from '../types.js';
+import { generateEmbedding, cosineSimilarity } from './embeddings.js';
 
 export interface SearchOptions {
   tags?: string[];
@@ -108,6 +111,8 @@ export function serializeFrontmatter(meta: FrontmatterData): string {
 export class ErrorKBEngine {
   private kbRoot: string;
   private errorsDir: string;
+  /** In-memory embedding cache: errorId -> Float32Array */
+  private embeddingCache: Map<string, Float32Array> = new Map();
 
   constructor(projectRoot: string) {
     this.kbRoot = path.join(projectRoot, '.claude', 'error-kb');
@@ -279,6 +284,148 @@ export class ErrorKBEngine {
       .slice(0, 10);
 
     return stats;
+  }
+
+  /**
+   * Generate embedding text from an error entry's key fields.
+   */
+  private entryToText(entry: { title: string; content?: string }): string {
+    return `${entry.title} ${entry.content || ''}`.trim();
+  }
+
+  /**
+   * Semantic search: generate embedding for query and compare against cached embeddings.
+   * Returns results sorted by similarity (descending).
+   */
+  async searchSemantic(query: string, limit: number = 10): Promise<VectorSearchResult[]> {
+    if (this.embeddingCache.size === 0) return [];
+
+    const queryEmbedding = await generateEmbedding(query);
+    const results: VectorSearchResult[] = [];
+
+    for (const [id, embedding] of this.embeddingCache) {
+      const entry = this.show(id);
+      if (!entry) continue;
+
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      results.push({ entry, similarity });
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, limit);
+  }
+
+  /**
+   * Hybrid search: run text search + semantic search in parallel,
+   * merge results using Reciprocal Rank Fusion (RRF).
+   */
+  async searchHybrid(query: string, opts?: SearchOptions): Promise<VectorSearchResult[]> {
+    const [textResults, semanticResults] = await Promise.all([
+      Promise.resolve(this.search(query, opts)),
+      this.searchSemantic(query),
+    ]);
+
+    const k = 60;
+    const scoreMap = new Map<string, { entry: ErrorEntry; score: number }>();
+
+    // Score text results by rank
+    for (let i = 0; i < textResults.length; i++) {
+      const entry = textResults[i];
+      const rrfScore = 1 / (k + i + 1);
+      scoreMap.set(entry.id, { entry, score: rrfScore });
+    }
+
+    // Score semantic results by rank, merge with text scores
+    for (let i = 0; i < semanticResults.length; i++) {
+      const { entry } = semanticResults[i];
+      const rrfScore = 1 / (k + i + 1);
+      const existing = scoreMap.get(entry.id);
+      if (existing) {
+        existing.score += rrfScore;
+      } else {
+        scoreMap.set(entry.id, { entry, score: rrfScore });
+      }
+    }
+
+    const merged = Array.from(scoreMap.values());
+    merged.sort((a, b) => b.score - a.score);
+
+    return merged.map(({ entry, score }) => ({ entry, similarity: score }));
+  }
+
+  /**
+   * Initialize embeddings for all existing error entries.
+   * Skips entries that already have embeddings in cache.
+   */
+  async initEmbeddings(): Promise<{ indexed: number; skipped: number }> {
+    const files = this.listErrorFiles();
+    let indexed = 0;
+    let skipped = 0;
+
+    for (const file of files) {
+      const id = path.basename(file, '.md');
+      if (this.embeddingCache.has(id)) {
+        skipped++;
+        continue;
+      }
+
+      const entry = this.show(id);
+      if (!entry) continue;
+
+      const text = this.entryToText(entry);
+      const embedding = await generateEmbedding(text);
+      this.embeddingCache.set(id, embedding);
+      indexed++;
+    }
+
+    return { indexed, skipped };
+  }
+
+  /**
+   * Find potential duplicate entries based on embedding similarity.
+   * Returns entries with similarity >= 0.85.
+   */
+  async findDuplicates(newEntry: NewErrorEntry): Promise<VectorSearchResult[]> {
+    if (this.embeddingCache.size === 0) return [];
+
+    const text = `${newEntry.title} ${newEntry.cause || ''} ${newEntry.solution || ''}`.trim();
+    const queryEmbedding = await generateEmbedding(text);
+    const results: VectorSearchResult[] = [];
+
+    for (const [id, embedding] of this.embeddingCache) {
+      const entry = this.show(id);
+      if (!entry) continue;
+
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= 0.85) {
+        results.push({ entry, similarity });
+      }
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results;
+  }
+
+  /**
+   * Add a new error entry with duplicate detection.
+   * Returns the entry plus an optional duplicate warning.
+   */
+  async addWithDuplicateCheck(newEntry: NewErrorEntry): Promise<AddResult> {
+    const duplicates = await this.findDuplicates(newEntry);
+    const entry = this.add(newEntry);
+
+    // Generate and cache embedding for the new entry
+    const text = this.entryToText(entry);
+    const embedding = await generateEmbedding(text);
+    this.embeddingCache.set(entry.id, embedding);
+
+    const result: AddResult = { entry };
+    if (duplicates.length > 0) {
+      const titles = duplicates.map(d => `"${d.entry.title}" (similarity: ${d.similarity.toFixed(2)})`).join(', ');
+      result.duplicateWarning = `Similar entries found: ${titles}`;
+    }
+
+    return result;
   }
 
   private toErrorEntry(id: string, meta: FrontmatterData, body: string): ErrorEntry {

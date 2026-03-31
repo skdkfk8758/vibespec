@@ -12,7 +12,7 @@ export class QARunModel {
   create(planId: string, trigger: QARunTrigger): QARun {
     const id = generateId();
     this.db.prepare(
-      `INSERT INTO qa_runs (id, plan_id, trigger) VALUES (?, ?, ?)`
+      `INSERT INTO qa_runs (id, plan_id, "trigger") VALUES (?, ?, ?)`
     ).run(id, planId, trigger);
     return this.get(id)!;
   }

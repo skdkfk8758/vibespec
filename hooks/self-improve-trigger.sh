@@ -14,6 +14,7 @@ fi
 
 # CLAUDE_TOOL_OUTPUT에서 출력 추출 (JSON 또는 raw text 모두 처리)
 OUTPUT=""
+TOOL_EXIT="0"
 if echo "$CLAUDE_TOOL_OUTPUT" | jq -e . >/dev/null 2>&1; then
   TOOL_EXIT=$(echo "$CLAUDE_TOOL_OUTPUT" | jq -r '.exitCode // 0' 2>/dev/null || echo "0")
   if [ "$TOOL_EXIT" != "0" ]; then
@@ -23,6 +24,12 @@ if echo "$CLAUDE_TOOL_OUTPUT" | jq -e . >/dev/null 2>&1; then
 else
   OUTPUT="${CLAUDE_TOOL_OUTPUT:-}"
 fi
+
+# Early exit: successful command that doesn't look like a git commit with fix/hotfix/debug
+if [ "$TOOL_EXIT" = "0" ] && ! echo "$OUTPUT" | grep -qiE '(fix|hotfix|debug)'; then
+  exit 0
+fi
+
 COMMIT_MSG=$(echo "$OUTPUT" | head -5)
 
 # fix:/hotfix:/debug: 타입만 감지 — 일반 커밋(feat:/chore: 등)은 무시
@@ -84,8 +91,13 @@ jq -n \
 if [ -f "$PENDING_FILE" ]; then
   PENDING_COUNT=$(ls -1 "$PENDING_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
   jq -n --arg count "$PENDING_COUNT" '{
-    additionalContext: ("fix 커밋이 감지되어 self-improve pending에 기록되었습니다 (대기 " + $count + "건). `/self-improve`로 자동 규칙을 생성하세요.")
+    additionalContext: ("fix 커밋이 감지되어 self-improve pending에 기록되었습니다 (대기 " + $count + "건). 규칙 자동 생성 중... (background)")
   }'
+
+  # Background auto-rule generation
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    nohup node "${CLAUDE_PLUGIN_ROOT}/dist/scripts/auto-rule-gen.js" >/dev/null 2>&1 &
+  fi
 fi
 
 exit 0

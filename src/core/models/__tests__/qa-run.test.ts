@@ -46,6 +46,32 @@ describe('QARunModel', () => {
     });
   });
 
+  describe('AC02: trigger column quoting', () => {
+    it('AC02: INSERT query uses double-quoted "trigger" column', () => {
+      // Verify that the model can insert and retrieve trigger values
+      // This tests that the SQL uses "trigger" (quoted) to avoid reserved word conflict
+      const run = model.create(planId, 'manual');
+      expect(run).not.toBeNull();
+      expect(run.trigger).toBe('manual');
+
+      // Verify via raw SQL with quoted column
+      const raw = db.prepare('SELECT "trigger" FROM qa_runs WHERE id = ?').get(run.id) as { trigger: string };
+      expect(raw.trigger).toBe('manual');
+    });
+
+    it('AC02: SELECT queries correctly retrieve trigger column', () => {
+      const run = model.create(planId, 'auto');
+      const fetched = model.get(run.id);
+      expect(fetched!.trigger).toBe('auto');
+
+      const listed = model.list(planId);
+      expect(listed[0].trigger).toBe('auto');
+
+      const latest = model.getLatestByPlan(planId);
+      expect(latest!.trigger).toBe('auto');
+    });
+  });
+
   describe('get', () => {
     it('AC01: should return a run by id', () => {
       const created = model.create(planId, 'manual');

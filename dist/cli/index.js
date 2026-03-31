@@ -2,7 +2,7 @@
 
 // src/cli/index.ts
 import { Command } from "commander";
-import { createRequire } from "module";
+import { createRequire as createRequire2 } from "module";
 
 // src/cli/formatters.ts
 var FILLED = "\u2588";
@@ -360,6 +360,37 @@ function formatImportPreview(result) {
   }
   return lines.join("\n");
 }
+function formatRuleList(rules) {
+  if (rules.length === 0) return "No rules found.";
+  const lines = rules.map(
+    (r) => `[${r.status}] [${r.enforcement}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
+  );
+  return lines.join("\n");
+}
+function formatRuleDetail(rule) {
+  const lines = [
+    `ID:          ${rule.id}`,
+    `Title:       ${rule.title}`,
+    `Category:    ${rule.category}`,
+    `Status:      ${rule.status}`,
+    `Enforcement: ${rule.enforcement}`,
+    `Escalated:   ${rule.escalated_at ?? "-"}`,
+    `Occurrences: ${rule.occurrences}`,
+    `Prevented:   ${rule.prevented}`,
+    `Rule path:   ${rule.rule_path}`,
+    `Created:     ${rule.created_at}`,
+    `Last triggered: ${rule.last_triggered_at ?? "-"}`
+  ];
+  return lines.join("\n");
+}
+function formatEscalationStatus(candidates) {
+  if (candidates.length === 0) return "No escalation candidates found.";
+  const lines = ["HARD \uC2B9\uACA9 \uC608\uC815 \uADDC\uCE59:", ""];
+  for (const c of candidates) {
+    lines.push(`  ${c.id} | ${c.title} (occurrences: ${c.occurrences}, ${c.days_since_creation}\uC77C \uACBD\uACFC)`);
+  }
+  return lines.join("\n");
+}
 
 // src/core/db/connection.ts
 import Database from "better-sqlite3";
@@ -425,8 +456,8 @@ function resolveDbPath() {
 }
 function getDb(dbPath) {
   if (_db) return _db;
-  const path3 = dbPath ?? resolveDbPath();
-  _db = new Database(path3);
+  const path4 = dbPath ?? resolveDbPath();
+  _db = new Database(path4);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   return _db;
@@ -518,6 +549,47 @@ function buildUpdateQuery(table, id, fields) {
     sql: `UPDATE ${table} SET ${sets.join(", ")} WHERE id = ?`,
     params: values
   };
+}
+
+// src/core/engine/embeddings.ts
+import { createRequire } from "module";
+var require2 = createRequire(import.meta.url);
+var pipelineInstance = null;
+function loadVec(db) {
+  try {
+    const sqliteVec = require2("sqlite-vec");
+    sqliteVec.load(db);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function initModel() {
+  if (pipelineInstance) return;
+  const { pipeline } = await import("@xenova/transformers");
+  pipelineInstance = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+}
+async function generateEmbedding(text) {
+  if (!pipelineInstance) {
+    await initModel();
+  }
+  const output2 = await pipelineInstance(text, { pooling: "mean", normalize: true });
+  return new Float32Array(output2.data.slice(0, 384));
+}
+function cosineSimilarity(a, b) {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const ai = a[i];
+    const bi = b[i];
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denom === 0) return 0;
+  return dot / denom;
 }
 
 // src/core/db/schema.ts
@@ -641,8 +713,8 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_skill_usage_created ON skill_usage(created_at);
 
     CREATE TABLE IF NOT EXISTS vs_config (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
+      "key"   TEXT PRIMARY KEY,
+      "value" TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS backlog_items (
@@ -785,7 +857,7 @@ function applyMigrations(db) {
       CREATE TABLE IF NOT EXISTS qa_runs (
         id                TEXT PRIMARY KEY,
         plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-        trigger           TEXT NOT NULL CHECK(trigger IN ('manual', 'auto', 'milestone')),
+        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone')),
         status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
         summary           TEXT,
         total_scenarios   INTEGER DEFAULT 0,
@@ -899,6 +971,31 @@ function applyMigrations(db) {
       CREATE INDEX IF NOT EXISTS idx_merge_reports_commit ON merge_reports(commit_hash);
     `);
     db.pragma("user_version = 10");
+  }
+  if (version < 11) {
+    if (!hasColumn(db, "self_improve_rules", "enforcement")) {
+      db.exec("ALTER TABLE self_improve_rules ADD COLUMN enforcement TEXT DEFAULT 'SOFT' CHECK(enforcement IN ('SOFT', 'HARD'))");
+    }
+    if (!hasColumn(db, "self_improve_rules", "escalated_at")) {
+      db.exec("ALTER TABLE self_improve_rules ADD COLUMN escalated_at TEXT");
+    }
+    db.pragma("user_version = 11");
+  }
+  if (version < 12) {
+    const vecLoaded = loadVec(db);
+    if (vecLoaded) {
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_errors USING vec0(embedding float[384]);
+        CREATE TABLE IF NOT EXISTS error_embeddings (
+          error_id TEXT PRIMARY KEY,
+          vec_rowid INTEGER NOT NULL,
+          model TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_error_embeddings_vec ON error_embeddings(vec_rowid);
+      `);
+    }
+    db.pragma("user_version = 12");
   }
 }
 
@@ -2093,7 +2190,7 @@ var QARunModel = class {
   create(planId, trigger) {
     const id = generateId();
     this.db.prepare(
-      `INSERT INTO qa_runs (id, plan_id, trigger) VALUES (?, ?, ?)`
+      `INSERT INTO qa_runs (id, plan_id, "trigger") VALUES (?, ?, ?)`
     ).run(id, planId, trigger);
     return this.get(id);
   }
@@ -3551,6 +3648,8 @@ function serializeFrontmatter(meta) {
 var ErrorKBEngine = class {
   kbRoot;
   errorsDir;
+  /** In-memory embedding cache: errorId -> Float32Array */
+  embeddingCache = /* @__PURE__ */ new Map();
   constructor(projectRoot) {
     this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
     this.errorsDir = path.join(this.kbRoot, "errors");
@@ -3690,6 +3789,119 @@ ${newEntry.solution}
     stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10);
     return stats;
   }
+  /**
+   * Generate embedding text from an error entry's key fields.
+   */
+  entryToText(entry) {
+    return `${entry.title} ${entry.content || ""}`.trim();
+  }
+  /**
+   * Semantic search: generate embedding for query and compare against cached embeddings.
+   * Returns results sorted by similarity (descending).
+   */
+  async searchSemantic(query, limit = 10) {
+    if (this.embeddingCache.size === 0) return [];
+    const queryEmbedding = await generateEmbedding(query);
+    const results = [];
+    for (const [id, embedding] of this.embeddingCache) {
+      const entry = this.show(id);
+      if (!entry) continue;
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      results.push({ entry, similarity });
+    }
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, limit);
+  }
+  /**
+   * Hybrid search: run text search + semantic search in parallel,
+   * merge results using Reciprocal Rank Fusion (RRF).
+   */
+  async searchHybrid(query, opts) {
+    const [textResults, semanticResults] = await Promise.all([
+      Promise.resolve(this.search(query, opts)),
+      this.searchSemantic(query)
+    ]);
+    const k = 60;
+    const scoreMap = /* @__PURE__ */ new Map();
+    for (let i = 0; i < textResults.length; i++) {
+      const entry = textResults[i];
+      const rrfScore = 1 / (k + i + 1);
+      scoreMap.set(entry.id, { entry, score: rrfScore });
+    }
+    for (let i = 0; i < semanticResults.length; i++) {
+      const { entry } = semanticResults[i];
+      const rrfScore = 1 / (k + i + 1);
+      const existing = scoreMap.get(entry.id);
+      if (existing) {
+        existing.score += rrfScore;
+      } else {
+        scoreMap.set(entry.id, { entry, score: rrfScore });
+      }
+    }
+    const merged = Array.from(scoreMap.values());
+    merged.sort((a, b) => b.score - a.score);
+    return merged.map(({ entry, score }) => ({ entry, similarity: score }));
+  }
+  /**
+   * Initialize embeddings for all existing error entries.
+   * Skips entries that already have embeddings in cache.
+   */
+  async initEmbeddings() {
+    const files = this.listErrorFiles();
+    let indexed = 0;
+    let skipped = 0;
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      if (this.embeddingCache.has(id)) {
+        skipped++;
+        continue;
+      }
+      const entry = this.show(id);
+      if (!entry) continue;
+      const text = this.entryToText(entry);
+      const embedding = await generateEmbedding(text);
+      this.embeddingCache.set(id, embedding);
+      indexed++;
+    }
+    return { indexed, skipped };
+  }
+  /**
+   * Find potential duplicate entries based on embedding similarity.
+   * Returns entries with similarity >= 0.85.
+   */
+  async findDuplicates(newEntry) {
+    if (this.embeddingCache.size === 0) return [];
+    const text = `${newEntry.title} ${newEntry.cause || ""} ${newEntry.solution || ""}`.trim();
+    const queryEmbedding = await generateEmbedding(text);
+    const results = [];
+    for (const [id, embedding] of this.embeddingCache) {
+      const entry = this.show(id);
+      if (!entry) continue;
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= 0.85) {
+        results.push({ entry, similarity });
+      }
+    }
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results;
+  }
+  /**
+   * Add a new error entry with duplicate detection.
+   * Returns the entry plus an optional duplicate warning.
+   */
+  async addWithDuplicateCheck(newEntry) {
+    const duplicates = await this.findDuplicates(newEntry);
+    const entry = this.add(newEntry);
+    const text = this.entryToText(entry);
+    const embedding = await generateEmbedding(text);
+    this.embeddingCache.set(entry.id, embedding);
+    const result = { entry };
+    if (duplicates.length > 0) {
+      const titles = duplicates.map((d) => `"${d.entry.title}" (similarity: ${d.similarity.toFixed(2)})`).join(", ");
+      result.duplicateWarning = `Similar entries found: ${titles}`;
+    }
+    return result;
+  }
   toErrorEntry(id, meta, body) {
     return {
       id,
@@ -3776,12 +3988,13 @@ var SelfImproveEngine = class {
     const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
     const rulePath = path2.join(RULES_DIR, filename);
     const fullPath = path2.join(this.projectRoot, rulePath);
+    const enforcement = newRule.enforcement ?? "SOFT";
     fs2.writeFileSync(fullPath, newRule.ruleContent, "utf-8");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     this.db.prepare(`
-      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, created_at)
-      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?)
-    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, now);
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, enforcement, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, enforcement, now);
     return {
       id,
       error_kb_id: newRule.error_kb_id ?? null,
@@ -3791,6 +4004,8 @@ var SelfImproveEngine = class {
       occurrences: 0,
       prevented: 0,
       status: "active",
+      enforcement,
+      escalated_at: null,
       created_at: now,
       last_triggered_at: null
     };
@@ -3884,6 +4099,63 @@ var SelfImproveEngine = class {
   getMaxActiveRules() {
     return MAX_ACTIVE_RULES;
   }
+  escalateRule(id) {
+    const rule = this.getRule(id);
+    if (!rule || rule.enforcement === "HARD") return false;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET enforcement = ?, escalated_at = ? WHERE id = ?"
+    ).run("HARD", now, id);
+    const fullPath = path2.join(this.projectRoot, rule.rule_path);
+    if (fs2.existsSync(fullPath)) {
+      let content = fs2.readFileSync(fullPath, "utf-8");
+      content = content.replace(/Enforcement:\s*SOFT/g, "Enforcement: HARD");
+      fs2.writeFileSync(fullPath, content, "utf-8");
+    }
+    return true;
+  }
+  checkEscalation() {
+    const rows = this.db.prepare(`
+      SELECT id, title, rule_path, created_at, occurrences, prevented,
+        CAST((julianday('now') - julianday(created_at)) AS INTEGER) AS days_since_creation
+      FROM self_improve_rules
+      WHERE status = 'active'
+        AND enforcement = 'SOFT'
+        AND occurrences >= 3
+        AND prevented = 0
+        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= 30
+      ORDER BY occurrences DESC
+    `).all();
+    return rows;
+  }
+  autoArchiveStale(days = 60) {
+    const rows = this.db.prepare(`
+      SELECT id, rule_path FROM self_improve_rules
+      WHERE status = 'active'
+        AND occurrences = 0
+        AND prevented = 0
+        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= ?
+    `).all(days);
+    const archivedIds = [];
+    for (const row of rows) {
+      if (this.archiveRule(row.id)) {
+        archivedIds.push(row.id);
+      }
+    }
+    return archivedIds;
+  }
+  recordViolation(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET occurrences = occurrences + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
+  recordPrevention(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
   getRulesDir() {
     return this.rulesDir;
   }
@@ -3894,6 +4166,78 @@ var SelfImproveEngine = class {
     return this.processedDir;
   }
 };
+
+// src/core/engine/qa-findings-analyzer.ts
+import * as fs3 from "fs";
+import * as path3 from "path";
+var PENDING_DIR2 = ".claude/self-improve/pending";
+function commonPrefix(a, b) {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) {
+    i++;
+  }
+  return a.slice(0, i);
+}
+function isSimilarDescription(a, b) {
+  if (a.includes(b) || b.includes(a)) return true;
+  const prefix = commonPrefix(a, b).trim();
+  const minLen = Math.min(a.length, b.length);
+  return minLen > 0 && prefix.length >= minLen * 0.5;
+}
+function analyzeRecurringFindings(db, projectRoot) {
+  const pendingDir = path3.join(projectRoot, PENDING_DIR2);
+  fs3.mkdirSync(pendingDir, { recursive: true });
+  const findings = db.prepare(`
+    SELECT qf.id, qf.run_id, qf.category, qf.description
+    FROM qa_findings qf
+    JOIN qa_runs qr ON qr.id = qf.run_id
+    ORDER BY qf.category, qf.description
+  `).all();
+  const analyzed = findings.length;
+  const groups = [];
+  for (const finding of findings) {
+    let matched = false;
+    for (const group of groups) {
+      if (group.category !== finding.category) continue;
+      if (isSimilarDescription(finding.description, group.description_pattern)) {
+        group.finding_ids.push(finding.id);
+        group.run_ids.add(finding.run_id);
+        const common = commonPrefix(finding.description, group.description_pattern).trim();
+        if (common.length > 0) {
+          group.description_pattern = common;
+        }
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      groups.push({
+        category: finding.category,
+        description_pattern: finding.description,
+        finding_ids: [finding.id],
+        run_ids: /* @__PURE__ */ new Set([finding.run_id])
+      });
+    }
+  }
+  let pendingCreated = 0;
+  for (const group of groups) {
+    if (group.run_ids.size >= 3) {
+      const pending = {
+        type: "recurring_qa_finding",
+        finding_ids: group.finding_ids,
+        category: group.category,
+        description_pattern: group.description_pattern,
+        repeat_count: group.run_ids.size,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const filename = `recurring-${group.category}-${Date.now()}-${pendingCreated}.json`;
+      const filePath = path3.join(pendingDir, filename);
+      fs3.writeFileSync(filePath, JSON.stringify(pending, null, 2), "utf-8");
+      pendingCreated++;
+    }
+  }
+  return { analyzed, pendingCreated };
+}
 
 // src/cli/commands/knowledge.ts
 function getErrorKBEngine() {
@@ -3996,23 +4340,87 @@ File: .claude/error-kb/errors/${entry.id}.md`);
     if (getJsonMode()) {
       output(ruleList);
     } else {
-      const lines = ruleList.map(
-        (r) => `[${r.status}] ${r.id} | ${r.category} | ${r.title} (prevented: ${r.prevented})`
-      );
-      output(ruleList, lines.join("\n"));
+      output(ruleList, formatRuleList(ruleList));
     }
   });
   rules.command("show").argument("<id>", "Rule ID").description("Show rule details").action((id) => {
     const engine = getSelfImproveEngine();
     const rule = engine.getRule(id);
     if (!rule) return outputError(`Rule not found: ${id}`);
-    output(rule);
+    if (getJsonMode()) {
+      output(rule);
+    } else {
+      output(rule, formatRuleDetail(rule));
+    }
+  });
+  rules.command("update").argument("<id>", "Rule ID").option("--enforcement <level>", "Set enforcement level (SOFT or HARD)").description("Update a rule").action((id, opts) => {
+    const engine = getSelfImproveEngine();
+    if (opts.enforcement === "HARD") {
+      const result = engine.escalateRule(id);
+      if (!result) return outputError(`Rule not found or already HARD: ${id}`);
+      const updated = engine.getRule(id);
+      output(updated, `Rule ${id} escalated to HARD enforcement.`);
+    } else if (opts.enforcement === "SOFT") {
+      const rule = engine.getRule(id);
+      if (!rule) return outputError(`Rule not found: ${id}`);
+      output(rule, `Rule ${id} enforcement is SOFT.`);
+    } else {
+      outputError("--enforcement must be SOFT or HARD");
+    }
   });
   rules.command("archive").argument("<id>", "Rule ID").description("Archive a rule").action((id) => {
     const engine = getSelfImproveEngine();
     const result = engine.archiveRule(id);
     if (!result) return outputError(`Rule not found or already archived: ${id}`);
     output({ archived: true, rule_id: id }, `Rule archived: ${id}`);
+  });
+  selfImprove.command("escalation-status").description("Show rules pending escalation to HARD").action(() => {
+    const engine = getSelfImproveEngine();
+    const candidates = engine.checkEscalation();
+    if (getJsonMode()) {
+      output(candidates);
+    } else {
+      output(candidates, formatEscalationStatus(candidates));
+    }
+  });
+  selfImprove.command("escalate").option("--auto", "Automatically escalate all eligible rules to HARD").description("Escalate rules to HARD enforcement").action((opts) => {
+    if (!opts.auto) {
+      return outputError("Use --auto flag to escalate eligible rules.");
+    }
+    const engine = getSelfImproveEngine();
+    const candidates = engine.checkEscalation();
+    if (candidates.length === 0) {
+      output({ escalated: [], count: 0 }, "No rules eligible for escalation.");
+      return;
+    }
+    const escalated = [];
+    for (const c of candidates) {
+      if (engine.escalateRule(c.id)) {
+        escalated.push(c.id);
+      }
+    }
+    output(
+      { escalated, count: escalated.length },
+      `Escalated ${escalated.length} rule(s) to HARD: ${escalated.join(", ")}`
+    );
+  });
+  selfImprove.command("archive-stale").option("--days <days>", "Number of days without trigger before archiving", "60").description("Archive stale rules that have not been triggered").action((opts) => {
+    const engine = getSelfImproveEngine();
+    const days = parseInt(opts.days, 10);
+    const archived = engine.autoArchiveStale(days);
+    output(
+      { archived, count: archived.length },
+      archived.length > 0 ? `Archived ${archived.length} stale rule(s): ${archived.join(", ")}` : "No stale rules to archive."
+    );
+  });
+  selfImprove.command("analyze-qa").description("Analyze QA findings for recurring patterns and generate pending self-improve signals").action(() => {
+    const db = initDb();
+    const root = findProjectRoot(process.cwd());
+    const result = analyzeRecurringFindings(db, root);
+    output(
+      result,
+      `Analyzed ${result.analyzed} findings, created ${result.pendingCreated} pending signal(s).`
+    );
   });
 }
 
@@ -4226,8 +4634,8 @@ ${log.summary}`);
 }
 
 // src/cli/index.ts
-var require2 = createRequire(import.meta.url);
-var pkg = require2("../../package.json");
+var require3 = createRequire2(import.meta.url);
+var pkg = require3("../../package.json");
 var program = new Command();
 program.name("vp").description("VibeSpec CLI").version(pkg.version).option("--json", "Output in JSON format").option("--verbose", "Show detailed error output").hook("preAction", () => {
   setJsonMode(program.opts().json === true);

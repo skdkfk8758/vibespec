@@ -1,8 +1,54 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ErrorKBEngine } from '../error-kb.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import type { VectorSearchResult, AddResult } from '../../types.js';
+
+// Mock embeddings module
+vi.mock('../embeddings.js', () => {
+  // Create predictable embeddings based on content keywords
+  const makeEmbedding = (text: string): Float32Array => {
+    const arr = new Float32Array(384).fill(0);
+    const lower = text.toLowerCase();
+    // "deploy failure" and "배포 실패" get similar embeddings
+    if (lower.includes('deploy') || lower.includes('배포') || lower.includes('failure') || lower.includes('실패')) {
+      arr[0] = 0.9; arr[1] = 0.8; arr[2] = 0.7;
+    }
+    // "auth" / "TypeError" gets a different pattern
+    if (lower.includes('auth') || lower.includes('typeerror')) {
+      arr[10] = 0.9; arr[11] = 0.8;
+    }
+    // "connection" / "timeout"
+    if (lower.includes('connection') || lower.includes('timeout')) {
+      arr[20] = 0.9; arr[21] = 0.8;
+    }
+    // Normalize
+    let norm = 0;
+    for (let i = 0; i < arr.length; i++) norm += arr[i] * arr[i];
+    norm = Math.sqrt(norm);
+    if (norm > 0) for (let i = 0; i < arr.length; i++) arr[i] /= norm;
+    return arr;
+  };
+
+  return {
+    generateEmbedding: vi.fn().mockImplementation(async (text: string) => makeEmbedding(text)),
+    cosineSimilarity: vi.fn().mockImplementation((a: Float32Array, b: Float32Array) => {
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+      }
+      const denom = Math.sqrt(normA) * Math.sqrt(normB);
+      return denom === 0 ? 0 : dot / denom;
+    }),
+    loadVec: vi.fn().mockReturnValue(false),
+    isVecAvailable: vi.fn().mockReturnValue(false),
+    initModel: vi.fn().mockResolvedValue(undefined),
+    _resetPipeline: vi.fn(),
+  };
+});
 
 describe('ErrorKBEngine', () => {
   let tmpDir: string;
@@ -372,6 +418,193 @@ Some content here`,
 
     it('should return false for invalid id', () => {
       expect(engine.delete('../../etc/passwd')).toBe(false);
+    });
+  });
+
+  describe('searchSemantic', () => {
+    it('AC01: searchSemantic("배포 실패")가 "deploy failure" 에러를 유사도 기반으로 반환한다', async () => {
+      engine.add({
+        title: 'deploy failure on production',
+        severity: 'critical',
+        tags: ['deploy'],
+        cause: 'Docker image build failed',
+        solution: 'Fix Dockerfile',
+      });
+      engine.add({
+        title: 'CSS layout broken',
+        severity: 'low',
+        tags: ['css'],
+        cause: 'Flexbox issue',
+      });
+
+      // Index embeddings before semantic search
+      await engine.initEmbeddings();
+
+      const results: VectorSearchResult[] = await engine.searchSemantic('배포 실패');
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].entry.title).toContain('deploy failure');
+      expect(results[0].similarity).toBeGreaterThan(0);
+    });
+
+    it('AC01: searchSemantic returns empty array when no entries exist', async () => {
+      const results = await engine.searchSemantic('test query');
+      expect(results).toEqual([]);
+    });
+  });
+
+  describe('searchHybrid', () => {
+    it('AC02: searchHybrid가 텍스트+벡터 결과를 합산하여 반환한다', async () => {
+      engine.add({
+        title: 'deploy failure on production',
+        severity: 'critical',
+        tags: ['deploy'],
+        cause: 'Docker image build failed',
+        solution: 'Fix Dockerfile',
+      });
+      engine.add({
+        title: 'TypeError in auth module',
+        severity: 'high',
+        tags: ['typescript'],
+        cause: 'Missing null check',
+      });
+      engine.add({
+        title: 'Connection timeout',
+        severity: 'high',
+        tags: ['network'],
+        cause: 'Database pool exhausted',
+      });
+
+      await engine.initEmbeddings();
+
+      const results: VectorSearchResult[] = await engine.searchHybrid('deploy failure');
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      // The deploy failure entry should be top-ranked (matched by both text and semantic)
+      expect(results[0].entry.title).toContain('deploy failure');
+      expect(results[0].similarity).toBeGreaterThan(0);
+    });
+
+    it('AC02: searchHybrid deduplicates by error ID', async () => {
+      engine.add({
+        title: 'deploy failure on production',
+        severity: 'critical',
+        tags: ['deploy'],
+        cause: 'Docker image build failed',
+      });
+
+      await engine.initEmbeddings();
+
+      const results = await engine.searchHybrid('deploy failure');
+      const ids = results.map(r => r.entry.id);
+      const uniqueIds = new Set(ids);
+      expect(ids.length).toBe(uniqueIds.size);
+    });
+  });
+
+  describe('initEmbeddings', () => {
+    it('AC03: initEmbeddings가 기존 N개 엔트리를 임베딩하고 { indexed: N, skipped: 0 }을 반환한다', async () => {
+      engine.add({ title: 'Error 1', severity: 'high', tags: [] });
+      engine.add({ title: 'Error 2', severity: 'medium', tags: [] });
+      engine.add({ title: 'Error 3', severity: 'low', tags: [] });
+
+      const result = await engine.initEmbeddings();
+      expect(result).toEqual({ indexed: 3, skipped: 0 });
+    });
+
+    it('AC03: initEmbeddings skips already-indexed entries on second call', async () => {
+      engine.add({ title: 'Error 1', severity: 'high', tags: [] });
+
+      const first = await engine.initEmbeddings();
+      expect(first).toEqual({ indexed: 1, skipped: 0 });
+
+      const second = await engine.initEmbeddings();
+      expect(second).toEqual({ indexed: 0, skipped: 1 });
+    });
+  });
+
+  describe('add with duplicate detection', () => {
+    it('AC04: add() 시 유사도 >= 0.85 엔트리가 있으면 duplicateWarning이 반환된다', async () => {
+      // First add a deploy failure entry and index it
+      engine.add({
+        title: 'deploy failure on production',
+        severity: 'critical',
+        tags: ['deploy'],
+        cause: 'Docker image build failed',
+        solution: 'Fix Dockerfile',
+      });
+      await engine.initEmbeddings();
+
+      // Now add a very similar entry
+      const result: AddResult = await engine.addWithDuplicateCheck({
+        title: 'deploy failure in staging',
+        severity: 'high',
+        tags: ['deploy'],
+        cause: 'Docker build error',
+        solution: 'Fix Dockerfile config',
+      });
+
+      expect(result.entry).toBeDefined();
+      expect(result.entry.title).toBe('deploy failure in staging');
+      expect(result.duplicateWarning).toBeDefined();
+      expect(typeof result.duplicateWarning).toBe('string');
+    });
+
+    it('AC04: add() 시 유사하지 않은 엔트리는 duplicateWarning이 없다', async () => {
+      engine.add({
+        title: 'deploy failure on production',
+        severity: 'critical',
+        tags: ['deploy'],
+        cause: 'Docker image build failed',
+      });
+      await engine.initEmbeddings();
+
+      const result: AddResult = await engine.addWithDuplicateCheck({
+        title: 'TypeError in auth module',
+        severity: 'high',
+        tags: ['typescript'],
+        cause: 'Missing null check',
+      });
+
+      expect(result.entry).toBeDefined();
+      expect(result.duplicateWarning).toBeUndefined();
+    });
+  });
+
+  describe('search fallback', () => {
+    it('AC05: vec 미사용 시 search()가 기존 텍스트 검색으로 동작한다', () => {
+      engine.add({
+        title: 'TypeError in auth module',
+        severity: 'critical',
+        tags: ['typescript', 'auth'],
+        cause: 'Missing null check',
+      });
+      engine.add({
+        title: 'Connection timeout',
+        severity: 'high',
+        tags: ['network'],
+        cause: 'Database pool exhausted',
+      });
+
+      // Without vec, search should use text-only
+      const results = engine.search('auth');
+      expect(results).toHaveLength(1);
+      expect(results[0].title).toContain('auth');
+    });
+
+    it('AC05: search with tag filter still works without vec', () => {
+      engine.add({
+        title: 'Error A',
+        severity: 'high',
+        tags: ['typescript'],
+      });
+      engine.add({
+        title: 'Error B',
+        severity: 'low',
+        tags: ['css'],
+      });
+
+      const results = engine.search('', { tags: ['typescript'] });
+      expect(results).toHaveLength(1);
+      expect(results[0].tags).toContain('typescript');
     });
   });
 });

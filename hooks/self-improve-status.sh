@@ -20,6 +20,12 @@ if [ -d "$PENDING_DIR" ]; then
   if [ "$PENDING_COUNT" -gt 0 ] 2>/dev/null; then
     MESSAGES="${MESSAGES}self-improve pending ${PENDING_COUNT}건이 대기 중입니다. \`/self-improve\`로 처리하세요.\n"
   fi
+
+  # Check for failed auto-rule-gen files
+  FAILED_COUNT=$(ls -1 "$PENDING_DIR"/*.json.failed 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$FAILED_COUNT" -gt 0 ] 2>/dev/null; then
+    MESSAGES="${MESSAGES}자동 규칙 생성 실패 ${FAILED_COUNT}건. pending 파일을 확인하세요.\n"
+  fi
 fi
 
 # 2) Rules 파일 수 체크 (archive 제외)
@@ -27,6 +33,15 @@ if [ -d "$RULES_DIR" ]; then
   RULES_COUNT=$(ls -1 "$RULES_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
   if [ "$RULES_COUNT" -gt "$MAX_RULES" ] 2>/dev/null; then
     MESSAGES="${MESSAGES}활성 규칙이 ${RULES_COUNT}개로 상한(${MAX_RULES})을 초과했습니다. \`/self-improve-review\`로 정리하세요.\n"
+  fi
+fi
+
+# Check for escalation candidates
+_VS_DB=$(find "$PROJECT_ROOT" -maxdepth 1 -name "vibespec.db" 2>/dev/null | head -1)
+if [ -n "$_VS_DB" ]; then
+  ESC_COUNT=$(sqlite3 "$_VS_DB" "SELECT COUNT(*) FROM self_improve_rules WHERE enforcement = 'SOFT' AND occurrences >= 3 AND prevented = 0 AND julianday('now') - julianday(created_at) >= 30" 2>/dev/null || echo "0")
+  if [ "$ESC_COUNT" -gt 0 ] 2>/dev/null; then
+    MESSAGES="${MESSAGES}SOFT→HARD 승격 대상 ${ESC_COUNT}건. \`vs self-improve escalate --auto\`로 승격하세요.\n"
   fi
 fi
 

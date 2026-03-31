@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMemoryDb } from '../connection.js';
 import { initSchema, applyMigrations } from '../schema.js';
 import type Database from 'better-sqlite3';
@@ -214,7 +214,7 @@ describe('Schema', () => {
 
     // Assert: version should be latest (all migrations applied)
     const version = v2Db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(10);
+    expect(version).toBe(12);
 
     v2Db.close();
   });
@@ -237,8 +237,178 @@ describe('Schema', () => {
     expect(tables.map((t) => t.name)).toContain('skill_usage');
   });
 
-  it('should set user_version to 10 after all migrations on fresh DB', () => {
+  it('should set user_version to 12 after all migrations on fresh DB', () => {
     const version = db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(10);
+    expect(version).toBe(12);
+  });
+
+  describe('AC01: migration 11 - enforcement columns', () => {
+    it('AC01: self_improve_rules table has enforcement and escalated_at columns after migration 11', () => {
+      const columns = db.pragma('table_info(self_improve_rules)') as Array<{ name: string }>;
+      const colNames = columns.map(c => c.name);
+      expect(colNames).toContain('enforcement');
+      expect(colNames).toContain('escalated_at');
+    });
+
+    it('AC02: existing rules have enforcement default value SOFT', () => {
+      // Insert a rule without specifying enforcement
+      db.prepare(`
+        INSERT INTO self_improve_rules (id, title, category, rule_path, status, created_at)
+        VALUES ('test-id', 'Test Rule', 'LOGIC_ERROR', 'test/path.md', 'active', datetime('now'))
+      `).run();
+
+      const rule = db.prepare('SELECT enforcement FROM self_improve_rules WHERE id = ?').get('test-id') as { enforcement: string };
+      expect(rule.enforcement).toBe('SOFT');
+    });
+
+    it('AC01: enforcement column has CHECK constraint for SOFT and HARD', () => {
+      expect(() => {
+        db.prepare(`
+          INSERT INTO self_improve_rules (id, title, category, rule_path, status, enforcement, created_at)
+          VALUES ('bad-id', 'Bad', 'LOGIC_ERROR', 'test.md', 'active', 'INVALID', datetime('now'))
+        `).run();
+      }).toThrow();
+    });
+  });
+
+  describe('AC08: SQL reserved words are double-quoted', () => {
+    it('AC08: vs_config table works correctly with quoted reserved word columns', () => {
+      // key and value are SQL reserved words - verify they work
+      db.prepare('INSERT INTO vs_config ("key", "value") VALUES (?, ?)').run('test_key', 'test_value');
+      const row = db.prepare('SELECT "key", "value" FROM vs_config WHERE "key" = ?').get('test_key') as { key: string; value: string };
+      expect(row.key).toBe('test_key');
+      expect(row.value).toBe('test_value');
+    });
+  });
+
+  describe('AC02: qa_runs trigger column is double-quoted in schema', () => {
+    it('AC02: qa_runs table allows insert and select with quoted trigger column', () => {
+      db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run('p1', 'P', 'active');
+      db.prepare('INSERT INTO qa_runs (id, plan_id, "trigger") VALUES (?, ?, ?)').run('r1', 'p1', 'manual');
+      const row = db.prepare('SELECT "trigger" FROM qa_runs WHERE id = ?').get('r1') as { trigger: string };
+      expect(row.trigger).toBe('manual');
+    });
+
+    it('AC02: qa_runs trigger CHECK constraint works with quoted column', () => {
+      db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run('p2', 'P', 'active');
+      expect(() => {
+        db.prepare('INSERT INTO qa_runs (id, plan_id, "trigger") VALUES (?, ?, ?)').run('r2', 'p2', 'invalid_trigger');
+      }).toThrow();
+    });
+  });
+
+  describe('migration 12 - vec_errors and error_embeddings', () => {
+    it('AC03: loadVec 성공 시 vec_errors 및 error_embeddings 테이블이 생성된다', () => {
+      // initSchema runs with real loadVec. If sqlite-vec is available,
+      // vec_errors and error_embeddings should exist.
+      // We check by querying sqlite_master for these tables.
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE name IN ('vec_errors', 'error_embeddings') ORDER BY name")
+        .all() as { name: string }[];
+      const tableNames = tables.map((t) => t.name);
+
+      // sqlite-vec is available in this project, so both tables should exist
+      expect(tableNames).toContain('error_embeddings');
+
+      // Verify error_embeddings table structure
+      const columns = db.pragma('table_info(error_embeddings)') as Array<{ name: string; type: string; notnull: number }>;
+      const colMap = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+      expect(colMap['error_id'].type).toBe('TEXT');
+      expect(colMap['vec_rowid'].type).toBe('INTEGER');
+      expect(colMap['vec_rowid'].notnull).toBe(1);
+      expect(colMap['model'].type).toBe('TEXT');
+      expect(colMap['model'].notnull).toBe(1);
+      expect(colMap['created_at'].type).toBe('TEXT');
+
+      // Verify index exists
+      const indexes = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='error_embeddings'")
+        .all() as { name: string }[];
+      expect(indexes.map((i) => i.name)).toContain('idx_error_embeddings_vec');
+    });
+
+    it('AC05: migration 12가 sqlite-vec 없이도 에러 없이 통과한다', async () => {
+      // Mock loadVec to return false (simulate sqlite-vec not available)
+      const embeddings = await import('../../engine/embeddings.js');
+      const loadVecSpy = vi.spyOn(embeddings, 'loadVec').mockReturnValue(false);
+
+      try {
+        const noVecDb = createMemoryDb();
+        // Set version to 11 so only migration 12 runs
+        noVecDb.exec(`
+          CREATE TABLE IF NOT EXISTS plans (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft', summary TEXT, spec TEXT,
+            branch TEXT, worktree_name TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME
+          );
+        `);
+        noVecDb.pragma('user_version = 11');
+
+        // Apply migrations - should not throw
+        expect(() => applyMigrations(noVecDb)).not.toThrow();
+
+        // Version should be 12
+        const version = noVecDb.pragma('user_version', { simple: true }) as number;
+        expect(version).toBe(12);
+
+        // vec_errors should NOT exist
+        const vecTables = noVecDb
+          .prepare("SELECT name FROM sqlite_master WHERE name = 'vec_errors'")
+          .all() as { name: string }[];
+        expect(vecTables.length).toBe(0);
+
+        // error_embeddings should NOT exist (skipped with vec)
+        const embTables = noVecDb
+          .prepare("SELECT name FROM sqlite_master WHERE name = 'error_embeddings'")
+          .all() as { name: string }[];
+        expect(embTables.length).toBe(0);
+
+        noVecDb.close();
+      } finally {
+        loadVecSpy.mockRestore();
+      }
+    });
+
+    it('AC05: migration 12 is idempotent', () => {
+      // Running migrations again should not throw
+      expect(() => applyMigrations(db)).not.toThrow();
+      const version = db.pragma('user_version', { simple: true }) as number;
+      expect(version).toBe(12);
+    });
+
+    it('AC03: error_embeddings can store and query data', () => {
+      // Functional test: insert and retrieve from error_embeddings
+      db.prepare(`
+        INSERT INTO error_embeddings (error_id, vec_rowid, model)
+        VALUES (?, ?, ?)
+      `).run('err-001', 1, 'all-MiniLM-L6-v2');
+
+      const row = db.prepare('SELECT * FROM error_embeddings WHERE error_id = ?').get('err-001') as {
+        error_id: string; vec_rowid: number; model: string; created_at: string;
+      };
+      expect(row.error_id).toBe('err-001');
+      expect(row.vec_rowid).toBe(1);
+      expect(row.model).toBe('all-MiniLM-L6-v2');
+      expect(row.created_at).toBeTruthy();
+    });
+  });
+
+  describe('AC03: no other unquoted SQL reserved word columns', () => {
+    it('AC03: all SQL reserved word columns in schema are properly quoted', () => {
+      // Known reserved word columns: key, value (vs_config), trigger (qa_runs)
+      // Verify they all work correctly
+      const reservedWordTests = [
+        { table: 'vs_config', column: 'key', insert: 'INSERT INTO vs_config ("key", "value") VALUES (?, ?)', params: ['rw_test', 'val'] },
+        { table: 'vs_config', column: 'value', insert: 'INSERT INTO vs_config ("key", "value") VALUES (?, ?)', params: ['rw_test2', 'val2'] },
+      ];
+
+      for (const test of reservedWordTests) {
+        expect(() => {
+          db.prepare(test.insert).run(...test.params);
+        }).not.toThrow();
+      }
+    });
   });
 });

@@ -179,6 +179,16 @@ export interface NewErrorEntry {
   solution?: string;
 }
 
+export interface VectorSearchResult {
+  entry: ErrorEntry;
+  similarity: number;
+}
+
+export interface AddResult {
+  entry: ErrorEntry;
+  duplicateWarning?: string;
+}
+
 export interface ErrorKBStats {
   total: number;
   by_severity: Record<ErrorSeverity, number>;
@@ -198,6 +208,8 @@ export type RuleCategory =
 
 export type RuleStatus = 'active' | 'archived';
 
+export type RuleEnforcement = 'SOFT' | 'HARD';
+
 export interface SelfImproveRule {
   id: string;
   error_kb_id: string | null;
@@ -207,8 +219,20 @@ export interface SelfImproveRule {
   occurrences: number;
   prevented: number;
   status: RuleStatus;
+  enforcement: RuleEnforcement;
+  escalated_at: string | null;
   created_at: string;
   last_triggered_at: string | null;
+}
+
+export interface EscalationCandidate {
+  id: string;
+  title: string;
+  rule_path: string;
+  created_at: string;
+  occurrences: number;
+  prevented: number;
+  days_since_creation: number;
 }
 
 export interface RuleStats {
@@ -222,6 +246,7 @@ export interface NewRule {
   title: string;
   category: RuleCategory;
   ruleContent: string;
+  enforcement?: RuleEnforcement;
 }
 
 // QA types
