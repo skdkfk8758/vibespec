@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { validateConfigEntry } from './config-schema.js';
 
 export function getConfig(db: Database.Database, key: string): string | null {
   const row = db.prepare('SELECT value FROM vs_config WHERE key = ?').get(key) as { value: string } | undefined;
@@ -6,6 +7,7 @@ export function getConfig(db: Database.Database, key: string): string | null {
 }
 
 export function setConfig(db: Database.Database, key: string, value: string): void {
+  validateConfigEntry(key, value);
   db.prepare('INSERT INTO vs_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 

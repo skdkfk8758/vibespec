@@ -3187,12 +3187,41 @@ function initDb() {
 import { resolve as resolve2, join as join2 } from "path";
 import { existsSync as existsSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2, chmodSync } from "fs";
 
+// src/core/config-schema.ts
+import { z } from "zod";
+var ConfigValidationError = class extends Error {
+  constructor(key, value, reason) {
+    super(`Invalid config value for "${key}": "${value}" \u2014 ${reason}`);
+    this.name = "ConfigValidationError";
+  }
+};
+var BooleanStringSchema = z.enum(["true", "false"]);
+var PathStringSchema = z.string().min(1, "Path must not be empty");
+var CONFIG_SCHEMAS = {
+  "careful.enabled": BooleanStringSchema,
+  "freeze.enabled": BooleanStringSchema,
+  "guard.enabled": BooleanStringSchema,
+  "freeze.path": PathStringSchema
+};
+function validateConfigEntry(key, value) {
+  const schema = CONFIG_SCHEMAS[key];
+  if (!schema) {
+    return;
+  }
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    const reason = result.error.issues.map((i) => i.message).join("; ");
+    throw new ConfigValidationError(key, value, reason);
+  }
+}
+
 // src/core/config.ts
 function getConfig(db, key) {
   const row = db.prepare("SELECT value FROM vs_config WHERE key = ?").get(key);
   return row?.value ?? null;
 }
 function setConfig(db, key, value) {
+  validateConfigEntry(key, value);
   db.prepare("INSERT INTO vs_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
 }
 function deleteConfig(db, key) {
@@ -4985,12 +5014,12 @@ File: .claude/error-kb/errors/${entry.id}.md`);
 import * as fs5 from "fs";
 
 // src/core/engine/qa-config.ts
-import { z } from "zod";
+import { z as z2 } from "zod";
 import * as YAML from "yaml";
 import * as fs4 from "fs";
-var CustomRuleSchema = z.object({
-  id: z.string(),
-  pattern: z.string().refine(
+var CustomRuleSchema = z2.object({
+  id: z2.string(),
+  pattern: z2.string().refine(
     (val) => {
       try {
         new RegExp(val);
@@ -5001,48 +5030,48 @@ var CustomRuleSchema = z.object({
     },
     { message: "Invalid regular expression pattern" }
   ),
-  severity: z.enum(["critical", "high", "medium", "low"]),
-  message: z.string()
+  severity: z2.enum(["critical", "high", "medium", "low"]),
+  message: z2.string()
 });
-var IgnoreRuleSchema = z.object({
-  rule_id: z.string(),
-  paths: z.array(z.string()),
-  reason: z.string(),
-  expires: z.string().optional()
+var IgnoreRuleSchema = z2.object({
+  rule_id: z2.string(),
+  paths: z2.array(z2.string()),
+  reason: z2.string(),
+  expires: z2.string().optional()
 });
-var SeverityAdjustmentSchema = z.object({
-  rule_id: z.string(),
-  new_severity: z.enum(["critical", "high", "medium", "low"]),
-  condition: z.string()
+var SeverityAdjustmentSchema = z2.object({
+  rule_id: z2.string(),
+  new_severity: z2.enum(["critical", "high", "medium", "low"]),
+  condition: z2.string()
 });
-var QaRulesSchema = z.object({
-  profile: z.enum(["web-frontend", "api-server", "fullstack", "library", "cli-tool"]).optional(),
-  risk_thresholds: z.object({
-    green: z.number(),
-    yellow: z.number(),
-    orange: z.number()
+var QaRulesSchema = z2.object({
+  profile: z2.enum(["web-frontend", "api-server", "fullstack", "library", "cli-tool"]).optional(),
+  risk_thresholds: z2.object({
+    green: z2.number(),
+    yellow: z2.number(),
+    orange: z2.number()
   }).optional(),
-  severity_weights: z.object({
-    critical: z.number(),
-    high: z.number(),
-    medium: z.number(),
-    low: z.number()
+  severity_weights: z2.object({
+    critical: z2.number(),
+    high: z2.number(),
+    medium: z2.number(),
+    low: z2.number()
   }).optional(),
-  modules: z.object({
-    lint_check: z.boolean().optional(),
-    type_check: z.boolean().optional(),
-    test_coverage: z.boolean().optional(),
-    dead_code: z.boolean().optional(),
-    dependency_audit: z.boolean().optional(),
-    complexity_analysis: z.boolean().optional(),
-    shadow: z.boolean().optional(),
-    wave_gate: z.boolean().optional(),
-    adaptive_planner: z.boolean().optional()
+  modules: z2.object({
+    lint_check: z2.boolean().optional(),
+    type_check: z2.boolean().optional(),
+    test_coverage: z2.boolean().optional(),
+    dead_code: z2.boolean().optional(),
+    dependency_audit: z2.boolean().optional(),
+    complexity_analysis: z2.boolean().optional(),
+    shadow: z2.boolean().optional(),
+    wave_gate: z2.boolean().optional(),
+    adaptive_planner: z2.boolean().optional()
   }).optional(),
-  regression_bonus: z.number().optional(),
-  custom_rules: z.array(CustomRuleSchema).optional(),
-  ignore: z.array(IgnoreRuleSchema).optional(),
-  severity_adjustments: z.array(SeverityAdjustmentSchema).optional()
+  regression_bonus: z2.number().optional(),
+  custom_rules: z2.array(CustomRuleSchema).optional(),
+  ignore: z2.array(IgnoreRuleSchema).optional(),
+  severity_adjustments: z2.array(SeverityAdjustmentSchema).optional()
 });
 var DEFAULT_QA_CONFIG = {
   risk_thresholds: { green: 0.2, yellow: 0.5, orange: 0.8 },
