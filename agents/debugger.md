@@ -1,6 +1,6 @@
 ---
 name: debugger
-description: 태스크 실패 자동 디버깅 에이전트. 실패 리포트를 분석하여 근본 원인을 파악하고, 자동 수정 후 재검증합니다. FAIL → debug → fix → re-verify 파이프라인의 핵심입니다.
+description: 태스크 실패 자동 디버깅 및 수정
 ---
 
 # Debugger Agent

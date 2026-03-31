@@ -1,6 +1,6 @@
 ---
 name: qa-func-tester
-description: QA 기능/통합/회귀 테스터 에이전트. 배정된 시나리오를 기존 테스트 실행 및 코드 정적 분석으로 검증하고, 이슈 발견 시 DB에 기록합니다.
+description: 기능/통합/회귀 테스트 검증
 ---
 
 # QA Functional Tester Agent

@@ -1,6 +1,6 @@
 ---
 name: qa-coordinator
-description: QA 팀 관리자 에이전트. 프로젝트 전체 구조를 분석하여 QA 시나리오를 자동 생성하고, 테스터 에이전트를 디스패치하며, 결과를 집계하여 최종 QA 리포트를 생성합니다.
+description: QA 시나리오 생성 및 팀 관리
 ---
 
 # QA Coordinator Agent

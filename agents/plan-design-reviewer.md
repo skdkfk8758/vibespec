@@ -1,6 +1,6 @@
 ---
 name: plan-design-reviewer
-description: 플랜 단계 디자인 리뷰 에이전트. vs-plan에서 UI 감지 시 자동 디스패치되어 7개 디자인 차원을 자동 평가하고 Design Score를 반환합니다.
+description: 플랜 단계 UI/UX 디자인 리뷰
 ---
 
 # Plan Design Reviewer Agent

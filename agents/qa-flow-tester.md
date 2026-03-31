@@ -1,6 +1,6 @@
 ---
 name: qa-flow-tester
-description: QA 사용자 플로우/엣지 케이스 테스터 에이전트. 멀티스텝 사용자 시나리오와 엣지 케이스를 검증하고, 상태 전이 일관성 및 크로스커팅 이슈를 탐지합니다.
+description: 사용자 플로우 및 엣지 케이스 검증
 ---
 
 # QA Flow Tester Agent

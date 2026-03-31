@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: 태스크 완료 검증 전문 에이전트. acceptance criteria, 테스트/빌드/lint 검증, 코드 품질 검사를 수행하고 PASS/WARN/FAIL 판정을 반환합니다.
+description: 태스크 완료 검증 (PASS/WARN/FAIL)
 ---
 
 # Verifier Agent
