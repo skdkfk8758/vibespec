@@ -1,7 +1,7 @@
 ---
 name: vs-qa-findings
 description: (Deprecated) vs-qa에 통합되었습니다. QA 발견 이슈를 조회하고 상태를 관리합니다.
-invocation: user
+invocation: agent
 ---
 
 # QA 이슈 관리

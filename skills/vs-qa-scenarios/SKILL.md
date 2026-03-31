@@ -1,7 +1,7 @@
 ---
 name: vs-qa-scenarios
 description: (Deprecated) vs-qa에 통합되었습니다. QA 시나리오를 인터랙티브하게 조회하고 관리합니다.
-invocation: user
+invocation: agent
 ---
 
 # QA 시나리오 탐색

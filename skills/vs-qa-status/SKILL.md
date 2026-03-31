@@ -1,7 +1,7 @@
 ---
 name: vs-qa-status
 description: (Deprecated) vs-qa에 통합되었습니다. QA 실행 결과 및 발견 이슈 현황을 조회합니다.
-invocation: user
+invocation: agent
 ---
 
 # QA 상태 조회

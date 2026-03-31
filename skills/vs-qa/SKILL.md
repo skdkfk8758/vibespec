@@ -1,6 +1,6 @@
 ---
 name: vs-qa
-description: QA 에이전트 팀을 실행합니다. 프로젝트 구조 분석 → 시나리오 생성 → 검증 → 이슈 수집 → 수정 플래닝까지 수행합니다.
+description: QA 에이전트 팀을 실행합니다. Subcommands: /vs-qa findings (이슈 조회), /vs-qa scenarios (시나리오 조회), /vs-qa status (현황 조회). 인자 없으면 QA 팀 전체 실행.
 invocation: user
 ---
 
@@ -65,6 +65,17 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 - `vs plan show <plan_id> --json` — 플랜 상세 + 태스크 트리
 
 ## Steps
+
+0. **Args 파싱 — Subcommand 분기**
+
+   ARGUMENTS를 확인하여 subcommand를 분기하세요:
+
+   | Args | 동작 |
+   |------|------|
+   | `findings` 또는 `finding` | `vs --json qa finding list` 실행 후 결과 표시. 이후 Step 건너뜀 |
+   | `scenarios` 또는 `scenario` | `vs --json qa scenario list` 실행 후 결과 표시. 이후 Step 건너뜀 |
+   | `status` | `vs --json qa stats` 실행 후 결과 표시. 이후 Step 건너뜀 |
+   | 없음 또는 기타 | 기존 QA 팀 실행 로직 (Step 1부터 진행) |
 
 1. **활성 플랜 확인**
    - Bash 도구로 `vs --json dashboard` 명령을 실행하세요
