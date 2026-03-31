@@ -1,10 +1,14 @@
 ---
 name: vs-qa-scenarios
-description: QA 시나리오를 인터랙티브하게 조회하고 관리합니다. 과거 Run 시나리오 탐색 및 미리보기를 지원합니다.
+description: (Deprecated) vs-qa에 통합되었습니다. QA 시나리오를 인터랙티브하게 조회하고 관리합니다.
 invocation: user
 ---
 
 # QA 시나리오 탐색
+
+> **Note:** 이 스킬은 `/vs-qa`에 통합되었습니다. 동일한 기능을 `/vs-qa`에서 사용할 수 있습니다.
+> - CLI: `vs --json qa scenario list <run_id>`
+> - 자세한 사용법: `/vs-qa`의 CLI Reference 참조
 
 과거 QA Run의 시나리오를 카테고리별로 조회하거나, QA 실행 없이 예상 시나리오를 미리 확인합니다.
 

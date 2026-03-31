@@ -111,6 +111,17 @@ description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance
 3. **GREEN 체크포인트 기록**
    - 통과한 테스트 목록과 실행 결과를 기록하세요
 
+### AC Mapping 출력 (GREEN 완료 후)
+
+`.claude/handoff/{task_id}/ac_mapping.json` 파일을 생성하세요:
+```json
+{
+  "AC01": { "test_file": "tests/xxx.test.ts", "test_name": "AC01: ..." },
+  "AC02": { "test_file": "tests/xxx.test.ts", "test_name": "AC02: ..." }
+}
+```
+이 파일은 verifier가 AC-테스트 정확 매핑에 사용합니다.
+
 ### Phase 3: REFACTOR — 정리
 
 1. **코드 품질 개선**

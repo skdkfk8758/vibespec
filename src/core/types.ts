@@ -14,6 +14,7 @@ export interface Plan {
   spec: string | null;
   branch: string | null;
   worktree_name: string | null;
+  qa_overrides: string | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -31,6 +32,7 @@ export interface Task {
   depends_on: string | null;
   allowed_files: string | null;
   forbidden_patterns: string | null;
+  shadow_result: 'clean' | 'warning' | 'alert' | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -253,7 +255,8 @@ export interface NewRule {
 export type QARunTrigger = 'manual' | 'auto' | 'milestone' | 'post_merge';
 export type QARunStatus = 'pending' | 'running' | 'completed' | 'failed';
 export const VALID_QA_RUN_TERMINAL_STATUSES = ['completed', 'failed'] as const satisfies readonly QARunStatus[];
-export type QAScenarioCategory = 'functional' | 'integration' | 'flow' | 'regression' | 'edge_case' | 'acceptance';
+export type QAScenarioCategory = 'functional' | 'integration' | 'flow' | 'regression' | 'edge_case' | 'acceptance' | 'security';
+export type QAScenarioSource = 'seed' | 'shadow' | 'wave' | 'final' | 'manual';
 export type QAScenarioPriority = 'critical' | 'high' | 'medium' | 'low';
 export type QAScenarioStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip' | 'warn';
 export type QAFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -293,6 +296,7 @@ export interface QAScenario {
   status: QAScenarioStatus;
   agent: string | null;
   evidence: string | null;
+  source: QAScenarioSource;
   created_at: string;
 }
 
@@ -333,6 +337,7 @@ export interface NewQAScenario {
   description: string;
   priority: QAScenarioPriority;
   related_tasks?: string;
+  source?: QAScenarioSource;
 }
 
 export interface NewQAFinding {
@@ -452,5 +457,52 @@ export interface NewMergeReport {
   verification: MergeVerificationResult;
   task_ids?: string[];
   report_path: string;
+}
+
+// Agent Handoff types
+export type AgentType = 'tdd-implementer' | 'verifier' | 'debugger' | 'qa-shadow' | 'qa-seeder' | 'plan-advisor';
+export type HandoffVerdict = 'PASS' | 'WARN' | 'FAIL' | 'FIX_APPLIED' | 'BLOCKED' | 'CLEAN' | 'WARNING' | 'ALERT' | 'DONE' | 'DONE_WITH_CONCERNS';
+
+export interface AgentHandoff {
+  id: string;
+  task_id: string | null;
+  plan_id: string | null;
+  agent_type: string;
+  attempt: number;
+  input_hash: string | null;
+  verdict: string | null;
+  summary: string | null;
+  report_path: string | null;
+  changed_files: string | null;
+  created_at: string;
+}
+
+// Wave Gate types
+export type WaveGateVerdict = 'GREEN' | 'YELLOW' | 'RED';
+
+export interface WaveGate {
+  id: string;
+  plan_id: string;
+  wave_number: number;
+  task_ids: string;
+  verdict: WaveGateVerdict;
+  summary: string | null;
+  findings_count: number;
+  created_at: string;
+}
+
+// Plan Revision types
+export type RevisionTriggerType = 'assumption_violation' | 'scope_explosion' | 'design_flaw' | 'complexity_exceeded' | 'dependency_shift';
+export type RevisionStatus = 'proposed' | 'approved' | 'rejected';
+
+export interface PlanRevision {
+  id: string;
+  plan_id: string;
+  trigger_type: RevisionTriggerType;
+  trigger_source: string | null;
+  description: string;
+  changes: string;
+  status: RevisionStatus;
+  created_at: string;
 }
 

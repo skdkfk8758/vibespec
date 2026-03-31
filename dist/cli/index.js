@@ -615,6 +615,7 @@ function initSchema(db) {
       spec        TEXT,
       branch      TEXT,
       worktree_name TEXT,
+      qa_overrides TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -632,6 +633,7 @@ function initSchema(db) {
       depends_on  TEXT,
       allowed_files TEXT,
       forbidden_patterns TEXT,
+      shadow_result TEXT CHECK(shadow_result IN ('clean', 'warning', 'alert')),
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -735,6 +737,54 @@ function initSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_items(status);
     CREATE INDEX IF NOT EXISTS idx_backlog_priority ON backlog_items(priority);
     CREATE INDEX IF NOT EXISTS idx_backlog_plan ON backlog_items(plan_id);
+
+    CREATE TABLE IF NOT EXISTS agent_handoffs (
+      id            TEXT PRIMARY KEY,
+      task_id       TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      plan_id       TEXT REFERENCES plans(id) ON DELETE CASCADE,
+      agent_type    TEXT NOT NULL,
+      attempt       INTEGER NOT NULL DEFAULT 1,
+      input_hash    TEXT,
+      verdict       TEXT,
+      summary       TEXT,
+      report_path   TEXT,
+      changed_files TEXT,
+      created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_task ON agent_handoffs(task_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_plan ON agent_handoffs(plan_id);
+
+    CREATE TABLE IF NOT EXISTS wave_gates (
+      id              TEXT PRIMARY KEY,
+      plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      wave_number     INTEGER NOT NULL,
+      task_ids        TEXT NOT NULL,
+      verdict         TEXT NOT NULL CHECK(verdict IN ('GREEN', 'YELLOW', 'RED')),
+      summary         TEXT,
+      findings_count  INTEGER DEFAULT 0,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wave_gates_plan ON wave_gates(plan_id);
+
+    CREATE TABLE IF NOT EXISTS plan_revisions (
+      id              TEXT PRIMARY KEY,
+      plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      trigger_type    TEXT NOT NULL CHECK(trigger_type IN (
+        'assumption_violation', 'scope_explosion',
+        'design_flaw', 'complexity_exceeded', 'dependency_shift'
+      )),
+      trigger_source  TEXT,
+      description     TEXT NOT NULL,
+      changes         TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'proposed'
+        CHECK(status IN ('proposed', 'approved', 'rejected')),
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan ON plan_revisions(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_status ON plan_revisions(status);
   `);
   applyMigrations(db);
 }
@@ -806,10 +856,12 @@ function applyMigrations(db) {
         spec        TEXT,
         branch      TEXT,
         worktree_name TEXT,
+        qa_overrides TEXT,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
       );
-      INSERT INTO plans_new SELECT * FROM plans;
+      INSERT INTO plans_new (id, title, status, summary, spec, branch, worktree_name, created_at, completed_at)
+        SELECT id, title, status, summary, spec, branch, worktree_name, created_at, completed_at FROM plans;
       DROP TABLE plans;
       ALTER TABLE plans_new RENAME TO plans;
     `);
@@ -857,7 +909,7 @@ function applyMigrations(db) {
       CREATE TABLE IF NOT EXISTS qa_runs (
         id                TEXT PRIMARY KEY,
         plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone')),
+        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone', 'post_merge')),
         status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
         summary           TEXT,
         total_scenarios   INTEGER DEFAULT 0,
@@ -871,7 +923,7 @@ function applyMigrations(db) {
       CREATE TABLE IF NOT EXISTS qa_scenarios (
         id                TEXT PRIMARY KEY,
         run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
-        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case')),
+        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case', 'acceptance', 'security')),
         title             TEXT NOT NULL,
         description       TEXT NOT NULL,
         priority          TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
@@ -879,6 +931,7 @@ function applyMigrations(db) {
         status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'pass', 'fail', 'skip', 'warn')) DEFAULT 'pending',
         agent             TEXT,
         evidence          TEXT,
+        source            TEXT NOT NULL DEFAULT 'final' CHECK(source IN ('seed', 'shadow', 'wave', 'final', 'manual')),
         created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -996,6 +1049,150 @@ function applyMigrations(db) {
       `);
     }
     db.pragma("user_version = 12");
+  }
+  if (version < 13) {
+    db.pragma("foreign_keys = OFF");
+    db.exec("DROP VIEW IF EXISTS qa_run_summary");
+    db.exec("DROP VIEW IF EXISTS plan_progress");
+    db.exec("DROP VIEW IF EXISTS plan_metrics");
+    db.exec(`
+      CREATE TABLE qa_scenarios_new (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
+        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case', 'acceptance', 'security')),
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        priority          TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        related_tasks     TEXT,
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'pass', 'fail', 'skip', 'warn')) DEFAULT 'pending',
+        agent             TEXT,
+        evidence          TEXT,
+        source            TEXT NOT NULL DEFAULT 'final' CHECK(source IN ('seed', 'shadow', 'wave', 'final', 'manual')),
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO qa_scenarios_new (id, run_id, category, title, description, priority, related_tasks, status, agent, evidence, created_at)
+        SELECT id, run_id, category, title, description, priority, related_tasks, status, agent, evidence, created_at FROM qa_scenarios;
+      DROP TABLE qa_scenarios;
+      ALTER TABLE qa_scenarios_new RENAME TO qa_scenarios;
+    `);
+    db.exec(`
+      CREATE TABLE qa_runs_new (
+        id                TEXT PRIMARY KEY,
+        plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone', 'post_merge')),
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
+        summary           TEXT,
+        total_scenarios   INTEGER DEFAULT 0,
+        passed_scenarios  INTEGER DEFAULT 0,
+        failed_scenarios  INTEGER DEFAULT 0,
+        risk_score        REAL DEFAULT 0,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at      DATETIME
+      );
+      INSERT INTO qa_runs_new SELECT * FROM qa_runs;
+      DROP TABLE qa_runs;
+      ALTER TABLE qa_runs_new RENAME TO qa_runs;
+    `);
+    db.pragma("foreign_keys = ON");
+    db.exec(`
+      CREATE VIEW IF NOT EXISTS qa_run_summary AS
+      SELECT
+        qr.id,
+        qr.plan_id,
+        qr.status,
+        qr.risk_score,
+        qr.created_at,
+        COUNT(DISTINCT qs.id) AS total_scenarios,
+        SUM(CASE WHEN qs.status = 'pass' THEN 1 ELSE 0 END) AS passed,
+        SUM(CASE WHEN qs.status = 'fail' THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN qs.status = 'warn' THEN 1 ELSE 0 END) AS warned,
+        COUNT(DISTINCT qf.id) AS total_findings,
+        SUM(CASE WHEN qf.severity = 'critical' THEN 1 ELSE 0 END) AS critical_findings,
+        SUM(CASE WHEN qf.severity = 'high' THEN 1 ELSE 0 END) AS high_findings
+      FROM qa_runs qr
+      LEFT JOIN qa_scenarios qs ON qs.run_id = qr.id
+      LEFT JOIN qa_findings qf ON qf.run_id = qr.id
+      GROUP BY qr.id
+    `);
+    db.exec(`CREATE VIEW IF NOT EXISTS plan_progress AS ${PLAN_PROGRESS_VIEW_SQL}`);
+    const hasTM = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_metrics'").get();
+    if (hasTM) {
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS plan_metrics AS
+        SELECT
+          p.id, p.title, p.status,
+          COUNT(tm.id) AS recorded_tasks,
+          ROUND(AVG(tm.duration_min), 2) AS avg_duration_min,
+          SUM(CASE WHEN tm.final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
+          SUM(CASE WHEN tm.final_status = 'done' THEN 1 ELSE 0 END) AS done_count,
+          SUM(CASE WHEN tm.has_concerns = 1 THEN 1 ELSE 0 END) AS concern_count,
+          ROUND(SUM(CASE WHEN tm.final_status = 'done' THEN 1.0 ELSE 0 END) / MAX(COUNT(tm.id), 1) * 100) AS success_rate
+        FROM plans p JOIN task_metrics tm ON tm.plan_id = p.id
+        WHERE p.status IN ('completed', 'archived')
+        GROUP BY p.id
+      `);
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_qa_runs_plan ON qa_runs(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_run ON qa_scenarios(run_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_status ON qa_scenarios(status);
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_handoffs (
+        id            TEXT PRIMARY KEY,
+        task_id       TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+        plan_id       TEXT REFERENCES plans(id) ON DELETE CASCADE,
+        agent_type    TEXT NOT NULL,
+        attempt       INTEGER NOT NULL DEFAULT 1,
+        input_hash    TEXT,
+        verdict       TEXT,
+        summary       TEXT,
+        report_path   TEXT,
+        changed_files TEXT,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agent_handoffs_task ON agent_handoffs(task_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_handoffs_plan ON agent_handoffs(plan_id);
+
+      CREATE TABLE IF NOT EXISTS wave_gates (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        wave_number     INTEGER NOT NULL,
+        task_ids        TEXT NOT NULL,
+        verdict         TEXT NOT NULL CHECK(verdict IN ('GREEN', 'YELLOW', 'RED')),
+        summary         TEXT,
+        findings_count  INTEGER DEFAULT 0,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_wave_gates_plan ON wave_gates(plan_id);
+
+      CREATE TABLE IF NOT EXISTS plan_revisions (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        trigger_type    TEXT NOT NULL CHECK(trigger_type IN (
+          'assumption_violation', 'scope_explosion',
+          'design_flaw', 'complexity_exceeded', 'dependency_shift'
+        )),
+        trigger_source  TEXT,
+        description     TEXT NOT NULL,
+        changes         TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'proposed'
+          CHECK(status IN ('proposed', 'approved', 'rejected')),
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan ON plan_revisions(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_plan_revisions_status ON plan_revisions(status);
+    `);
+    if (!hasColumn(db, "plans", "qa_overrides")) {
+      db.exec("ALTER TABLE plans ADD COLUMN qa_overrides TEXT");
+    }
+    if (!hasColumn(db, "tasks", "shadow_result")) {
+      db.exec("ALTER TABLE tasks ADD COLUMN shadow_result TEXT CHECK(shadow_result IN ('clean', 'warning', 'alert'))");
+    }
+    db.pragma("user_version = 13");
   }
 }
 
@@ -1930,9 +2127,11 @@ var PLAN_TRANSITIONS = {
 var PlanModel = class {
   db;
   events;
-  constructor(db, events) {
+  handoffs;
+  constructor(db, events, handoffs) {
     this.db = db;
     this.events = events;
+    this.handoffs = handoffs;
   }
   create(title, spec, summary) {
     const id = generateId();
@@ -2000,6 +2199,12 @@ var PlanModel = class {
         JSON.stringify({ status: newStatus })
       );
     });
+    if ((newStatus === "completed" || newStatus === "archived") && this.handoffs) {
+      try {
+        this.handoffs.cleanByPlan(id);
+      } catch {
+      }
+    }
     return this.requireById(id);
   }
   activate(id, opts) {
@@ -2244,21 +2449,21 @@ var QAScenarioModel = class {
   create(runId, data) {
     const id = generateId();
     this.db.prepare(
-      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, runId, data.category, data.title, data.description, data.priority, data.related_tasks ?? null);
+      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, runId, data.category, data.title, data.description, data.priority, data.related_tasks ?? null, data.source ?? "final");
     return this.get(id);
   }
   bulkCreate(runId, scenarios) {
     const insert = this.db.prepare(
-      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const ids = [];
     const tx = this.db.transaction(() => {
       for (const s of scenarios) {
         const id = generateId();
-        insert.run(id, runId, s.category, s.title, s.description, s.priority, s.related_tasks ?? null);
+        insert.run(id, runId, s.category, s.title, s.description, s.priority, s.related_tasks ?? null, s.source ?? "final");
         ids.push(id);
       }
     });
@@ -2606,6 +2811,105 @@ var MergeReportModel = class {
   }
 };
 
+// src/core/models/agent-handoff.ts
+import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, writeFileSync, rmSync } from "fs";
+import { join } from "path";
+var DEFAULT_HANDOFF_DIR = join(process.cwd(), ".claude", "handoff");
+var AgentHandoffModel = class {
+  db;
+  baseDir;
+  constructor(db, baseDir) {
+    this.db = db;
+    this.baseDir = baseDir ?? DEFAULT_HANDOFF_DIR;
+  }
+  create(taskId, planId, agentType, attempt, verdict, summary, reportPath, changedFiles, inputHash) {
+    const existing = this.db.prepare(
+      `SELECT id FROM agent_handoffs WHERE task_id = ? AND agent_type = ? AND attempt = ?`
+    ).get(taskId, agentType, attempt);
+    if (existing) {
+      throw new Error(`Duplicate handoff: task=${taskId}, agent=${agentType}, attempt=${attempt}`);
+    }
+    const id = generateId();
+    this.db.prepare(
+      `INSERT INTO agent_handoffs (id, task_id, plan_id, agent_type, attempt, verdict, summary, report_path, changed_files, input_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, taskId, planId, agentType, attempt, verdict, summary, reportPath ?? null, changedFiles ?? null, inputHash ?? null);
+    return this.get(id);
+  }
+  get(id) {
+    const row = this.db.prepare(`SELECT * FROM agent_handoffs WHERE id = ?`).get(id);
+    return row ?? null;
+  }
+  getByTask(taskId, agentType, attempt) {
+    const conditions = ["task_id = ?"];
+    const params = [taskId];
+    if (agentType) {
+      conditions.push("agent_type = ?");
+      params.push(agentType);
+    }
+    if (attempt !== void 0) {
+      conditions.push("attempt = ?");
+      params.push(attempt);
+    }
+    return this.db.prepare(
+      `SELECT * FROM agent_handoffs WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC`
+    ).all(...params);
+  }
+  list(planId, taskId) {
+    const conditions = [];
+    const params = [];
+    if (planId) {
+      conditions.push("plan_id = ?");
+      params.push(planId);
+    }
+    if (taskId) {
+      conditions.push("task_id = ?");
+      params.push(taskId);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    return this.db.prepare(
+      `SELECT * FROM agent_handoffs ${where} ORDER BY created_at DESC`
+    ).all(...params);
+  }
+  cleanByPlan(planId) {
+    const handoffs = this.list(planId);
+    const taskIds = new Set(handoffs.map((h) => h.task_id).filter(Boolean));
+    this.db.prepare(`DELETE FROM agent_handoffs WHERE plan_id = ?`).run(planId);
+    for (const tid of taskIds) {
+      const taskDir = join(this.baseDir, tid);
+      if (existsSync2(taskDir)) {
+        rmSync(taskDir, { recursive: true, force: true });
+      }
+    }
+  }
+  writeHandoffReport(taskId, agentType, attempt, data) {
+    const taskDir = join(this.baseDir, taskId);
+    if (!existsSync2(taskDir)) {
+      mkdirSync(taskDir, { recursive: true });
+    }
+    const filePath = join(taskDir, `${agentType}_${attempt}.json`);
+    writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    return filePath;
+  }
+  readHandoffReport(taskId, agentType, attempt) {
+    const filePath = join(this.baseDir, taskId, `${agentType}_${attempt}.json`);
+    if (!existsSync2(filePath)) {
+      return null;
+    }
+    return JSON.parse(readFileSync2(filePath, "utf-8"));
+  }
+  cleanHandoffFiles(planId) {
+    const handoffs = this.list(planId);
+    const taskIds = new Set(handoffs.map((h) => h.task_id).filter(Boolean));
+    for (const tid of taskIds) {
+      const taskDir = join(this.baseDir, tid);
+      if (existsSync2(taskDir)) {
+        rmSync(taskDir, { recursive: true, force: true });
+      }
+    }
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -2706,7 +3010,8 @@ function initModels() {
   const db = getDb();
   initSchema(db);
   const events = new EventModel(db);
-  const planModel = new PlanModel(db, events);
+  const agentHandoffModel = new AgentHandoffModel(db);
+  const planModel = new PlanModel(db, events, agentHandoffModel);
   const taskModel = new TaskModel(db, events);
   const contextModel = new ContextModel(db);
   const taskMetricsModel = new TaskMetricsModel(db);
@@ -2721,7 +3026,7 @@ function initModels() {
   const qaFindingModel = new QAFindingModel(db);
   const backlogModel = new BacklogModel(db, events);
   const mergeReportModel = new MergeReportModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel };
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel, agentHandoffModel };
 }
 function initDb() {
   const db = getDb();
@@ -2730,8 +3035,8 @@ function initDb() {
 }
 
 // src/cli/commands/governance.ts
-import { resolve as resolve2, join } from "path";
-import { existsSync as existsSync2, readFileSync as readFileSync2, writeFileSync, chmodSync } from "fs";
+import { resolve as resolve2, join as join2 } from "path";
+import { existsSync as existsSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2, chmodSync } from "fs";
 
 // src/core/config.ts
 function getConfig(db, key) {
@@ -2750,12 +3055,12 @@ function listConfig(db) {
 
 // src/cli/commands/governance.ts
 function manageHook(action, hookId, toolName, scriptPath) {
-  const settingsDir = join(process.cwd(), ".claude");
-  const settingsPath = join(settingsDir, "settings.local.json");
+  const settingsDir = join2(process.cwd(), ".claude");
+  const settingsPath = join2(settingsDir, "settings.local.json");
   let settings = {};
-  if (existsSync2(settingsPath)) {
+  if (existsSync3(settingsPath)) {
     try {
-      settings = JSON.parse(readFileSync2(settingsPath, "utf8"));
+      settings = JSON.parse(readFileSync3(settingsPath, "utf8"));
     } catch {
       settings = {};
     }
@@ -2772,7 +3077,7 @@ function manageHook(action, hookId, toolName, scriptPath) {
       matcher: toolName,
       command: scriptPath
     });
-    if (existsSync2(scriptPath)) {
+    if (existsSync3(scriptPath)) {
       try {
         chmodSync(scriptPath, 493);
       } catch {
@@ -2781,14 +3086,14 @@ function manageHook(action, hookId, toolName, scriptPath) {
   } else {
     hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
   }
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  writeFileSync2(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
 function registerGovernanceCommands(program2, _getModels) {
   const careful = program2.command("careful").description("Manage careful mode (destructive command guard)");
   careful.command("on").description("Enable careful mode").action(() => {
     const db = initDb();
     setConfig(db, "careful.enabled", "true");
-    const scriptPath = join(process.cwd(), "bin", "check-careful.sh");
+    const scriptPath = join2(process.cwd(), "bin", "check-careful.sh");
     manageHook("add", "vs-careful", "Bash", scriptPath);
     output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
   });
@@ -2808,7 +3113,7 @@ function registerGovernanceCommands(program2, _getModels) {
     const db = initDb();
     const absPath = resolve2(inputPath);
     setConfig(db, "freeze.path", absPath);
-    const scriptPath = join(process.cwd(), "bin", "check-freeze.sh");
+    const scriptPath = join2(process.cwd(), "bin", "check-freeze.sh");
     manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
     manageHook("add", "vs-freeze-write", "Write", scriptPath);
     output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
@@ -2834,8 +3139,8 @@ function registerGovernanceCommands(program2, _getModels) {
     const absPath = resolve2(inputPath);
     setConfig(db, "careful.enabled", "true");
     setConfig(db, "freeze.path", absPath);
-    const carefulScript = join(process.cwd(), "bin", "check-careful.sh");
-    const freezeScript = join(process.cwd(), "bin", "check-freeze.sh");
+    const carefulScript = join2(process.cwd(), "bin", "check-careful.sh");
+    const freezeScript = join2(process.cwd(), "bin", "check-freeze.sh");
     manageHook("add", "vs-careful", "Bash", carefulScript);
     manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
     manageHook("add", "vs-freeze-write", "Write", freezeScript);
@@ -2862,11 +3167,75 @@ function registerGovernanceCommands(program2, _getModels) {
       `\u{1F6E1}\uFE0F guard: careful=${carefulEnabled ? "\uD65C\uC131\uD654" : "\uBE44\uD65C\uC131\uD654"}, freeze=${freezePath ?? "\uBE44\uD65C\uC131\uD654"}`
     );
   });
+  const handoff = program2.command("handoff").description("Manage agent handoff records and files");
+  handoff.command("write").argument("<task_id>", "Task ID").requiredOption("--agent <type>", "Agent type").requiredOption("--attempt <n>", "Attempt number", parseInt).requiredOption("--verdict <v>", "Verdict").requiredOption("--summary <text>", "Summary text").option("--report-path <path>", "Report file path").description("Create a handoff record and JSON report file").action((taskId, opts) => {
+    withErrorHandler(() => {
+      const models = _getModels();
+      const handoffModel = new AgentHandoffModel(models.db);
+      const task = models.taskModel.getById(taskId);
+      if (!task) return outputError(`Task not found: ${taskId}`);
+      const planId = task.plan_id;
+      const record = handoffModel.create(
+        taskId,
+        planId,
+        opts.agent,
+        opts.attempt,
+        opts.verdict,
+        opts.summary,
+        opts.reportPath
+      );
+      const reportData = {
+        id: record.id,
+        task_id: taskId,
+        plan_id: planId,
+        agent_type: opts.agent,
+        attempt: opts.attempt,
+        verdict: opts.verdict,
+        summary: opts.summary,
+        created_at: record.created_at
+      };
+      const filePath = handoffModel.writeHandoffReport(taskId, opts.agent, opts.attempt, reportData);
+      output(
+        { ...record, report_file: filePath },
+        `Handoff created: ${record.id} (file: ${filePath})`
+      );
+    });
+  });
+  handoff.command("read").argument("<task_id>", "Task ID").option("--agent <type>", "Agent type").option("--attempt <n>", "Attempt number", parseInt).description("Read handoff records and report files").action((taskId, opts) => {
+    withErrorHandler(() => {
+      const models = _getModels();
+      const handoffModel = new AgentHandoffModel(models.db);
+      const records = handoffModel.getByTask(taskId, opts.agent, opts.attempt);
+      if (records.length === 0) return outputError(`No handoff records found for task: ${taskId}`);
+      const results = records.map((rec) => {
+        let reportContent = null;
+        if (rec.agent_type && rec.attempt) {
+          reportContent = handoffModel.readHandoffReport(taskId, rec.agent_type, rec.attempt);
+        }
+        return { ...rec, report_content: reportContent };
+      });
+      output(results, results.map(
+        (r) => `[${r.agent_type}#${r.attempt}] ${r.verdict} \u2014 ${r.summary}`
+      ).join("\n"));
+    });
+  });
+  handoff.command("clean").argument("<plan_id>", "Plan ID").description("Delete all handoff records and files for a plan").action((planId) => {
+    withErrorHandler(() => {
+      const models = _getModels();
+      const handoffModel = new AgentHandoffModel(models.db);
+      const before = handoffModel.list(planId).length;
+      handoffModel.cleanByPlan(planId);
+      output(
+        { plan_id: planId, deleted: before },
+        `Cleaned ${before} handoff record(s) for plan: ${planId}`
+      );
+    });
+  });
 }
 
 // src/cli/importers.ts
 import { execFileSync } from "child_process";
-import { readFileSync as readFileSync3, existsSync as existsSync3 } from "fs";
+import { readFileSync as readFileSync4, existsSync as existsSync4 } from "fs";
 var REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 function validateRepoFormat(repo) {
   const trimmed = repo.trim();
@@ -2952,13 +3321,13 @@ function inferCategoryFromLabels(labels) {
 }
 function importFromFile(filepath) {
   const errors = [];
-  if (!existsSync3(filepath)) {
+  if (!existsSync4(filepath)) {
     errors.push(`\uD30C\uC77C\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${filepath}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
   let content;
   try {
-    content = readFileSync3(filepath, "utf-8");
+    content = readFileSync4(filepath, "utf-8");
   } catch (e) {
     errors.push(`\uD30C\uC77C \uC77D\uAE30 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
@@ -4425,6 +4794,270 @@ File: .claude/error-kb/errors/${entry.id}.md`);
 }
 
 // src/cli/commands/quality.ts
+import * as fs5 from "fs";
+
+// src/core/engine/qa-config.ts
+import { z } from "zod";
+import * as YAML from "yaml";
+import * as fs4 from "fs";
+var CustomRuleSchema = z.object({
+  id: z.string(),
+  pattern: z.string().refine(
+    (val) => {
+      try {
+        new RegExp(val);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "Invalid regular expression pattern" }
+  ),
+  severity: z.enum(["critical", "high", "medium", "low"]),
+  message: z.string()
+});
+var IgnoreRuleSchema = z.object({
+  rule_id: z.string(),
+  paths: z.array(z.string()),
+  reason: z.string(),
+  expires: z.string().optional()
+});
+var SeverityAdjustmentSchema = z.object({
+  rule_id: z.string(),
+  new_severity: z.enum(["critical", "high", "medium", "low"]),
+  condition: z.string()
+});
+var QaRulesSchema = z.object({
+  profile: z.enum(["web-frontend", "api-server", "fullstack", "library", "cli-tool"]).optional(),
+  risk_thresholds: z.object({
+    green: z.number(),
+    yellow: z.number(),
+    orange: z.number()
+  }).optional(),
+  severity_weights: z.object({
+    critical: z.number(),
+    high: z.number(),
+    medium: z.number(),
+    low: z.number()
+  }).optional(),
+  modules: z.object({
+    lint_check: z.boolean().optional(),
+    type_check: z.boolean().optional(),
+    test_coverage: z.boolean().optional(),
+    dead_code: z.boolean().optional(),
+    dependency_audit: z.boolean().optional(),
+    complexity_analysis: z.boolean().optional(),
+    shadow: z.boolean().optional(),
+    wave_gate: z.boolean().optional(),
+    adaptive_planner: z.boolean().optional()
+  }).optional(),
+  regression_bonus: z.number().optional(),
+  custom_rules: z.array(CustomRuleSchema).optional(),
+  ignore: z.array(IgnoreRuleSchema).optional(),
+  severity_adjustments: z.array(SeverityAdjustmentSchema).optional()
+});
+var DEFAULT_QA_CONFIG = {
+  risk_thresholds: { green: 0.2, yellow: 0.5, orange: 0.8 },
+  severity_weights: { critical: 0.4, high: 0.3, medium: 0.2, low: 0.1 },
+  modules: {
+    lint_check: true,
+    type_check: true,
+    test_coverage: true,
+    dead_code: true,
+    dependency_audit: true,
+    complexity_analysis: true,
+    shadow: false,
+    wave_gate: false,
+    adaptive_planner: false
+  },
+  regression_bonus: 0.2
+};
+var PROFILE_PRESETS = {
+  "web-frontend": {
+    modules: {
+      lint_check: true,
+      type_check: true,
+      test_coverage: true,
+      dead_code: true,
+      dependency_audit: true,
+      complexity_analysis: true,
+      shadow: true,
+      wave_gate: false,
+      adaptive_planner: false
+    },
+    severity_weights: { critical: 0.4, high: 0.3, medium: 0.2, low: 0.1 }
+  },
+  "api-server": {
+    modules: {
+      lint_check: true,
+      type_check: true,
+      test_coverage: true,
+      dead_code: true,
+      dependency_audit: true,
+      complexity_analysis: true,
+      shadow: false,
+      wave_gate: true,
+      adaptive_planner: false
+    },
+    severity_weights: { critical: 0.5, high: 0.3, medium: 0.15, low: 0.05 }
+  },
+  fullstack: {
+    modules: {
+      lint_check: true,
+      type_check: true,
+      test_coverage: true,
+      dead_code: true,
+      dependency_audit: true,
+      complexity_analysis: true,
+      shadow: true,
+      wave_gate: true,
+      adaptive_planner: false
+    }
+  },
+  library: {
+    modules: {
+      lint_check: true,
+      type_check: true,
+      test_coverage: true,
+      dead_code: true,
+      dependency_audit: true,
+      complexity_analysis: true,
+      shadow: false,
+      wave_gate: false,
+      adaptive_planner: false
+    },
+    regression_bonus: 0.3
+  },
+  "cli-tool": {
+    modules: {
+      lint_check: true,
+      type_check: true,
+      test_coverage: true,
+      dead_code: true,
+      dependency_audit: false,
+      complexity_analysis: true,
+      shadow: false,
+      wave_gate: false,
+      adaptive_planner: false
+    }
+  }
+};
+function deepMerge(base, override) {
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    const baseVal = base[key];
+    const overrideVal = override[key];
+    if (overrideVal !== null && overrideVal !== void 0 && typeof overrideVal === "object" && !Array.isArray(overrideVal) && typeof baseVal === "object" && baseVal !== null && !Array.isArray(baseVal)) {
+      result[key] = deepMerge(baseVal, overrideVal);
+    } else if (overrideVal !== void 0) {
+      result[key] = overrideVal;
+    }
+  }
+  return result;
+}
+function loadYamlConfig(yamlPath) {
+  try {
+    if (!fs4.existsSync(yamlPath)) {
+      return { ...DEFAULT_QA_CONFIG };
+    }
+    const content = fs4.readFileSync(yamlPath, "utf-8");
+    const parsed = YAML.parse(content);
+    if (parsed === null || parsed === void 0) {
+      return { ...DEFAULT_QA_CONFIG };
+    }
+    const validated = QaRulesSchema.parse(parsed);
+    return deepMerge(DEFAULT_QA_CONFIG, validated);
+  } catch (err) {
+    console.warn(
+      `[VibeSpec] qa-rules.yaml \uD30C\uC2F1 \uC2E4\uD328, L0 \uAE30\uBCF8\uAC12\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return { ...DEFAULT_QA_CONFIG };
+  }
+}
+function filterExpiredIgnoreRules(config) {
+  if (!config.ignore) return config;
+  const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  const filtered = config.ignore.filter((rule) => {
+    if (!rule.expires) return true;
+    return rule.expires >= now;
+  });
+  return { ...config, ignore: filtered };
+}
+function resolveConfig(options = {}) {
+  const { planId, db, yamlPath, rawConfig } = options;
+  let config = { ...DEFAULT_QA_CONFIG };
+  if (rawConfig) {
+    config = { ...rawConfig };
+    return filterExpiredIgnoreRules(config);
+  }
+  const effectiveYamlPath = yamlPath ?? ".claude/qa-rules.yaml";
+  const yamlConfig = loadYamlConfig(effectiveYamlPath);
+  const profileName = yamlConfig.profile;
+  if (profileName && PROFILE_PRESETS[profileName]) {
+    config = deepMerge(config, PROFILE_PRESETS[profileName]);
+  }
+  config = deepMerge(config, yamlConfig);
+  if (planId && db) {
+    try {
+      const row = db.prepare("SELECT qa_overrides FROM plans WHERE id = ?").get(planId);
+      if (row?.qa_overrides) {
+        const overrides = JSON.parse(row.qa_overrides);
+        config = deepMerge(config, overrides);
+      }
+    } catch {
+    }
+  }
+  config = filterExpiredIgnoreRules(config);
+  return config;
+}
+function validateConfig(config) {
+  const errors = [];
+  const warnings = [];
+  const { green, yellow, orange } = config.risk_thresholds;
+  if (green >= yellow) {
+    errors.push(`risk_thresholds ordering error: green (${green}) must be less than yellow (${yellow})`);
+  }
+  if (yellow >= orange) {
+    errors.push(`risk_thresholds ordering error: yellow (${yellow}) must be less than orange (${orange})`);
+  }
+  if (config.custom_rules) {
+    for (const rule of config.custom_rules) {
+      try {
+        new RegExp(rule.pattern);
+      } catch {
+        errors.push(`Invalid regex pattern in custom_rule '${rule.id}': ${rule.pattern}`);
+      }
+    }
+  }
+  if (config.modules) {
+    const allFalse = Object.values(config.modules).every((v) => v === false);
+    if (allFalse) {
+      warnings.push("All modules are disabled. No QA checks will be performed.");
+    }
+  }
+  return { errors, warnings };
+}
+function detectProfile(packageJson) {
+  const allDeps = {
+    ...packageJson.dependencies,
+    ...packageJson.devDependencies
+  };
+  const depNames = Object.keys(allDeps);
+  const frontendIndicators = ["react", "react-dom", "vue", "svelte", "next", "nuxt", "angular", "@angular/core"];
+  const backendIndicators = ["express", "fastify", "koa", "hapi", "@nestjs/core", "hono"];
+  const cliIndicators = ["commander", "yargs", "inquirer", "oclif", "meow", "cac"];
+  const hasFrontend = depNames.some((d) => frontendIndicators.includes(d));
+  const hasBackend = depNames.some((d) => backendIndicators.includes(d));
+  const hasCli = depNames.some((d) => cliIndicators.includes(d));
+  if (hasFrontend && hasBackend) return "fullstack";
+  if (hasFrontend) return "web-frontend";
+  if (hasBackend) return "api-server";
+  if (hasCli) return "cli-tool";
+  return "library";
+}
+
+// src/cli/commands/quality.ts
+import * as YAML2 from "yaml";
 function getQAModels() {
   const m = initModels();
   return { qaRun: m.qaRunModel, qaScenario: m.qaScenarioModel, qaFinding: m.qaFindingModel, planModel: m.planModel };
@@ -4600,6 +5233,122 @@ function registerQualityCommands(program2, getModels) {
       `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`
     ].join("\n"));
   }));
+  const qaConfig = qa.command("config").description("Manage QA configuration");
+  qaConfig.command("resolve").argument("[plan_id]", "Plan ID for L2 overrides").description("Resolve and display merged QA configuration").action((planId) => withErrorHandler(() => {
+    const options = {};
+    if (planId) {
+      options.planId = planId;
+      options.db = initDb();
+    }
+    const config = resolveConfig(options);
+    output(config, formatConfigHuman(config));
+  }));
+  qaConfig.command("validate").description("Validate .claude/qa-rules.yaml").action(() => withErrorHandler(() => {
+    const yamlPath = ".claude/qa-rules.yaml";
+    if (!fs5.existsSync(yamlPath)) {
+      return outputError(`Configuration file not found: ${yamlPath}`);
+    }
+    const rawContent = fs5.readFileSync(yamlPath, "utf-8");
+    const parsed = YAML2.parse(rawContent);
+    const zodResult = QaRulesSchema.safeParse(parsed);
+    const errors = [];
+    const warnings = [];
+    if (!zodResult.success) {
+      for (const issue of zodResult.error.issues) {
+        errors.push(`Schema error at ${issue.path.join(".")}: ${issue.message}`);
+      }
+    }
+    if (zodResult.success) {
+      const config = resolveConfig({ yamlPath });
+      const validation = validateConfig(config);
+      errors.push(...validation.errors);
+      warnings.push(...validation.warnings);
+    }
+    const result = { errors, warnings, valid: errors.length === 0 };
+    output(result, [
+      `Validation: ${result.valid ? "PASS" : "FAIL"}`,
+      errors.length > 0 ? `Errors (${errors.length}):` : "",
+      ...errors.map((e) => `  - ${e}`),
+      warnings.length > 0 ? `Warnings (${warnings.length}):` : "",
+      ...warnings.map((w) => `  - ${w}`)
+    ].filter(Boolean).join("\n"));
+  }));
+  qaConfig.command("init").description("Auto-detect profile and create .claude/qa-rules.yaml").action(() => withErrorHandler(() => {
+    const yamlPath = ".claude/qa-rules.yaml";
+    if (fs5.existsSync(yamlPath)) {
+      return outputError(`Configuration file already exists: ${yamlPath}`);
+    }
+    let profile = "library";
+    try {
+      const pkgContent = fs5.readFileSync("package.json", "utf-8");
+      const pkgJson = JSON.parse(pkgContent);
+      profile = detectProfile(pkgJson);
+    } catch {
+    }
+    const preset = PROFILE_PRESETS[profile] ?? {};
+    const config = {
+      profile,
+      ...DEFAULT_QA_CONFIG,
+      ...preset
+    };
+    if (!fs5.existsSync(".claude")) {
+      fs5.mkdirSync(".claude", { recursive: true });
+    }
+    const yamlContent = YAML2.stringify(config);
+    fs5.writeFileSync(yamlPath, yamlContent, "utf-8");
+    output(
+      { profile, path: yamlPath },
+      `Created ${yamlPath} with profile: ${profile}`
+    );
+  }));
+  qaConfig.command("show").argument("[plan_id]", "Plan ID for L2 overrides").description("Show resolved QA configuration in formatted view").action((planId) => withErrorHandler(() => {
+    const options = {};
+    if (planId) {
+      options.planId = planId;
+      options.db = initDb();
+    }
+    const config = resolveConfig(options);
+    output(config, formatConfigHuman(config));
+  }));
+}
+function formatConfigHuman(config) {
+  const lines = [];
+  if (config.profile) {
+    lines.push(`Profile: ${config.profile}`);
+    lines.push("");
+  }
+  lines.push("Risk Thresholds:");
+  lines.push(`  green:  ${config.risk_thresholds.green}`);
+  lines.push(`  yellow: ${config.risk_thresholds.yellow}`);
+  lines.push(`  orange: ${config.risk_thresholds.orange}`);
+  lines.push("");
+  lines.push("Severity Weights:");
+  lines.push(`  critical: ${config.severity_weights.critical}`);
+  lines.push(`  high:     ${config.severity_weights.high}`);
+  lines.push(`  medium:   ${config.severity_weights.medium}`);
+  lines.push(`  low:      ${config.severity_weights.low}`);
+  lines.push("");
+  lines.push("Modules:");
+  for (const [key, val] of Object.entries(config.modules)) {
+    lines.push(`  ${key}: ${val ? "enabled" : "disabled"}`);
+  }
+  lines.push("");
+  lines.push(`Regression Bonus: ${config.regression_bonus}`);
+  if (config.custom_rules && config.custom_rules.length > 0) {
+    lines.push("");
+    lines.push(`Custom Rules (${config.custom_rules.length}):`);
+    for (const rule of config.custom_rules) {
+      lines.push(`  [${rule.severity}] ${rule.id}: ${rule.message}`);
+    }
+  }
+  if (config.ignore && config.ignore.length > 0) {
+    lines.push("");
+    lines.push(`Ignore Rules (${config.ignore.length}):`);
+    for (const rule of config.ignore) {
+      lines.push(`  ${rule.rule_id}: ${rule.reason} (${rule.paths.join(", ")})`);
+    }
+  }
+  return lines.join("\n");
 }
 
 // src/cli/commands/generation.ts

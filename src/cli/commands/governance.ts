@@ -2,8 +2,9 @@ import { Command } from 'commander';
 import { resolve, join } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { getConfig, setConfig, deleteConfig } from '../../core/config.js';
-import { output, outputError, initDb } from '../shared.js';
+import { output, outputError, initDb, withErrorHandler } from '../shared.js';
 import type { Models } from '../shared.js';
+import { AgentHandoffModel } from '../../core/models/agent-handoff.js';
 
 /** Register/unregister PreToolUse hooks in .claude/settings.local.json */
 function manageHook(action: 'add' | 'remove', hookId: string, toolName: string, scriptPath: string) {
@@ -159,5 +160,99 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
         { careful: carefulEnabled, freeze: freezePath },
         `🛡️ guard: careful=${carefulEnabled ? '활성화' : '비활성화'}, freeze=${freezePath ?? '비활성화'}`
       );
+    });
+
+  // ── handoff ──
+  const handoff = program.command('handoff').description('Manage agent handoff records and files');
+
+  handoff
+    .command('write')
+    .argument('<task_id>', 'Task ID')
+    .requiredOption('--agent <type>', 'Agent type')
+    .requiredOption('--attempt <n>', 'Attempt number', parseInt)
+    .requiredOption('--verdict <v>', 'Verdict')
+    .requiredOption('--summary <text>', 'Summary text')
+    .option('--report-path <path>', 'Report file path')
+    .description('Create a handoff record and JSON report file')
+    .action((taskId: string, opts: { agent: string; attempt: number; verdict: string; summary: string; reportPath?: string }) => {
+      withErrorHandler(() => {
+        const models = _getModels();
+        const handoffModel = new AgentHandoffModel(models.db);
+
+        // Determine plan_id from task
+        const task = models.taskModel.getById(taskId);
+        if (!task) return outputError(`Task not found: ${taskId}`);
+        const planId = task.plan_id;
+
+        const record = handoffModel.create(
+          taskId, planId, opts.agent, opts.attempt,
+          opts.verdict, opts.summary, opts.reportPath,
+        );
+
+        // Also write JSON report file
+        const reportData = {
+          id: record.id,
+          task_id: taskId,
+          plan_id: planId,
+          agent_type: opts.agent,
+          attempt: opts.attempt,
+          verdict: opts.verdict,
+          summary: opts.summary,
+          created_at: record.created_at,
+        };
+        const filePath = handoffModel.writeHandoffReport(taskId, opts.agent, opts.attempt, reportData);
+
+        output(
+          { ...record, report_file: filePath },
+          `Handoff created: ${record.id} (file: ${filePath})`,
+        );
+      });
+    });
+
+  handoff
+    .command('read')
+    .argument('<task_id>', 'Task ID')
+    .option('--agent <type>', 'Agent type')
+    .option('--attempt <n>', 'Attempt number', parseInt)
+    .description('Read handoff records and report files')
+    .action((taskId: string, opts: { agent?: string; attempt?: number }) => {
+      withErrorHandler(() => {
+        const models = _getModels();
+        const handoffModel = new AgentHandoffModel(models.db);
+
+        const records = handoffModel.getByTask(taskId, opts.agent, opts.attempt);
+        if (records.length === 0) return outputError(`No handoff records found for task: ${taskId}`);
+
+        const results = records.map((rec) => {
+          let reportContent: unknown = null;
+          if (rec.agent_type && rec.attempt) {
+            reportContent = handoffModel.readHandoffReport(taskId, rec.agent_type, rec.attempt);
+          }
+          return { ...rec, report_content: reportContent };
+        });
+
+        output(results, results.map((r) =>
+          `[${r.agent_type}#${r.attempt}] ${r.verdict} — ${r.summary}`,
+        ).join('\n'));
+      });
+    });
+
+  handoff
+    .command('clean')
+    .argument('<plan_id>', 'Plan ID')
+    .description('Delete all handoff records and files for a plan')
+    .action((planId: string) => {
+      withErrorHandler(() => {
+        const models = _getModels();
+        const handoffModel = new AgentHandoffModel(models.db);
+
+        const before = handoffModel.list(planId).length;
+        handoffModel.cleanByPlan(planId);
+
+        output(
+          { plan_id: planId, deleted: before },
+          `Cleaned ${before} handoff record(s) for plan: ${planId}`,
+        );
+      });
     });
 }

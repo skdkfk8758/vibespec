@@ -19,6 +19,12 @@ description: QA 사용자 플로우/엣지 케이스 테스터 에이전트. 멀
 
 ## Execution Process
 
+### Phase 0: 설정 로딩
+
+1. `vs --json qa config resolve <plan_id>` 실행하여 resolved_config를 로딩하세요
+2. 로딩 실패 시 기본값으로 진행 (하위 호환성 보장)
+3. 이후 Phase에서 하드코딩된 기본값 대신 resolved_config 값을 참조하세요
+
 배정된 시나리오를 **priority 순서**(critical → high → medium → low)로 처리합니다.
 
 각 시나리오에 대해 다음 5단계를 수행하세요:
@@ -118,6 +124,12 @@ evidence에는 다음을 포함하세요:
 - 분해된 스텝 수와 검증 결과
 - 크로스커팅 검증 결과
 - 발견된 문제점과 위치 (파일:라인)
+
+### Finding 생성 전 검증 (config 기반)
+
+finding을 생성하기 전에:
+1. resolved_config.ignore에서 file_pattern 또는 finding_pattern 매칭 확인 → 매칭되면 건너뛰기
+2. resolved_config.severity_adjustments에서 match 조건 확인 → promote_one/demote_one 적용
 
 FAIL 또는 WARN 시 이슈를 등록하세요:
 ```

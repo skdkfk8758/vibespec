@@ -1,10 +1,14 @@
 ---
 name: vs-qa-status
-description: QA 실행 결과 및 발견 이슈 현황을 조회합니다.
+description: (Deprecated) vs-qa에 통합되었습니다. QA 실행 결과 및 발견 이슈 현황을 조회합니다.
 invocation: user
 ---
 
 # QA 상태 조회
+
+> **Note:** 이 스킬은 `/vs-qa`에 통합되었습니다. 동일한 기능을 `/vs-qa`에서 사용할 수 있습니다.
+> - CLI: `vs --json qa run list`, `vs --json qa stats`
+> - 자세한 사용법: `/vs-qa`의 CLI Reference 참조
 
 QA Run 결과를 상세 조회하고 리스크 트렌드를 확인합니다.
 

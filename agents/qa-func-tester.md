@@ -19,6 +19,12 @@ description: QA 기능/통합/회귀 테스터 에이전트. 배정된 시나리
 
 ## Execution Process
 
+### Phase 0: 설정 로딩
+
+1. `vs --json qa config resolve <plan_id>` 실행하여 resolved_config를 로딩하세요
+2. 로딩 실패 시 기본값으로 진행 (하위 호환성 보장)
+3. 이후 Phase에서 하드코딩된 기본값 대신 resolved_config 값을 참조하세요
+
 배정된 시나리오를 **priority 순서**(critical → high → medium → low)로 처리합니다.
 
 각 시나리오에 대해 다음 5단계를 수행하세요:
@@ -110,6 +116,17 @@ vs --json qa finding create <run_id> \
 - high: 주요 기능 오동작, 보안 취약점
 - medium: 비핵심 기능 이슈, 미미한 데이터 불일치
 - low: 코드 스타일, 미사용 코드, 경미한 개선 사항
+
+### Custom Rules 실행 (Phase 0에서 config 로딩 후)
+
+resolved_config.custom_rules가 있으면 각 규칙을 실행하세요:
+1. 각 rule에 대해 `Grep` 도구로 rule.pattern을 rule.scope 범위에서 검색
+2. rule.exclude가 있으면 해당 패턴 제외
+3. rule.negative_pattern이 있으면: 매칭된 각 파일의 주변 컨텍스트에서 negative_pattern 부재를 확인. 부재 시 위반으로 판정
+4. 위반 발견 시:
+   a. ignore 규칙 확인: resolved_config.ignore에서 file_pattern 또는 finding_pattern 매칭 확인. 매칭되면 건너뛰기
+   b. severity_adjustments 적용: resolved_config.severity_adjustments에서 match 조건 확인. promote_one/demote_one 적용
+   c. finding 생성: `vs --json qa finding create <run_id> --title "<rule.description>" --severity <adjusted_severity> --category <rule.category> --affected-files "<file>"`
 
 ## Report Format
 

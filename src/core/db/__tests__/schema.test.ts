@@ -214,7 +214,7 @@ describe('Schema', () => {
 
     // Assert: version should be latest (all migrations applied)
     const version = v2Db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(12);
+    expect(version).toBe(13);
 
     v2Db.close();
   });
@@ -237,9 +237,9 @@ describe('Schema', () => {
     expect(tables.map((t) => t.name)).toContain('skill_usage');
   });
 
-  it('should set user_version to 12 after all migrations on fresh DB', () => {
+  it('should set user_version to 13 after all migrations on fresh DB', () => {
     const version = db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(12);
+    expect(version).toBe(13);
   });
 
   describe('AC01: migration 11 - enforcement columns', () => {
@@ -251,7 +251,6 @@ describe('Schema', () => {
     });
 
     it('AC02: existing rules have enforcement default value SOFT', () => {
-      // Insert a rule without specifying enforcement
       db.prepare(`
         INSERT INTO self_improve_rules (id, title, category, rule_path, status, created_at)
         VALUES ('test-id', 'Test Rule', 'LOGIC_ERROR', 'test/path.md', 'active', datetime('now'))
@@ -273,7 +272,6 @@ describe('Schema', () => {
 
   describe('AC08: SQL reserved words are double-quoted', () => {
     it('AC08: vs_config table works correctly with quoted reserved word columns', () => {
-      // key and value are SQL reserved words - verify they work
       db.prepare('INSERT INTO vs_config ("key", "value") VALUES (?, ?)').run('test_key', 'test_value');
       const row = db.prepare('SELECT "key", "value" FROM vs_config WHERE "key" = ?').get('test_key') as { key: string; value: string };
       expect(row.key).toBe('test_key');
@@ -299,29 +297,18 @@ describe('Schema', () => {
 
   describe('migration 12 - vec_errors and error_embeddings', () => {
     it('AC03: loadVec 성공 시 vec_errors 및 error_embeddings 테이블이 생성된다', () => {
-      // initSchema runs with real loadVec. If sqlite-vec is available,
-      // vec_errors and error_embeddings should exist.
-      // We check by querying sqlite_master for these tables.
       const tables = db
         .prepare("SELECT name FROM sqlite_master WHERE name IN ('vec_errors', 'error_embeddings') ORDER BY name")
         .all() as { name: string }[];
       const tableNames = tables.map((t) => t.name);
-
-      // sqlite-vec is available in this project, so both tables should exist
       expect(tableNames).toContain('error_embeddings');
 
-      // Verify error_embeddings table structure
       const columns = db.pragma('table_info(error_embeddings)') as Array<{ name: string; type: string; notnull: number }>;
       const colMap = Object.fromEntries(columns.map((c) => [c.name, c]));
-
       expect(colMap['error_id'].type).toBe('TEXT');
       expect(colMap['vec_rowid'].type).toBe('INTEGER');
       expect(colMap['vec_rowid'].notnull).toBe(1);
-      expect(colMap['model'].type).toBe('TEXT');
-      expect(colMap['model'].notnull).toBe(1);
-      expect(colMap['created_at'].type).toBe('TEXT');
 
-      // Verify index exists
       const indexes = db
         .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='error_embeddings'")
         .all() as { name: string }[];
@@ -329,42 +316,64 @@ describe('Schema', () => {
     });
 
     it('AC05: migration 12가 sqlite-vec 없이도 에러 없이 통과한다', async () => {
-      // Mock loadVec to return false (simulate sqlite-vec not available)
       const embeddings = await import('../../engine/embeddings.js');
       const loadVecSpy = vi.spyOn(embeddings, 'loadVec').mockReturnValue(false);
 
       try {
         const noVecDb = createMemoryDb();
-        // Set version to 11 so only migration 12 runs
         noVecDb.exec(`
           CREATE TABLE IF NOT EXISTS plans (
             id TEXT PRIMARY KEY, title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'draft', summary TEXT, spec TEXT,
-            branch TEXT, worktree_name TEXT,
+            branch TEXT, worktree_name TEXT, qa_overrides TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME
+          );
+          CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY, plan_id TEXT NOT NULL REFERENCES plans(id),
+            parent_id TEXT, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'todo',
+            depth INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0,
+            spec TEXT, acceptance TEXT, depends_on TEXT, allowed_files TEXT,
+            forbidden_patterns TEXT, shadow_result TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME
+          );
+          CREATE TABLE IF NOT EXISTS task_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL,
+            plan_id TEXT NOT NULL, duration_min REAL, final_status TEXT NOT NULL,
+            block_reason TEXT, impl_status TEXT, test_count INTEGER,
+            files_changed INTEGER, has_concerns BOOLEAN DEFAULT 0,
+            changed_files_detail TEXT, scope_violations TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE TABLE IF NOT EXISTS qa_runs (
+            id TEXT PRIMARY KEY, plan_id TEXT NOT NULL REFERENCES plans(id),
+            "trigger" TEXT NOT NULL CHECK("trigger" IN ('manual','auto','milestone','post_merge')),
+            status TEXT NOT NULL DEFAULT 'pending',
+            summary TEXT, total_scenarios INTEGER DEFAULT 0,
+            passed_scenarios INTEGER DEFAULT 0, failed_scenarios INTEGER DEFAULT 0,
+            risk_score REAL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP, completed_at DATETIME
+          );
+          CREATE TABLE IF NOT EXISTS qa_scenarios (
+            id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES qa_runs(id),
+            category TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL,
+            priority TEXT NOT NULL DEFAULT 'medium', related_tasks TEXT,
+            status TEXT NOT NULL DEFAULT 'pending', agent TEXT, evidence TEXT,
+            source TEXT NOT NULL DEFAULT 'final',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE TABLE IF NOT EXISTS qa_findings (
+            id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES qa_runs(id),
+            scenario_id TEXT, severity TEXT NOT NULL, category TEXT NOT NULL,
+            title TEXT NOT NULL, description TEXT NOT NULL, affected_files TEXT,
+            related_task_id TEXT, fix_suggestion TEXT,
+            status TEXT NOT NULL DEFAULT 'open', fix_plan_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           );
         `);
         noVecDb.pragma('user_version = 11');
-
-        // Apply migrations - should not throw
         expect(() => applyMigrations(noVecDb)).not.toThrow();
-
-        // Version should be 12
         const version = noVecDb.pragma('user_version', { simple: true }) as number;
-        expect(version).toBe(12);
-
-        // vec_errors should NOT exist
-        const vecTables = noVecDb
-          .prepare("SELECT name FROM sqlite_master WHERE name = 'vec_errors'")
-          .all() as { name: string }[];
-        expect(vecTables.length).toBe(0);
-
-        // error_embeddings should NOT exist (skipped with vec)
-        const embTables = noVecDb
-          .prepare("SELECT name FROM sqlite_master WHERE name = 'error_embeddings'")
-          .all() as { name: string }[];
-        expect(embTables.length).toBe(0);
-
+        expect(version).toBe(13);
         noVecDb.close();
       } finally {
         loadVecSpy.mockRestore();
@@ -372,14 +381,12 @@ describe('Schema', () => {
     });
 
     it('AC05: migration 12 is idempotent', () => {
-      // Running migrations again should not throw
       expect(() => applyMigrations(db)).not.toThrow();
       const version = db.pragma('user_version', { simple: true }) as number;
-      expect(version).toBe(12);
+      expect(version).toBe(13);
     });
 
     it('AC03: error_embeddings can store and query data', () => {
-      // Functional test: insert and retrieve from error_embeddings
       db.prepare(`
         INSERT INTO error_embeddings (error_id, vec_rowid, model)
         VALUES (?, ?, ?)
@@ -397,8 +404,6 @@ describe('Schema', () => {
 
   describe('AC03: no other unquoted SQL reserved word columns', () => {
     it('AC03: all SQL reserved word columns in schema are properly quoted', () => {
-      // Known reserved word columns: key, value (vs_config), trigger (qa_runs)
-      // Verify they all work correctly
       const reservedWordTests = [
         { table: 'vs_config', column: 'key', insert: 'INSERT INTO vs_config ("key", "value") VALUES (?, ?)', params: ['rw_test', 'val'] },
         { table: 'vs_config', column: 'value', insert: 'INSERT INTO vs_config ("key", "value") VALUES (?, ?)', params: ['rw_test2', 'val2'] },

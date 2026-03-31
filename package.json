@@ -31,7 +31,9 @@
     "better-sqlite3": "^11.8.2",
     "commander": "^13.1.0",
     "nanoid": "^5.1.5",
-    "sqlite-vec": "^0.1.0"
+    "sqlite-vec": "^0.1.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

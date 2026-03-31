@@ -44,12 +44,23 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 
 ## CLI Reference
 
+### QA 실행
 - `vs --json qa run create <plan_id> [--trigger <type>]` — QA Run 생성
 - `vs --json qa run list [--plan <plan_id>]` — QA Run 목록
 - `vs --json qa run show <run_id>` — QA Run 상세
-- `vs --json qa scenario list <run_id>` — 시나리오 목록
-- `vs --json qa finding list [--run <run_id>]` — 이슈 목록
-- `vs --json qa stats [--plan <plan_id>]` — QA 통계
+
+### 시나리오 / Findings / 상태 조회
+- `vs --json qa scenario list <run_id>` — 시나리오 목록 (이전: `/vs-qa-scenarios`)
+- `vs --json qa finding list [--run <run_id>]` — 이슈 목록 (이전: `/vs-qa-findings`)
+- `vs --json qa stats [--plan <plan_id>]` — QA 통계 (이전: `/vs-qa-status`)
+
+### QA 설정 관리
+- `vs --json qa config resolve [plan_id]` — 프로젝트 QA 규칙 조회 (L0+L1+L2 머지)
+- `vs --json qa config validate` — qa-rules.yaml 유효성 검증
+- `vs --json qa config init` — 프로젝트 분석 후 qa-rules.yaml 자동 생성
+- `vs --json qa config show` — 현재 설정을 보기 좋게 출력
+
+### 기타
 - `vs plan show <plan_id> --json` — 플랜 상세 + 태스크 트리
 
 ## Steps

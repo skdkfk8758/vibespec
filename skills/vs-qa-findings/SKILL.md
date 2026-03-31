@@ -1,10 +1,14 @@
 ---
 name: vs-qa-findings
-description: QA 발견 이슈를 조회하고 상태를 관리합니다.
+description: (Deprecated) vs-qa에 통합되었습니다. QA 발견 이슈를 조회하고 상태를 관리합니다.
 invocation: user
 ---
 
 # QA 이슈 관리
+
+> **Note:** 이 스킬은 `/vs-qa`에 통합되었습니다. 동일한 기능을 `/vs-qa`에서 사용할 수 있습니다.
+> - CLI: `vs --json qa finding list`, `vs --json qa finding update`
+> - 자세한 사용법: `/vs-qa`의 CLI Reference 참조
 
 QA에서 발견된 이슈를 필터링, 조회, 상태 관리합니다.
 

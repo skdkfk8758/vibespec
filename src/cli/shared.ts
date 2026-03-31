@@ -16,6 +16,7 @@ import { QAScenarioModel } from '../core/models/qa-scenario.js';
 import { QAFindingModel } from '../core/models/qa-finding.js';
 import { BacklogModel } from '../core/models/backlog.js';
 import { MergeReportModel } from '../core/models/merge-report.js';
+import { AgentHandoffModel } from '../core/models/agent-handoff.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 
 let jsonMode = false;
@@ -70,7 +71,8 @@ export function initModels() {
   const db = getDb();
   initSchema(db);
   const events = new EventModel(db);
-  const planModel = new PlanModel(db, events);
+  const agentHandoffModel = new AgentHandoffModel(db);
+  const planModel = new PlanModel(db, events, agentHandoffModel);
   const taskModel = new TaskModel(db, events);
   const contextModel = new ContextModel(db);
   const taskMetricsModel = new TaskMetricsModel(db);
@@ -85,7 +87,7 @@ export function initModels() {
   const qaFindingModel = new QAFindingModel(db);
   const backlogModel = new BacklogModel(db, events);
   const mergeReportModel = new MergeReportModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel };
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel, agentHandoffModel };
 }
 
 export type Models = ReturnType<typeof initModels>;

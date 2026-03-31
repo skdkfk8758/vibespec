@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Plan, PlanStatus } from '../types.js';
 import type { EventModel } from './event.js';
+import type { AgentHandoffModel } from './agent-handoff.js';
 import { detectGitContext } from '../db/connection.js';
 import { generateId, buildUpdateQuery, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
 
@@ -15,10 +16,12 @@ export const PLAN_TRANSITIONS: AllowedTransitions = {
 export class PlanModel {
   private db: Database.Database;
   private events?: EventModel;
+  private handoffs?: AgentHandoffModel;
 
-  constructor(db: Database.Database, events?: EventModel) {
+  constructor(db: Database.Database, events?: EventModel, handoffs?: AgentHandoffModel) {
     this.db = db;
     this.events = events;
+    this.handoffs = handoffs;
   }
 
   create(title: string, spec?: string, summary?: string): Plan {
@@ -105,6 +108,16 @@ export class PlanModel {
         JSON.stringify({ status: newStatus }),
       );
     });
+
+    // Auto-clean handoff data when plan reaches terminal status
+    if ((newStatus === 'completed' || newStatus === 'archived') && this.handoffs) {
+      try {
+        this.handoffs.cleanByPlan(id);
+      } catch {
+        // Best-effort cleanup: don't fail the transition
+      }
+    }
+
     return this.requireById(id);
   }
 

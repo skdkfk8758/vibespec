@@ -12,23 +12,23 @@ export class QAScenarioModel {
   create(runId: string, data: NewQAScenario): QAScenario {
     const id = generateId();
     this.db.prepare(
-      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, runId, data.category, data.title, data.description, data.priority, data.related_tasks ?? null);
+      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, runId, data.category, data.title, data.description, data.priority, data.related_tasks ?? null, data.source ?? 'final');
     return this.get(id)!;
   }
 
   bulkCreate(runId: string, scenarios: NewQAScenario[]): QAScenario[] {
     const insert = this.db.prepare(
-      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO qa_scenarios (id, run_id, category, title, description, priority, related_tasks, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const ids: string[] = [];
     const tx = this.db.transaction(() => {
       for (const s of scenarios) {
         const id = generateId();
-        insert.run(id, runId, s.category, s.title, s.description, s.priority, s.related_tasks ?? null);
+        insert.run(id, runId, s.category, s.title, s.description, s.priority, s.related_tasks ?? null, s.source ?? 'final');
         ids.push(id);
       }
     });

@@ -25,6 +25,7 @@ export function initSchema(db: Database.Database): void {
       spec        TEXT,
       branch      TEXT,
       worktree_name TEXT,
+      qa_overrides TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -42,6 +43,7 @@ export function initSchema(db: Database.Database): void {
       depends_on  TEXT,
       allowed_files TEXT,
       forbidden_patterns TEXT,
+      shadow_result TEXT CHECK(shadow_result IN ('clean', 'warning', 'alert')),
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -145,6 +147,54 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog_items(status);
     CREATE INDEX IF NOT EXISTS idx_backlog_priority ON backlog_items(priority);
     CREATE INDEX IF NOT EXISTS idx_backlog_plan ON backlog_items(plan_id);
+
+    CREATE TABLE IF NOT EXISTS agent_handoffs (
+      id            TEXT PRIMARY KEY,
+      task_id       TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      plan_id       TEXT REFERENCES plans(id) ON DELETE CASCADE,
+      agent_type    TEXT NOT NULL,
+      attempt       INTEGER NOT NULL DEFAULT 1,
+      input_hash    TEXT,
+      verdict       TEXT,
+      summary       TEXT,
+      report_path   TEXT,
+      changed_files TEXT,
+      created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_task ON agent_handoffs(task_id);
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_plan ON agent_handoffs(plan_id);
+
+    CREATE TABLE IF NOT EXISTS wave_gates (
+      id              TEXT PRIMARY KEY,
+      plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      wave_number     INTEGER NOT NULL,
+      task_ids        TEXT NOT NULL,
+      verdict         TEXT NOT NULL CHECK(verdict IN ('GREEN', 'YELLOW', 'RED')),
+      summary         TEXT,
+      findings_count  INTEGER DEFAULT 0,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wave_gates_plan ON wave_gates(plan_id);
+
+    CREATE TABLE IF NOT EXISTS plan_revisions (
+      id              TEXT PRIMARY KEY,
+      plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+      trigger_type    TEXT NOT NULL CHECK(trigger_type IN (
+        'assumption_violation', 'scope_explosion',
+        'design_flaw', 'complexity_exceeded', 'dependency_shift'
+      )),
+      trigger_source  TEXT,
+      description     TEXT NOT NULL,
+      changes         TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'proposed'
+        CHECK(status IN ('proposed', 'approved', 'rejected')),
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan ON plan_revisions(plan_id);
+    CREATE INDEX IF NOT EXISTS idx_plan_revisions_status ON plan_revisions(status);
   `);
 
   applyMigrations(db);
@@ -235,10 +285,12 @@ export function applyMigrations(db: Database.Database): void {
         spec        TEXT,
         branch      TEXT,
         worktree_name TEXT,
+        qa_overrides TEXT,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
       );
-      INSERT INTO plans_new SELECT * FROM plans;
+      INSERT INTO plans_new (id, title, status, summary, spec, branch, worktree_name, created_at, completed_at)
+        SELECT id, title, status, summary, spec, branch, worktree_name, created_at, completed_at FROM plans;
       DROP TABLE plans;
       ALTER TABLE plans_new RENAME TO plans;
     `);
@@ -294,7 +346,7 @@ export function applyMigrations(db: Database.Database): void {
       CREATE TABLE IF NOT EXISTS qa_runs (
         id                TEXT PRIMARY KEY,
         plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone')),
+        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone', 'post_merge')),
         status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
         summary           TEXT,
         total_scenarios   INTEGER DEFAULT 0,
@@ -308,7 +360,7 @@ export function applyMigrations(db: Database.Database): void {
       CREATE TABLE IF NOT EXISTS qa_scenarios (
         id                TEXT PRIMARY KEY,
         run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
-        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case')),
+        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case', 'acceptance', 'security')),
         title             TEXT NOT NULL,
         description       TEXT NOT NULL,
         priority          TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
@@ -316,6 +368,7 @@ export function applyMigrations(db: Database.Database): void {
         status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'pass', 'fail', 'skip', 'warn')) DEFAULT 'pending',
         agent             TEXT,
         evidence          TEXT,
+        source            TEXT NOT NULL DEFAULT 'final' CHECK(source IN ('seed', 'shadow', 'wave', 'final', 'manual')),
         created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -423,11 +476,6 @@ export function applyMigrations(db: Database.Database): void {
       db.exec('ALTER TABLE self_improve_rules ADD COLUMN escalated_at TEXT');
     }
 
-    // Fix SQL reserved words in vs_config (key, value)
-    // SQLite treats unquoted reserved words as column names in most contexts,
-    // but the schema definition is updated in initSchema above for new DBs.
-    // Existing DBs work without recreation since SQLite is lenient here.
-
     db.pragma('user_version = 11');
   }
 
@@ -447,5 +495,176 @@ export function applyMigrations(db: Database.Database): void {
     }
 
     db.pragma('user_version = 12');
+  }
+
+  if (version < 13) {
+    // ── Phase 1: Harness Infrastructure ──
+    // 1. Recreate qa_scenarios: add 'acceptance','security' to category CHECK + add 'source' column
+    // 2. Recreate qa_runs: fix 'trigger' SQL reserved word + add 'post_merge' to CHECK
+    // 3. New tables: agent_handoffs, wave_gates, plan_revisions
+    // 4. New columns: plans.qa_overrides, tasks.shadow_result
+
+    db.pragma('foreign_keys = OFF');
+
+    // Drop dependent views first
+    db.exec('DROP VIEW IF EXISTS qa_run_summary');
+    db.exec('DROP VIEW IF EXISTS plan_progress');
+    db.exec('DROP VIEW IF EXISTS plan_metrics');
+
+    // ── qa_scenarios: recreate with expanded category + source column ──
+    db.exec(`
+      CREATE TABLE qa_scenarios_new (
+        id                TEXT PRIMARY KEY,
+        run_id            TEXT NOT NULL REFERENCES qa_runs(id) ON DELETE CASCADE,
+        category          TEXT NOT NULL CHECK(category IN ('functional', 'integration', 'flow', 'regression', 'edge_case', 'acceptance', 'security')),
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        priority          TEXT NOT NULL CHECK(priority IN ('critical', 'high', 'medium', 'low')) DEFAULT 'medium',
+        related_tasks     TEXT,
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'pass', 'fail', 'skip', 'warn')) DEFAULT 'pending',
+        agent             TEXT,
+        evidence          TEXT,
+        source            TEXT NOT NULL DEFAULT 'final' CHECK(source IN ('seed', 'shadow', 'wave', 'final', 'manual')),
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO qa_scenarios_new (id, run_id, category, title, description, priority, related_tasks, status, agent, evidence, created_at)
+        SELECT id, run_id, category, title, description, priority, related_tasks, status, agent, evidence, created_at FROM qa_scenarios;
+      DROP TABLE qa_scenarios;
+      ALTER TABLE qa_scenarios_new RENAME TO qa_scenarios;
+    `);
+
+    // ── qa_runs: recreate to fix 'trigger' reserved word (quote it) + add 'post_merge' ──
+    db.exec(`
+      CREATE TABLE qa_runs_new (
+        id                TEXT PRIMARY KEY,
+        plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        "trigger"         TEXT NOT NULL CHECK("trigger" IN ('manual', 'auto', 'milestone', 'post_merge')),
+        status            TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
+        summary           TEXT,
+        total_scenarios   INTEGER DEFAULT 0,
+        passed_scenarios  INTEGER DEFAULT 0,
+        failed_scenarios  INTEGER DEFAULT 0,
+        risk_score        REAL DEFAULT 0,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at      DATETIME
+      );
+      INSERT INTO qa_runs_new SELECT * FROM qa_runs;
+      DROP TABLE qa_runs;
+      ALTER TABLE qa_runs_new RENAME TO qa_runs;
+    `);
+
+    db.pragma('foreign_keys = ON');
+
+    // Recreate views
+    db.exec(`
+      CREATE VIEW IF NOT EXISTS qa_run_summary AS
+      SELECT
+        qr.id,
+        qr.plan_id,
+        qr.status,
+        qr.risk_score,
+        qr.created_at,
+        COUNT(DISTINCT qs.id) AS total_scenarios,
+        SUM(CASE WHEN qs.status = 'pass' THEN 1 ELSE 0 END) AS passed,
+        SUM(CASE WHEN qs.status = 'fail' THEN 1 ELSE 0 END) AS failed,
+        SUM(CASE WHEN qs.status = 'warn' THEN 1 ELSE 0 END) AS warned,
+        COUNT(DISTINCT qf.id) AS total_findings,
+        SUM(CASE WHEN qf.severity = 'critical' THEN 1 ELSE 0 END) AS critical_findings,
+        SUM(CASE WHEN qf.severity = 'high' THEN 1 ELSE 0 END) AS high_findings
+      FROM qa_runs qr
+      LEFT JOIN qa_scenarios qs ON qs.run_id = qr.id
+      LEFT JOIN qa_findings qf ON qf.run_id = qr.id
+      GROUP BY qr.id
+    `);
+
+    // Recreate plan_progress view
+    db.exec(`CREATE VIEW IF NOT EXISTS plan_progress AS ${PLAN_PROGRESS_VIEW_SQL}`);
+
+    // Recreate plan_metrics view (only if task_metrics table exists)
+    const hasTM = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='task_metrics'").get();
+    if (hasTM) {
+      db.exec(`
+        CREATE VIEW IF NOT EXISTS plan_metrics AS
+        SELECT
+          p.id, p.title, p.status,
+          COUNT(tm.id) AS recorded_tasks,
+          ROUND(AVG(tm.duration_min), 2) AS avg_duration_min,
+          SUM(CASE WHEN tm.final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked_count,
+          SUM(CASE WHEN tm.final_status = 'done' THEN 1 ELSE 0 END) AS done_count,
+          SUM(CASE WHEN tm.has_concerns = 1 THEN 1 ELSE 0 END) AS concern_count,
+          ROUND(SUM(CASE WHEN tm.final_status = 'done' THEN 1.0 ELSE 0 END) / MAX(COUNT(tm.id), 1) * 100) AS success_rate
+        FROM plans p JOIN task_metrics tm ON tm.plan_id = p.id
+        WHERE p.status IN ('completed', 'archived')
+        GROUP BY p.id
+      `);
+    }
+
+    // Recreate indexes
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_qa_runs_plan ON qa_runs(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_run ON qa_scenarios(run_id);
+      CREATE INDEX IF NOT EXISTS idx_qa_scenarios_status ON qa_scenarios(status);
+    `);
+
+    // ── New tables ──
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_handoffs (
+        id            TEXT PRIMARY KEY,
+        task_id       TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+        plan_id       TEXT REFERENCES plans(id) ON DELETE CASCADE,
+        agent_type    TEXT NOT NULL,
+        attempt       INTEGER NOT NULL DEFAULT 1,
+        input_hash    TEXT,
+        verdict       TEXT,
+        summary       TEXT,
+        report_path   TEXT,
+        changed_files TEXT,
+        created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agent_handoffs_task ON agent_handoffs(task_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_handoffs_plan ON agent_handoffs(plan_id);
+
+      CREATE TABLE IF NOT EXISTS wave_gates (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        wave_number     INTEGER NOT NULL,
+        task_ids        TEXT NOT NULL,
+        verdict         TEXT NOT NULL CHECK(verdict IN ('GREEN', 'YELLOW', 'RED')),
+        summary         TEXT,
+        findings_count  INTEGER DEFAULT 0,
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_wave_gates_plan ON wave_gates(plan_id);
+
+      CREATE TABLE IF NOT EXISTS plan_revisions (
+        id              TEXT PRIMARY KEY,
+        plan_id         TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        trigger_type    TEXT NOT NULL CHECK(trigger_type IN (
+          'assumption_violation', 'scope_explosion',
+          'design_flaw', 'complexity_exceeded', 'dependency_shift'
+        )),
+        trigger_source  TEXT,
+        description     TEXT NOT NULL,
+        changes         TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'proposed'
+          CHECK(status IN ('proposed', 'approved', 'rejected')),
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_plan_revisions_plan ON plan_revisions(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_plan_revisions_status ON plan_revisions(status);
+    `);
+
+    // ── New columns on existing tables ──
+    if (!hasColumn(db, 'plans', 'qa_overrides')) {
+      db.exec('ALTER TABLE plans ADD COLUMN qa_overrides TEXT');
+    }
+    if (!hasColumn(db, 'tasks', 'shadow_result')) {
+      db.exec("ALTER TABLE tasks ADD COLUMN shadow_result TEXT CHECK(shadow_result IN ('clean', 'warning', 'alert'))");
+    }
+
+    db.pragma('user_version = 13');
   }
 }

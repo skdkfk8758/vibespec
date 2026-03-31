@@ -1,8 +1,12 @@
 import { Command } from 'commander';
-import { output, outputError, withErrorHandler, initModels } from '../shared.js';
+import * as fs from 'node:fs';
+import { output, outputError, withErrorHandler, initModels, initDb } from '../shared.js';
 import type { Models } from '../shared.js';
 import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus, PlanStatus } from '../../core/types.js';
 import { VALID_QA_RUN_TERMINAL_STATUSES } from '../../core/types.js';
+import { resolveConfig, validateConfig, detectProfile, QaRulesSchema, PROFILE_PRESETS, DEFAULT_QA_CONFIG } from '../../core/engine/qa-config.js';
+import type { ResolvedQaConfig } from '../../core/engine/qa-config.js';
+import * as YAML from 'yaml';
 
 function getQAModels() {
   const m = initModels();
@@ -276,4 +280,168 @@ export function registerQualityCommands(program: Command, getModels: () => Model
         `  critical: ${statsData.findings_by_severity.critical}  high: ${statsData.findings_by_severity.high}  medium: ${statsData.findings_by_severity.medium}  low: ${statsData.findings_by_severity.low}`,
       ].join('\n'));
     }));
+
+  // qa config
+  const qaConfig = qa.command('config').description('Manage QA configuration');
+
+  // qa config resolve [plan_id]
+  qaConfig
+    .command('resolve')
+    .argument('[plan_id]', 'Plan ID for L2 overrides')
+    .description('Resolve and display merged QA configuration')
+    .action((planId?: string) => withErrorHandler(() => {
+      const options: { planId?: string; db?: any } = {};
+      if (planId) {
+        options.planId = planId;
+        options.db = initDb();
+      }
+      const config = resolveConfig(options);
+      output(config, formatConfigHuman(config));
+    }));
+
+  // qa config validate
+  qaConfig
+    .command('validate')
+    .description('Validate .claude/qa-rules.yaml')
+    .action(() => withErrorHandler(() => {
+      const yamlPath = '.claude/qa-rules.yaml';
+      if (!fs.existsSync(yamlPath)) {
+        return outputError(`Configuration file not found: ${yamlPath}`);
+      }
+
+      const rawContent = fs.readFileSync(yamlPath, 'utf-8');
+      const parsed = YAML.parse(rawContent);
+      const zodResult = QaRulesSchema.safeParse(parsed);
+
+      const errors: string[] = [];
+      const warnings: string[] = [];
+
+      if (!zodResult.success) {
+        for (const issue of zodResult.error.issues) {
+          errors.push(`Schema error at ${issue.path.join('.')}: ${issue.message}`);
+        }
+      }
+
+      // Even if Zod fails, try to validate what we can from resolved config
+      if (zodResult.success) {
+        const config = resolveConfig({ yamlPath });
+        const validation = validateConfig(config);
+        errors.push(...validation.errors);
+        warnings.push(...validation.warnings);
+      }
+
+      const result = { errors, warnings, valid: errors.length === 0 };
+      output(result, [
+        `Validation: ${result.valid ? 'PASS' : 'FAIL'}`,
+        errors.length > 0 ? `Errors (${errors.length}):` : '',
+        ...errors.map(e => `  - ${e}`),
+        warnings.length > 0 ? `Warnings (${warnings.length}):` : '',
+        ...warnings.map(w => `  - ${w}`),
+      ].filter(Boolean).join('\n'));
+    }));
+
+  // qa config init
+  qaConfig
+    .command('init')
+    .description('Auto-detect profile and create .claude/qa-rules.yaml')
+    .action(() => withErrorHandler(() => {
+      const yamlPath = '.claude/qa-rules.yaml';
+      if (fs.existsSync(yamlPath)) {
+        return outputError(`Configuration file already exists: ${yamlPath}`);
+      }
+
+      // Detect profile from package.json
+      let profile = 'library';
+      try {
+        const pkgContent = fs.readFileSync('package.json', 'utf-8');
+        const pkgJson = JSON.parse(pkgContent);
+        profile = detectProfile(pkgJson);
+      } catch {
+        // No package.json or parse error; default to library
+      }
+
+      // Build initial config
+      const preset = PROFILE_PRESETS[profile] ?? {};
+      const config = {
+        profile,
+        ...DEFAULT_QA_CONFIG,
+        ...preset,
+      };
+
+      // Ensure .claude directory exists
+      if (!fs.existsSync('.claude')) {
+        fs.mkdirSync('.claude', { recursive: true });
+      }
+
+      const yamlContent = YAML.stringify(config);
+      fs.writeFileSync(yamlPath, yamlContent, 'utf-8');
+
+      output(
+        { profile, path: yamlPath },
+        `Created ${yamlPath} with profile: ${profile}`,
+      );
+    }));
+
+  // qa config show
+  qaConfig
+    .command('show')
+    .argument('[plan_id]', 'Plan ID for L2 overrides')
+    .description('Show resolved QA configuration in formatted view')
+    .action((planId?: string) => withErrorHandler(() => {
+      const options: { planId?: string; db?: any } = {};
+      if (planId) {
+        options.planId = planId;
+        options.db = initDb();
+      }
+      const config = resolveConfig(options);
+      output(config, formatConfigHuman(config));
+    }));
+}
+
+function formatConfigHuman(config: ResolvedQaConfig): string {
+  const lines: string[] = [];
+
+  if (config.profile) {
+    lines.push(`Profile: ${config.profile}`);
+    lines.push('');
+  }
+
+  lines.push('Risk Thresholds:');
+  lines.push(`  green:  ${config.risk_thresholds.green}`);
+  lines.push(`  yellow: ${config.risk_thresholds.yellow}`);
+  lines.push(`  orange: ${config.risk_thresholds.orange}`);
+  lines.push('');
+
+  lines.push('Severity Weights:');
+  lines.push(`  critical: ${config.severity_weights.critical}`);
+  lines.push(`  high:     ${config.severity_weights.high}`);
+  lines.push(`  medium:   ${config.severity_weights.medium}`);
+  lines.push(`  low:      ${config.severity_weights.low}`);
+  lines.push('');
+
+  lines.push('Modules:');
+  for (const [key, val] of Object.entries(config.modules)) {
+    lines.push(`  ${key}: ${val ? 'enabled' : 'disabled'}`);
+  }
+  lines.push('');
+
+  lines.push(`Regression Bonus: ${config.regression_bonus}`);
+
+  if (config.custom_rules && config.custom_rules.length > 0) {
+    lines.push('');
+    lines.push(`Custom Rules (${config.custom_rules.length}):`);
+    for (const rule of config.custom_rules) {
+      lines.push(`  [${rule.severity}] ${rule.id}: ${rule.message}`);
+    }
+  }
+
+  if (config.ignore && config.ignore.length > 0) {
+    lines.push('');
+    lines.push(`Ignore Rules (${config.ignore.length}):`);
+    for (const rule of config.ignore) {
+      lines.push(`  ${rule.rule_id}: ${rule.reason} (${rule.paths.join(', ')})`);
+    }
+  }
+
+  return lines.join('\n');
 }
