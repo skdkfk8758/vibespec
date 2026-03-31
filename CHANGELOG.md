@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.31.0] - 2026-04-01
+
+### 새 기능
+- **config**: Zod 기반 Config 스키마 검증 도입 (954f9ec)
+- **models**: BaseRepository<T> 추상 클래스 생성 (63642a2)
+- **harness**: Phase 2+3 Continuous QA Loop + Adaptive Planner (49154f9)
+- **harness**: Phase 1 인프라 + QA 규칙 시스템 + 백로그 통합 (10a6281)
+- **self-improve**: 자가진화 시스템 + 지식 검색 고도화 (724263f)
+
+### 버그 수정
+- **cli**: governance에서 plan 명령 중복 등록 수정 (6d94b52)
+- **harness**: 6개 에이전트 연결 이슈 수정 (b2a03e0)
+
+### 리팩토링
+- **models**: 11개 모델을 BaseRepository 상속으로 전환 (9dc8247)
+- **cli**: initModels()를 lazy getter 패턴으로 전환 (c43cf4f)
+- **skills**: skill description 50자 이내 압축 + 한국어 트리거 추가 (7fd75fc)
+- **agents**: agent description 30자 이내 압축 (cab61c4)
+- **vs-plan**: 질문 축소 및 체크포인트 통합 (0b25786)
+- **vs-qa**: QA sub-skills agent invocation + subcommand 통합 (b066c7b)
+- **vs-guard**: guardrail sub-skills agent invocation + 옵션 통합 (9066e1d)
+- **skills**: reference skills agent invocation 전환 (f677ba8)
+
+### CI/CD
+- **github**: GitHub Actions CI 워크플로우 추가 (bdc06b7)
+
+### 문서
+- **guide**: 플러그인 사용 가이드, 하네스 검증 리포트 추가 (3be742e)
+
+### 기타
+- **config**: node-compile-cache 빌드 캐시를 gitignore에 추가 (e9e7bff)
+
 ## [0.30.0] - 2026-03-30
 
 ### 새 기능
