@@ -1,7 +1,7 @@
 ---
 name: tdd-principles
 description: "Use when referencing TDD principles. RED-GREEN-REFACTOR 사이클, 테스트 작성 패턴(AAA), 테스트 네이밍 컨벤션, TDD 적합성 판단 기준을 제공합니다. vs-next, tdd-implementer가 참조합니다."
-invocation: auto
+invocation: agent
 type: domain
 ---
 
