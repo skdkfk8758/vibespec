@@ -1,11 +1,13 @@
 import type Database from 'better-sqlite3';
 import type { TaskMetrics, TaskMetricsInput } from '../types.js';
+import { BaseRepository } from './base-repository.js';
 
-export class TaskMetricsModel {
-  private db: Database.Database;
+/** BaseRepository-compatible type (id coerced to string for generic constraint) */
+type TaskMetricsBase = Omit<TaskMetrics, 'id'> & { id: string };
 
+export class TaskMetricsModel extends BaseRepository<TaskMetricsBase> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'task_metrics');
   }
 
   record(

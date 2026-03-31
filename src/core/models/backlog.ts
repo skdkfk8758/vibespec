@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { BacklogItem, BacklogStatus, BacklogPriority, BacklogCategory, NewBacklogItem } from '../types.js';
 import type { EventModel } from './event.js';
+import { BaseRepository } from './base-repository.js';
 import { generateId, buildUpdateQuery } from '../utils.js';
 
 export interface BacklogFilter {
@@ -17,12 +18,11 @@ export interface BacklogStats {
   by_status: Record<BacklogStatus, number>;
 }
 
-export class BacklogModel {
-  private db: Database.Database;
+export class BacklogModel extends BaseRepository<BacklogItem> {
   private events?: EventModel;
 
   constructor(db: Database.Database, events?: EventModel) {
-    this.db = db;
+    super(db, 'backlog_items');
     this.events = events;
   }
 
@@ -49,12 +49,7 @@ export class BacklogModel {
     return created;
   }
 
-  getById(id: string): BacklogItem | null {
-    const row = this.db.prepare('SELECT * FROM backlog_items WHERE id = ?').get(id) as BacklogItem | undefined;
-    return row ?? null;
-  }
-
-  private requireById(id: string): BacklogItem {
+  requireById(id: string): BacklogItem {
     const item = this.getById(id);
     if (!item) throw new Error(`Backlog item not found: ${id}`);
     return item;

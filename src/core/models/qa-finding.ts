@@ -1,12 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { QAFinding, QAFindingStatus, NewQAFinding } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
-export class QAFindingModel {
-  private db: Database.Database;
-
+export class QAFindingModel extends BaseRepository<QAFinding> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'qa_findings');
   }
 
   create(runId: string, data: NewQAFinding): QAFinding {
@@ -26,8 +25,7 @@ export class QAFindingModel {
   }
 
   get(id: string): QAFinding | null {
-    const row = this.db.prepare(`SELECT * FROM qa_findings WHERE id = ?`).get(id) as QAFinding | undefined;
-    return row ?? null;
+    return this.getById(id);
   }
 
   list(filters?: { runId?: string; severity?: string; status?: string; category?: string }): QAFinding[] {

@@ -1,12 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { QAScenario, QAScenarioStatus, NewQAScenario } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
-export class QAScenarioModel {
-  private db: Database.Database;
-
+export class QAScenarioModel extends BaseRepository<QAScenario> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'qa_scenarios');
   }
 
   create(runId: string, data: NewQAScenario): QAScenario {
@@ -38,8 +37,7 @@ export class QAScenarioModel {
   }
 
   get(id: string): QAScenario | null {
-    const row = this.db.prepare(`SELECT * FROM qa_scenarios WHERE id = ?`).get(id) as QAScenario | undefined;
-    return row ?? null;
+    return this.getById(id);
   }
 
   listByRun(runId: string, filters?: { category?: string; status?: string; agent?: string; source?: string }): QAScenario[] {

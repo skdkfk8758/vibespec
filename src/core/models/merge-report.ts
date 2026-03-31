@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { MergeReport, NewMergeReport } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
 interface MergeReportRow {
   id: string;
@@ -36,11 +37,9 @@ function rowToReport(row: MergeReportRow): MergeReport {
   };
 }
 
-export class MergeReportModel {
-  private db: Database.Database;
-
+export class MergeReportModel extends BaseRepository<MergeReportRow> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'merge_reports');
   }
 
   create(data: NewMergeReport): MergeReport {

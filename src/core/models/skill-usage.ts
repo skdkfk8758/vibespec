@@ -1,12 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { SkillUsage, SkillStats } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
-export class SkillUsageModel {
-  private db: Database.Database;
-
+export class SkillUsageModel extends BaseRepository<SkillUsage> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'skill_usage');
   }
 
   record(skillName: string, opts?: { planId?: string; sessionId?: string }): SkillUsage {

@@ -1,11 +1,13 @@
 import type Database from 'better-sqlite3';
 import type { ContextLog } from '../types.js';
+import { BaseRepository } from './base-repository.js';
 
-export class ContextModel {
-  private db: Database.Database;
+/** BaseRepository-compatible type (id coerced to string for generic constraint) */
+type ContextLogBase = Omit<ContextLog, 'id'> & { id: string };
 
+export class ContextModel extends BaseRepository<ContextLogBase> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'context_log');
   }
 
   save(
@@ -48,7 +50,7 @@ export class ContextModel {
     return (stmt.get(sessionId) as ContextLog) ?? null;
   }
 
-  getById(id: number): ContextLog | null {
+  getById(id: string | number): ContextLog | null {
     return (this.db.prepare('SELECT * FROM context_log WHERE id = ?').get(id) as ContextLog) ?? null;
   }
 

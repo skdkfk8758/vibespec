@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { Plan, PlanStatus } from '../types.js';
 import type { EventModel } from './event.js';
 import type { AgentHandoffModel } from './agent-handoff.js';
+import { BaseRepository } from './base-repository.js';
 import { detectGitContext } from '../db/connection.js';
 import { generateId, buildUpdateQuery, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
 
@@ -13,15 +14,20 @@ export const PLAN_TRANSITIONS: AllowedTransitions = {
   archived: [],
 };
 
-export class PlanModel {
-  private db: Database.Database;
+export class PlanModel extends BaseRepository<Plan> {
   private events?: EventModel;
   private handoffs?: AgentHandoffModel;
 
   constructor(db: Database.Database, events?: EventModel, handoffs?: AgentHandoffModel) {
-    this.db = db;
+    super(db, 'plans');
     this.events = events;
     this.handoffs = handoffs;
+  }
+
+  requireById(id: string): Plan {
+    const plan = this.getById(id);
+    if (!plan) throw new Error(`Plan not found: ${id}`);
+    return plan;
   }
 
   create(title: string, spec?: string, summary?: string): Plan {
@@ -32,17 +38,6 @@ export class PlanModel {
     ).run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
     const plan = this.requireById(id);
     this.events?.record('plan', plan.id, 'created', null, JSON.stringify({ title, status: 'draft', branch: ctx.branch }));
-    return plan;
-  }
-
-  getById(id: string): Plan | null {
-    const row = this.db.prepare(`SELECT * FROM plans WHERE id = ?`).get(id) as Plan | undefined;
-    return row ?? null;
-  }
-
-  private requireById(id: string): Plan {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
     return plan;
   }
 

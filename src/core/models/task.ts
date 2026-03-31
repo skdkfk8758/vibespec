@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { Task, TaskStatus, TaskTreeNode, TaskUpdateInput, Wave } from '../types.js';
 import type { EventModel } from './event.js';
+import { BaseRepository } from './base-repository.js';
 import { generateId, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
 
 export const TASK_TRANSITIONS: AllowedTransitions = {
@@ -89,10 +90,11 @@ export function validateAcceptance(acceptance: string | null | undefined): Accep
 
 export type TaskWithWarnings = Task & { warnings: string[] };
 
-export class TaskModel {
+export class TaskModel extends BaseRepository<Task> {
   private events?: EventModel;
 
-  constructor(private db: Database.Database, events?: EventModel) {
+  constructor(db: Database.Database, events?: EventModel) {
+    super(db, 'tasks');
     this.events = events;
   }
 
@@ -158,13 +160,6 @@ export class TaskModel {
     const task = this.getById(id)!;
     this.events?.record('task', task.id, 'created', null, JSON.stringify({ title, status: 'todo' }));
     return Object.assign(task, { warnings });
-  }
-
-  getById(id: string): Task | null {
-    const row = this.db
-      .prepare('SELECT * FROM tasks WHERE id = ?')
-      .get(id) as Task | undefined;
-    return row ?? null;
   }
 
   getTree(planId: string): TaskTreeNode[] {

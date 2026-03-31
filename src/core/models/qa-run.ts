@@ -1,12 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { QARun, QARunStatus, QARunSummary, QARunTrigger } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
-export class QARunModel {
-  private db: Database.Database;
-
+export class QARunModel extends BaseRepository<QARun> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'qa_runs');
   }
 
   create(planId: string, trigger: QARunTrigger): QARun {
@@ -18,8 +17,7 @@ export class QARunModel {
   }
 
   get(id: string): QARun | null {
-    const row = this.db.prepare(`SELECT * FROM qa_runs WHERE id = ?`).get(id) as QARun | undefined;
-    return row ?? null;
+    return this.getById(id);
   }
 
   list(planId?: string): QARun[] {

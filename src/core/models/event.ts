@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { EntityType, Event, EventType } from '../types.js';
+import { BaseRepository } from './base-repository.js';
 
 export interface RecordEventOpts {
   entityType: EntityType;
@@ -10,11 +11,12 @@ export interface RecordEventOpts {
   sessionId?: string | null;
 }
 
-export class EventModel {
-  private db: Database.Database;
+/** BaseRepository-compatible type (id coerced to string for generic constraint) */
+type EventBase = Omit<Event, 'id'> & { id: string };
 
+export class EventModel extends BaseRepository<EventBase> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'events');
   }
 
   record(opts: RecordEventOpts): Event;
