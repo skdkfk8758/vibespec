@@ -72,26 +72,62 @@ export function withErrorHandler(fn: () => void): void {
 export function initModels() {
   const db = getDb();
   initSchema(db);
+
+  // events is eager — required by multiple models and prevents circular dependency issues
   const events = new EventModel(db);
-  const agentHandoffModel = new AgentHandoffModel(db);
-  const planModel = new PlanModel(db, events, agentHandoffModel);
-  const taskModel = new TaskModel(db, events);
-  const contextModel = new ContextModel(db);
-  const taskMetricsModel = new TaskMetricsModel(db);
-  const skillUsageModel = new SkillUsageModel(db);
-  const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
-  const dashboard = new DashboardEngine(db, skillUsageModel);
-  const alerts = new AlertsEngine(db);
-  const stats = new StatsEngine(db);
-  const insights = new InsightsEngine(db);
-  const qaRunModel = new QARunModel(db);
-  const qaScenarioModel = new QAScenarioModel(db);
-  const qaFindingModel = new QAFindingModel(db);
-  const backlogModel = new BacklogModel(db, events);
-  const mergeReportModel = new MergeReportModel(db);
-  const waveGateModel = new WaveGateModel(db);
-  const planRevisionModel = new PlanRevisionModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel, agentHandoffModel, waveGateModel, planRevisionModel };
+
+  // Helper: define a lazy getter that instantiates on first access, then caches
+  const cache = new Map<string, unknown>();
+  function lazy<T>(name: string, factory: () => T): { get: () => T } {
+    return {
+      get() {
+        if (!cache.has(name)) cache.set(name, factory());
+        return cache.get(name) as T;
+      },
+    };
+  }
+
+  const lazyAgentHandoff = lazy('agentHandoffModel', () => new AgentHandoffModel(db));
+  const lazyPlan = lazy('planModel', () => new PlanModel(db, events, lazyAgentHandoff.get()));
+  const lazyTask = lazy('taskModel', () => new TaskModel(db, events));
+  const lazyContext = lazy('contextModel', () => new ContextModel(db));
+  const lazyTaskMetrics = lazy('taskMetricsModel', () => new TaskMetricsModel(db));
+  const lazySkillUsage = lazy('skillUsageModel', () => new SkillUsageModel(db));
+  const lazyLifecycle = lazy('lifecycle', () => new LifecycleEngine(db, lazyPlan.get(), lazyTask.get(), events));
+  const lazyDashboard = lazy('dashboard', () => new DashboardEngine(db, lazySkillUsage.get()));
+  const lazyAlerts = lazy('alerts', () => new AlertsEngine(db));
+  const lazyStats = lazy('stats', () => new StatsEngine(db));
+  const lazyInsights = lazy('insights', () => new InsightsEngine(db));
+  const lazyQaRun = lazy('qaRunModel', () => new QARunModel(db));
+  const lazyQaScenario = lazy('qaScenarioModel', () => new QAScenarioModel(db));
+  const lazyQaFinding = lazy('qaFindingModel', () => new QAFindingModel(db));
+  const lazyBacklog = lazy('backlogModel', () => new BacklogModel(db, events));
+  const lazyMergeReport = lazy('mergeReportModel', () => new MergeReportModel(db));
+  const lazyWaveGate = lazy('waveGateModel', () => new WaveGateModel(db));
+  const lazyPlanRevision = lazy('planRevisionModel', () => new PlanRevisionModel(db));
+
+  return {
+    db,
+    events,
+    get planModel() { return lazyPlan.get(); },
+    get taskModel() { return lazyTask.get(); },
+    get contextModel() { return lazyContext.get(); },
+    get taskMetricsModel() { return lazyTaskMetrics.get(); },
+    get skillUsageModel() { return lazySkillUsage.get(); },
+    get lifecycle() { return lazyLifecycle.get(); },
+    get dashboard() { return lazyDashboard.get(); },
+    get alerts() { return lazyAlerts.get(); },
+    get stats() { return lazyStats.get(); },
+    get insights() { return lazyInsights.get(); },
+    get qaRunModel() { return lazyQaRun.get(); },
+    get qaScenarioModel() { return lazyQaScenario.get(); },
+    get qaFindingModel() { return lazyQaFinding.get(); },
+    get backlogModel() { return lazyBacklog.get(); },
+    get mergeReportModel() { return lazyMergeReport.get(); },
+    get agentHandoffModel() { return lazyAgentHandoff.get(); },
+    get waveGateModel() { return lazyWaveGate.get(); },
+    get planRevisionModel() { return lazyPlanRevision.get(); },
+  };
 }
 
 export type Models = ReturnType<typeof initModels>;

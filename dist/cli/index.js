@@ -1702,6 +1702,44 @@ var InsightsEngine = class {
   }
 };
 
+// src/core/models/base-repository.ts
+var BaseRepository = class {
+  db;
+  tableName;
+  constructor(db, tableName) {
+    this.db = db;
+    this.tableName = tableName;
+  }
+  getById(id) {
+    const row = this.db.prepare(`SELECT * FROM ${this.tableName} WHERE id = ?`).get(id);
+    return row ?? null;
+  }
+  requireById(id) {
+    const entity = this.getById(id);
+    if (!entity) throw new Error(`${this.tableName} not found: ${id}`);
+    return entity;
+  }
+  list() {
+    return this.db.prepare(`SELECT * FROM ${this.tableName}`).all();
+  }
+  delete(id) {
+    this.requireById(id);
+    this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`).run(id);
+  }
+  count() {
+    const row = this.db.prepare(`SELECT count(*) as cnt FROM ${this.tableName}`).get();
+    return row.cnt;
+  }
+  update(id, fields) {
+    this.requireById(id);
+    const query = buildUpdateQuery(this.tableName, id, fields);
+    if (query) {
+      this.db.prepare(query.sql).run(...query.params);
+    }
+    return this.requireById(id);
+  }
+};
+
 // src/core/models/task.ts
 var TASK_TRANSITIONS = {
   todo: ["in_progress", "blocked", "skipped"],
@@ -1763,12 +1801,12 @@ function validateAcceptance(acceptance) {
     warnings
   };
 }
-var TaskModel = class {
+var TaskModel = class extends BaseRepository {
+  events;
   constructor(db, events) {
-    this.db = db;
+    super(db, "tasks");
     this.events = events;
   }
-  events;
   create(planId, title, opts) {
     const { warnings } = validateAcceptance(opts?.acceptance);
     const id = generateId();
@@ -1806,10 +1844,6 @@ var TaskModel = class {
     const task = this.getById(id);
     this.events?.record("task", task.id, "created", null, JSON.stringify({ title, status: "todo" }));
     return Object.assign(task, { warnings });
-  }
-  getById(id) {
-    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-    return row ?? null;
   }
   getTree(planId) {
     const rows = this.db.prepare(
@@ -2063,10 +2097,9 @@ var TaskModel = class {
 };
 
 // src/core/models/event.ts
-var EventModel = class {
-  db;
+var EventModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "events");
   }
   record(optsOrEntityType, entityId, eventType, oldValue, newValue, sessionId) {
     let opts;
@@ -2124,14 +2157,18 @@ var PLAN_TRANSITIONS = {
   completed: ["archived"],
   archived: []
 };
-var PlanModel = class {
-  db;
+var PlanModel = class extends BaseRepository {
   events;
   handoffs;
   constructor(db, events, handoffs) {
-    this.db = db;
+    super(db, "plans");
     this.events = events;
     this.handoffs = handoffs;
+  }
+  requireById(id) {
+    const plan = this.getById(id);
+    if (!plan) throw new Error(`Plan not found: ${id}`);
+    return plan;
   }
   create(title, spec, summary) {
     const id = generateId();
@@ -2141,15 +2178,6 @@ var PlanModel = class {
     ).run(id, title, spec ?? null, summary ?? null, ctx.branch, ctx.worktreeName);
     const plan = this.requireById(id);
     this.events?.record("plan", plan.id, "created", null, JSON.stringify({ title, status: "draft", branch: ctx.branch }));
-    return plan;
-  }
-  getById(id) {
-    const row = this.db.prepare(`SELECT * FROM plans WHERE id = ?`).get(id);
-    return row ?? null;
-  }
-  requireById(id) {
-    const plan = this.getById(id);
-    if (!plan) throw new Error(`Plan not found: ${id}`);
     return plan;
   }
   list(filter) {
@@ -2234,10 +2262,9 @@ var PlanModel = class {
 };
 
 // src/core/models/context.ts
-var ContextModel = class {
-  db;
+var ContextModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "context_log");
   }
   save(summary, opts) {
     const stmt = this.db.prepare(
@@ -2281,10 +2308,9 @@ var ContextModel = class {
 };
 
 // src/core/models/task-metrics.ts
-var TaskMetricsModel = class {
-  db;
+var TaskMetricsModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "task_metrics");
   }
   record(taskId, planId, finalStatus, metrics) {
     const durationMin = this.calculateDuration(taskId);
@@ -2353,10 +2379,9 @@ var TaskMetricsModel = class {
 };
 
 // src/core/models/skill-usage.ts
-var SkillUsageModel = class {
-  db;
+var SkillUsageModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "skill_usage");
   }
   record(skillName, opts) {
     const id = generateId();
@@ -2387,10 +2412,9 @@ var SkillUsageModel = class {
 };
 
 // src/core/models/qa-run.ts
-var QARunModel = class {
-  db;
+var QARunModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "qa_runs");
   }
   create(planId, trigger) {
     const id = generateId();
@@ -2400,8 +2424,7 @@ var QARunModel = class {
     return this.get(id);
   }
   get(id) {
-    const row = this.db.prepare(`SELECT * FROM qa_runs WHERE id = ?`).get(id);
-    return row ?? null;
+    return this.getById(id);
   }
   list(planId) {
     if (planId) {
@@ -2441,10 +2464,9 @@ var QARunModel = class {
 };
 
 // src/core/models/qa-scenario.ts
-var QAScenarioModel = class {
-  db;
+var QAScenarioModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "qa_scenarios");
   }
   create(runId, data) {
     const id = generateId();
@@ -2471,8 +2493,7 @@ var QAScenarioModel = class {
     return ids.map((id) => this.get(id));
   }
   get(id) {
-    const row = this.db.prepare(`SELECT * FROM qa_scenarios WHERE id = ?`).get(id);
-    return row ?? null;
+    return this.getById(id);
   }
   listByRun(runId, filters) {
     const conditions = ["run_id = ?"];
@@ -2532,10 +2553,9 @@ var QAScenarioModel = class {
 };
 
 // src/core/models/qa-finding.ts
-var QAFindingModel = class {
-  db;
+var QAFindingModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "qa_findings");
   }
   create(runId, data) {
     const id = generateId();
@@ -2557,8 +2577,7 @@ var QAFindingModel = class {
     return this.get(id);
   }
   get(id) {
-    const row = this.db.prepare(`SELECT * FROM qa_findings WHERE id = ?`).get(id);
-    return row ?? null;
+    return this.getById(id);
   }
   list(filters) {
     const conditions = [];
@@ -2610,11 +2629,10 @@ var QAFindingModel = class {
 };
 
 // src/core/models/backlog.ts
-var BacklogModel = class {
-  db;
+var BacklogModel = class extends BaseRepository {
   events;
   constructor(db, events) {
-    this.db = db;
+    super(db, "backlog_items");
     this.events = events;
   }
   create(item) {
@@ -2636,10 +2654,6 @@ var BacklogModel = class {
     const created = this.requireById(id);
     this.events?.record("backlog", id, "created", null, JSON.stringify({ title: item.title }));
     return created;
-  }
-  getById(id) {
-    const row = this.db.prepare("SELECT * FROM backlog_items WHERE id = ?").get(id);
-    return row ?? null;
   }
   requireById(id) {
     const item = this.getById(id);
@@ -2758,10 +2772,9 @@ function rowToReport(row) {
     created_at: row.created_at
   };
 }
-var MergeReportModel = class {
-  db;
+var MergeReportModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "merge_reports");
   }
   create(data) {
     const id = generateId();
@@ -3078,25 +3091,91 @@ function initModels() {
   const db = getDb();
   initSchema(db);
   const events = new EventModel(db);
-  const agentHandoffModel = new AgentHandoffModel(db);
-  const planModel = new PlanModel(db, events, agentHandoffModel);
-  const taskModel = new TaskModel(db, events);
-  const contextModel = new ContextModel(db);
-  const taskMetricsModel = new TaskMetricsModel(db);
-  const skillUsageModel = new SkillUsageModel(db);
-  const lifecycle = new LifecycleEngine(db, planModel, taskModel, events);
-  const dashboard = new DashboardEngine(db, skillUsageModel);
-  const alerts = new AlertsEngine(db);
-  const stats = new StatsEngine(db);
-  const insights = new InsightsEngine(db);
-  const qaRunModel = new QARunModel(db);
-  const qaScenarioModel = new QAScenarioModel(db);
-  const qaFindingModel = new QAFindingModel(db);
-  const backlogModel = new BacklogModel(db, events);
-  const mergeReportModel = new MergeReportModel(db);
-  const waveGateModel = new WaveGateModel(db);
-  const planRevisionModel = new PlanRevisionModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel, agentHandoffModel, waveGateModel, planRevisionModel };
+  const cache = /* @__PURE__ */ new Map();
+  function lazy(name, factory) {
+    return {
+      get() {
+        if (!cache.has(name)) cache.set(name, factory());
+        return cache.get(name);
+      }
+    };
+  }
+  const lazyAgentHandoff = lazy("agentHandoffModel", () => new AgentHandoffModel(db));
+  const lazyPlan = lazy("planModel", () => new PlanModel(db, events, lazyAgentHandoff.get()));
+  const lazyTask = lazy("taskModel", () => new TaskModel(db, events));
+  const lazyContext = lazy("contextModel", () => new ContextModel(db));
+  const lazyTaskMetrics = lazy("taskMetricsModel", () => new TaskMetricsModel(db));
+  const lazySkillUsage = lazy("skillUsageModel", () => new SkillUsageModel(db));
+  const lazyLifecycle = lazy("lifecycle", () => new LifecycleEngine(db, lazyPlan.get(), lazyTask.get(), events));
+  const lazyDashboard = lazy("dashboard", () => new DashboardEngine(db, lazySkillUsage.get()));
+  const lazyAlerts = lazy("alerts", () => new AlertsEngine(db));
+  const lazyStats = lazy("stats", () => new StatsEngine(db));
+  const lazyInsights = lazy("insights", () => new InsightsEngine(db));
+  const lazyQaRun = lazy("qaRunModel", () => new QARunModel(db));
+  const lazyQaScenario = lazy("qaScenarioModel", () => new QAScenarioModel(db));
+  const lazyQaFinding = lazy("qaFindingModel", () => new QAFindingModel(db));
+  const lazyBacklog = lazy("backlogModel", () => new BacklogModel(db, events));
+  const lazyMergeReport = lazy("mergeReportModel", () => new MergeReportModel(db));
+  const lazyWaveGate = lazy("waveGateModel", () => new WaveGateModel(db));
+  const lazyPlanRevision = lazy("planRevisionModel", () => new PlanRevisionModel(db));
+  return {
+    db,
+    events,
+    get planModel() {
+      return lazyPlan.get();
+    },
+    get taskModel() {
+      return lazyTask.get();
+    },
+    get contextModel() {
+      return lazyContext.get();
+    },
+    get taskMetricsModel() {
+      return lazyTaskMetrics.get();
+    },
+    get skillUsageModel() {
+      return lazySkillUsage.get();
+    },
+    get lifecycle() {
+      return lazyLifecycle.get();
+    },
+    get dashboard() {
+      return lazyDashboard.get();
+    },
+    get alerts() {
+      return lazyAlerts.get();
+    },
+    get stats() {
+      return lazyStats.get();
+    },
+    get insights() {
+      return lazyInsights.get();
+    },
+    get qaRunModel() {
+      return lazyQaRun.get();
+    },
+    get qaScenarioModel() {
+      return lazyQaScenario.get();
+    },
+    get qaFindingModel() {
+      return lazyQaFinding.get();
+    },
+    get backlogModel() {
+      return lazyBacklog.get();
+    },
+    get mergeReportModel() {
+      return lazyMergeReport.get();
+    },
+    get agentHandoffModel() {
+      return lazyAgentHandoff.get();
+    },
+    get waveGateModel() {
+      return lazyWaveGate.get();
+    },
+    get planRevisionModel() {
+      return lazyPlanRevision.get();
+    }
+  };
 }
 function initDb() {
   const db = getDb();
