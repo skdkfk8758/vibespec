@@ -163,12 +163,13 @@ invocation: user
      1. 현재 태스크 결과 조회: `vs --json handoff read <task_id>` (verifier verdict + shadow result)
      2. 플랜 누적 이상 카운트: `vs --json plan show <plan_id>` (blocked_tasks 수 + tasks의 shadow_result='alert' 수)
 
-     **5개 트리거 감지 규칙**:
+     **6개 트리거 감지 규칙**:
      | 트리거 | 감지 조건 | 근거 |
      |--------|----------|------|
-     | `assumption_violation` | verifier WARN 리포트에 "스펙 가정", "assumption", "전제" 키워드 포함 | 스펙이 가정한 것이 실제와 다름 |
+     | `assumption_violation` | verifier WARN 리포트에 "스펙 가정", "assumption", "전제" 키워드 포함 OR shadow verdict = ALERT AND category = 'spec_gap' | 스펙이 가정한 것이 실제와 다름 |
      | `scope_explosion` | impl_report의 변경 파일 수가 allowed_files 수의 2배 이상 | 태스크 범위가 예상보다 큼 |
      | `design_flaw` | shadow verdict = ALERT AND category = 'design_flaw' | QA shadow가 설계 결함 감지 |
+     | `shadow_critical_bug` | shadow verdict = ALERT AND category = 'bug' | QA shadow가 심각한 버그 감지 — 플랜 수준의 설계 재검토 필요 |
      | `complexity_exceeded` | acceptance criteria 8개 이상 OR 변경 줄 수 200줄 이상 | 태스크가 15-30분 원칙 위반 |
      | `dependency_shift` | 현재 태스크 완료 후 depends_on 체인의 다른 태스크가 blocked 상태 | 의존성 구조 변경 필요 |
 

@@ -313,7 +313,46 @@ invocation: user
    - scope 규칙이 정의된 태스크는 `--allowed-files "파일1,파일2"` 및 `--forbidden-patterns "패턴1,패턴2"` 옵션을 추가하세요
    - spec과 acceptance를 반드시 포함하세요
 
-7a. **QA Seed 시나리오 생성** (선택적)
+7a. **디자인 점수 검증 & 후속 조치** (UI 관련 플랜인 경우)
+
+   Step 2에서 UI 관련 플랜으로 판단된 경우에만 실행합니다.
+
+   a. **plan-design-reviewer 에이전트 디스패치**:
+      - Agent 도구로 plan-design-reviewer를 디스패치하세요 (model: sonnet):
+        ```
+        당신은 plan-design-reviewer 에이전트입니다.
+        agents/plan-design-reviewer.md의 Execution Process를 따라 실행하세요.
+
+        plan_id: {plan_id}
+        plan_spec: {생성된 스펙 전문}
+        design_md: {DESIGN.md 내용 또는 null}
+        ```
+      - 결과의 design_score (A~F 등급)와 critical_gaps를 수집하세요
+
+   b. **점수별 후속 조치**:
+      - **A, B 등급** (7.0 이상): 결과를 요약 표시하고 Step 7b로 진행
+        ```
+        ✓ Design Score: {등급} ({점수}/10) — {critical_gaps 수}개 개선 제안
+        ```
+      - **C 등급** (5.0~6.9): 결과를 표시하고 `AskUserQuestion`으로 선택:
+        - question: "Design Score가 {등급}입니다. {critical_gaps 요약}. 스펙을 보완할까요?"
+        - header: "디자인 리뷰 결과"
+        - 선택지:
+          - label: "스펙 보완 (권장)", description: "critical_gaps를 반영하여 스펙의 UI/UX 섹션을 보완합니다"
+          - label: "그대로 진행", description: "현재 스펙으로 진행하고 구현 시 보완합니다"
+        - "스펙 보완" 선택 시: critical_gaps의 suggestions를 스펙에 반영하고 관련 태스크 AC를 보강하세요
+      - **D, F 등급** (5.0 미만): 결과를 경고와 함께 표시하고 `AskUserQuestion`으로 선택:
+        - question: "Design Score가 {등급}으로 낮습니다. {critical_gaps 상세}. 스펙을 대폭 수정해야 합니다."
+        - header: "디자인 리뷰 경고"
+        - 선택지:
+          - label: "스펙 재작성 (강력 권장)", description: "UI/UX 섹션을 처음부터 다시 작성하고 태스크를 재분해합니다"
+          - label: "부분 보완", description: "critical_gaps만 반영합니다"
+          - label: "무시하고 진행", description: "리스크를 감수하고 현재 스펙으로 진행합니다"
+        - "스펙 재작성" 선택 시: UI/UX 섹션을 critical_gaps + suggestions 기반으로 전면 재작성하고 관련 태스크를 재분해하세요
+        - "부분 보완" 선택 시: critical_gaps의 suggestions를 스펙에 반영하세요
+      - **N/A** (UI 요소 미식별): 이 단계를 조용히 스킵하세요
+
+7b. **QA Seed 시나리오 생성** (선택적)
    - qa-rules.yaml에서 `modules.shadow: true` 또는 `modules.seed: true`인지 확인
      - Bash 도구로 `vs --json qa config resolve <plan_id>` 실행
      - resolved_config.modules.shadow 또는 resolved_config.modules.seed가 true이면:

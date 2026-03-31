@@ -177,13 +177,34 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
    - coordinator의 최종 리포트를 사용자에게 표시하세요
    - `vs --json qa run show <run_id>`로 최종 상태를 확인하세요
 
-9. **후속 조치 안내**
+9. **수정 플랜 자동 실행 연결**
+
+   coordinator 리포트에서 수정 플랜 생성 여부를 확인하세요:
+   - `vs --json qa run show <run_id>`로 최종 결과를 확인하세요
+   - `vs --json qa finding list --run <run_id> --severity critical,high`로 critical/high 이슈를 조회하세요
+   - critical/high 이슈에 fix_plan_id가 연결되어 있으면 수정 플랜이 생성된 것입니다
+
+   **수정 플랜이 생성된 경우** — `AskUserQuestion`으로 즉시 실행 여부를 물어보세요:
+   - question: "QA에서 {N}건의 critical/high 이슈가 발견되어 수정 플랜이 생성되었습니다. 바로 수정을 시작할까요?"
+   - header: "수정 플랜 실행"
+   - multiSelect: false
+   - 선택지:
+     - label: "즉시 실행 (권장)", description: "수정 플랜의 첫 태스크를 바로 시작합니다"
+     - label: "이슈 먼저 확인", description: "발견된 이슈를 상세히 검토한 뒤 결정합니다"
+     - label: "나중에 실행", description: "수정 플랜을 보류하고 다른 작업을 합니다"
+   - "즉시 실행" 선택 시:
+     → 수정 플랜 ID로 `vs --json task next <fix_plan_id>`를 실행하여 첫 태스크를 가져오세요
+     → `/vs-next` 워크플로우의 Step 3부터 실행하세요 (태스크 상세 표시 → 구현 → 검증)
+   - "이슈 먼저 확인" → Step 10의 일반 후속 조치로 진행
+   - "나중에 실행" → Step 10의 일반 후속 조치로 진행
+
+10. **후속 조치 안내**
    - `AskUserQuestion`으로 다음 단계 선택:
      - question: "다음으로 무엇을 하시겠습니까?"
      - header: "다음 단계"
      - 조건부 선택지:
-       - (수정 플랜 생성됨) "수정 플랜 실행" → `/vs-next`로 QA Fix 플랜의 태스크 시작
-       - (이슈 있음) "이슈 상세 확인" → `/vs-qa-findings`
+       - (수정 플랜 있고 Step 9에서 "이슈 먼저 확인" 선택) "수정 플랜 실행" → `/vs-next`로 QA Fix 플랜의 태스크 시작
+       - (이슈 있음) "이슈 상세 확인" → `/vs-qa findings`
        - "대시보드 확인" → `/vs-dashboard`
        - "QA 재실행" → `/vs-qa` (다른 모드/깊이로)
 

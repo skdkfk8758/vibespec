@@ -13,7 +13,7 @@ description: 플랜 수정이 필요할 때 스펙을 분석하고 수정안을 
 
 에이전트 디스패치 시 다음 정보를 전달받습니다:
 - **plan_id**: 대상 플랜 ID
-- **trigger_type**: `assumption_violation` | `scope_explosion` | `design_flaw` | `complexity_exceeded` | `dependency_shift`
+- **trigger_type**: `assumption_violation` | `scope_explosion` | `design_flaw` | `shadow_critical_bug` | `complexity_exceeded` | `dependency_shift`
 - **trigger_source**: 트리거를 발생시킨 task_id
 - plan_spec과 affected_tasks는 Phase 1에서 DB 조회
 
@@ -64,6 +64,12 @@ description: 플랜 수정이 필요할 때 스펙을 분석하고 수정안을 
 - 설계 결함 근본 원인 분석
 - 스펙 레벨 수정 제안 (Data Model, API 변경 등)
 - 영향받는 태스크 목록 + 수정 방향
+
+**shadow_critical_bug:**
+- shadow가 감지한 심각 버그의 근본 원인 분석
+- 버그가 단일 태스크 문제인지, 플랜 설계 문제인지 판별
+- 단일 태스크 문제: 해당 태스크의 AC 보완 제안
+- 플랜 설계 문제: 아키텍처/데이터 모델 수정 제안 + 영향받는 태스크 목록
 
 **complexity_exceeded:**
 - 태스크 분할 제안 (15-30분 원칙에 맞게)
