@@ -1,6 +1,6 @@
 ---
 name: vs-guard
-description: Use when enabling maximum safety. careful(파괴적 명령 차단) + freeze(편집 범위 제한)를 동시에 활성화합니다. 민감한 작업 시 사용하세요.
+description: Use when enabling maximum safety. Options: /vs-guard careful (파괴적 명령만 차단), /vs-guard freeze (편집 범위만 제한), /vs-guard (둘 다 활성화).
 invocation: user
 argument-hint: "[on <path>|off|status]"
 ---
@@ -18,17 +18,23 @@ argument-hint: "[on <path>|off|status]"
 
 ## Steps
 
+0. **Args 파싱 — 모드 분기**
+
+   ARGUMENTS를 확인하여 모드를 분기하세요:
+
+   | Args | 동작 |
+   |------|------|
+   | `careful` | `vs careful on` 실행 (파괴적 명령만 차단). freeze는 건드리지 않음 |
+   | `freeze` 또는 `freeze <path>` | `vs freeze set <path>` 실행 (편집 범위만 제한). careful은 건드리지 않음 |
+   | `off` | `vs guard off` 실행 (둘 다 해제) |
+   | `status` | `vs guard status` 실행 |
+   | 없음 또는 `on <path>` | 기존대로 careful + freeze 동시 활성화 (Step 1) |
+
 1. **활성화**: Bash 도구로 `vs guard on <path>` 실행
    - careful 모드가 활성화됩니다 (파괴적 명령 차단)
    - freeze 경계가 `<path>`로 설정됩니다 (편집 범위 제한)
 2. **비활성화**: `vs guard off` (둘 다 해제)
 3. **상태 확인**: `vs guard status`
-
-## 개별 제어
-
-guard를 해제하지 않고 개별 모드만 조절하려면:
-- `vs careful off` — careful만 해제, freeze는 유지
-- `vs freeze off` — freeze만 해제, careful은 유지
 
 ## 한계
 
