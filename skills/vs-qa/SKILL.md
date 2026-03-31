@@ -1,6 +1,6 @@
 ---
 name: vs-qa
-description: QA 에이전트 팀을 실행합니다. 프로젝트 구조 분석 → 시나리오 생성 → 검증 → 이슈 수집 → 수정 플래닝까지 수행합니다.
+description: Run QA agent team for full test coverage.
 invocation: user
 ---
 

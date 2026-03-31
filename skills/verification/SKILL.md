@@ -1,6 +1,6 @@
 ---
 name: verification
-description: Internal gate for task completion verification. Automatically invoked by verifier agent, vs-next, and vs-exec. Direct user invocation is supported but not recommended — use vs-next or vs-exec instead which include verification automatically.
+description: Internal gate for task completion verification.
 ---
 
 # Task Verification (Internal Gate)

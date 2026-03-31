@@ -1,6 +1,6 @@
 ---
 name: vs-careful
-description: Use when enabling destructive command protection. rm -rf, DROP TABLE, git push --force 등 파괴적 명령을 PreToolUse hook으로 차단합니다. vs-exec 배치 실행 시 자동 제안됩니다.
+description: Block destructive commands via PreToolUse hook.
 invocation: user
 argument-hint: "[on|off|status]"
 ---

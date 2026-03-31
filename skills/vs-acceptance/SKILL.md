@@ -1,6 +1,6 @@
 ---
 name: vs-acceptance
-description: Use when verifying that implemented features actually work as intended. Dev server를 시작하고, acceptance criteria 기반으로 browser-control 및 코드 분석 검증을 수행합니다. 머지 후, 플랜 검증, 또는 독립 호출 가능.
+description: Verify features via browser and AC checks.
 invocation: user
 argument-hint: "[plan_id] [--url <dev-server-url>]"
 ---

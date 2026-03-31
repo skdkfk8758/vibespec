@@ -1,6 +1,6 @@
 ---
 name: vs-update
-description: Use when updating VibeSpec plugin to the latest version. 마켓플레이스 캐시 갱신, 플러그인 캐시 교체, 레지스트리 업데이트를 자동 수행합니다.
+description: Update VibeSpec plugin to the latest version.
 invocation: user
 ---
 

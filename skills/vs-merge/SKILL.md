@@ -1,6 +1,6 @@
 ---
 name: vs-merge
-description: Use when merging a worktree branch into a target branch. Squash-merge로 워크트리 변경사항을 정리하고, 연구 기반의 고품질 커밋 메시지를 생성합니다.
+description: Squash-merge worktree branch into target.
 invocation: user
 argument-hint: "[target-branch]"
 ---

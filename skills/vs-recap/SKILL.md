@@ -1,6 +1,6 @@
 ---
 name: vs-recap
-description: Use when reviewing merge results from previous sessions. 머지 리포트를 조회하여 변경 요약, Review Checklist, 충돌 해결 기록을 표시합니다. "아까 머지한 내용", "뭐 확인해야 해", "머지 결과", "recap", "리캡" 등에 사용하세요.
+description: Review merge results from previous sessions.
 invocation: user
 argument-hint: "[--list | --regenerate | <commit-hash>]"
 ---

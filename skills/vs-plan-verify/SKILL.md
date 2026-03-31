@@ -1,6 +1,6 @@
 ---
 name: vs-plan-verify
-description: Use when verifying that a completed plan's implementation is correct. Aggregates task status, runs regression tests, and checks plan-level success criteria before marking the plan as complete.
+description: Verify completed plan with regression tests.
 invocation: user
 ---
 

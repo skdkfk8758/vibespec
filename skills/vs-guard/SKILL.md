@@ -1,6 +1,6 @@
 ---
 name: vs-guard
-description: Use when enabling maximum safety. careful(파괴적 명령 차단) + freeze(편집 범위 제한)를 동시에 활성화합니다. 민감한 작업 시 사용하세요.
+description: Enable careful + freeze safety mode together.
 invocation: user
 argument-hint: "[on <path>|off|status]"
 ---

@@ -1,6 +1,6 @@
 ---
 name: vs-security
-description: "OWASP Top 10 기반 보안 감사 스킬. 코드베이스에서 보안 취약점을 자동 탐지하고, 심각도별로 분류하여 리포트를 생성합니다."
+description: "OWASP Top 10 security audit for codebase."
 invocation: user
 type: workflow
 ---

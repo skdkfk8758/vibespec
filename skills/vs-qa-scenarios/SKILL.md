@@ -1,6 +1,6 @@
 ---
 name: vs-qa-scenarios
-description: QA 시나리오를 인터랙티브하게 조회하고 관리합니다. 과거 Run 시나리오 탐색 및 미리보기를 지원합니다.
+description: Browse and manage QA test scenarios.
 invocation: user
 ---
 

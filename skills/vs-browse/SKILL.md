@@ -1,6 +1,6 @@
 ---
 name: vs-browse
-description: 탐색적 브라우저 QA. 구조화된 AC 없이 자유롭게 앱을 탐색하며 시각/기능/UX 이슈를 발견합니다. browser-control 스킬 위임 기반.
+description: Exploratory browser QA without structured AC.
 invocation: user
 argument-hint: "[--url <dev-server-url>] [--focus <area>]"
 ---

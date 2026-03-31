@@ -1,6 +1,6 @@
 ---
 name: vs-worktree
-description: Use when starting isolated feature work in a git worktree. 워크트리 생성, .gitignore 검증, 기술스택 감지, 의존성 설치, 테스트 베이스라인 확인까지 한 번에 수행합니다. 격리된 환경이 필요할 때, 구현 계획 실행 전, /vs-next나 /vs-pick 전에 사용하세요.
+description: Create and set up an isolated git worktree.
 invocation: user
 ---
 

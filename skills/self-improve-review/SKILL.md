@@ -1,6 +1,6 @@
 ---
 name: self-improve-review
-description: "Use when reviewing and cleaning up accumulated self-improve rules. Analyzes rule effectiveness, suggests consolidation of similar rules, recommends archiving inactive rules, and enforces the 30-rule cap. 축적된 self-improve 규칙의 효과를 분석하고 정리/통합/아카이브를 제안합니다."
+description: "Review and clean up self-improve rules."
 invocation: user
 ---
 

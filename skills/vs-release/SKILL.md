@@ -1,6 +1,6 @@
 ---
 name: vs-release
-description: Use when releasing a new VibeSpec version. Conventional Commits 기반 체인지로그 생성, 버전 범프, git tag, GitHub Release를 자동 수행합니다.
+description: Release new version with changelog and git tag.
 invocation: user
 ---
 

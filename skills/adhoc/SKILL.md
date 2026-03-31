@@ -1,6 +1,6 @@
 ---
 name: adhoc
-description: Use when making quick fixes without workflow overhead. 단순 버그 수정, 오타 교정, 설정 변경, 의존성 업데이트 등 스펙/플랜이 불필요한 작업을 즉시 처리합니다. 기능 추가나 설계 결정이 필요한 작업에는 사용하지 마세요 — vs-ideate 또는 vs-plan을 사용하세요.
+description: Quick fixes without spec/plan workflow.
 ---
 
 # Ad-hoc 즉시 처리
