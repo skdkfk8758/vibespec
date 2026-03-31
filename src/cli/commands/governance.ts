@@ -258,7 +258,10 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
     });
 
   // ── plan revision ──
-  const planCmd = program.command('plan').description('Plan management commands');
+  const planCmd = program.commands.find((c: Command) => c.name() === 'plan');
+  if (!planCmd) {
+    throw new Error('plan command must be registered before governance commands');
+  }
   const revision = planCmd.command('revision').description('Manage plan revisions');
 
   revision

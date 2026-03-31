@@ -3301,7 +3301,10 @@ function registerGovernanceCommands(program2, _getModels) {
       );
     });
   });
-  const planCmd = program2.command("plan").description("Plan management commands");
+  const planCmd = program2.commands.find((c) => c.name() === "plan");
+  if (!planCmd) {
+    throw new Error("plan command must be registered before governance commands");
+  }
   const revision = planCmd.command("revision").description("Manage plan revisions");
   revision.command("create").argument("<plan_id>", "Plan ID").requiredOption("--trigger-type <type>", "Trigger type (assumption_violation|scope_explosion|design_flaw|complexity_exceeded|dependency_shift)").requiredOption("--description <text>", "Revision description").requiredOption("--changes <json>", "Changes as JSON string").option("--trigger-source <id>", "Source ID that triggered the revision").description("Create a plan revision").action((planId, opts) => {
     withErrorHandler(() => {
