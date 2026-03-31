@@ -5,6 +5,7 @@ import { getConfig, setConfig, deleteConfig } from '../../core/config.js';
 import { output, outputError, initDb, withErrorHandler } from '../shared.js';
 import type { Models } from '../shared.js';
 import { AgentHandoffModel } from '../../core/models/agent-handoff.js';
+import type { RevisionStatus, RevisionTriggerType } from '../../core/types.js';
 
 /** Register/unregister PreToolUse hooks in .claude/settings.local.json */
 function manageHook(action: 'add' | 'remove', hookId: string, toolName: string, scriptPath: string) {
@@ -253,6 +254,64 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
           { plan_id: planId, deleted: before },
           `Cleaned ${before} handoff record(s) for plan: ${planId}`,
         );
+      });
+    });
+
+  // ── plan revision ──
+  const planCmd = program.command('plan').description('Plan management commands');
+  const revision = planCmd.command('revision').description('Manage plan revisions');
+
+  revision
+    .command('create')
+    .argument('<plan_id>', 'Plan ID')
+    .requiredOption('--trigger-type <type>', 'Trigger type (assumption_violation|scope_explosion|design_flaw|complexity_exceeded|dependency_shift)')
+    .requiredOption('--description <text>', 'Revision description')
+    .requiredOption('--changes <json>', 'Changes as JSON string')
+    .option('--trigger-source <id>', 'Source ID that triggered the revision')
+    .description('Create a plan revision')
+    .action((planId: string, opts: { triggerType: string; description: string; changes: string; triggerSource?: string }) => {
+      withErrorHandler(() => {
+        const models = _getModels();
+        const rev = models.planRevisionModel.create(
+          planId,
+          opts.triggerType as RevisionTriggerType,
+          opts.triggerSource ?? null,
+          opts.description,
+          opts.changes,
+        );
+        output(rev, `Revision created: ${rev.id} (${rev.trigger_type}) — ${rev.status}`);
+      });
+    });
+
+  revision
+    .command('list')
+    .argument('<plan_id>', 'Plan ID')
+    .description('List revisions for a plan')
+    .action((planId: string) => {
+      withErrorHandler(() => {
+        const models = _getModels();
+        const revisions = models.planRevisionModel.listByPlan(planId);
+        if (revisions.length === 0) {
+          output([], `No revisions found for plan: ${planId}`);
+          return;
+        }
+        output(
+          revisions,
+          revisions.map((r) => `[${r.id}] ${r.trigger_type} — ${r.status}: ${r.description}`).join('\n'),
+        );
+      });
+    });
+
+  revision
+    .command('update')
+    .argument('<id>', 'Revision ID')
+    .requiredOption('--status <status>', 'New status (approved|rejected)')
+    .description('Update revision status')
+    .action((id: string, opts: { status: string }) => {
+      withErrorHandler(() => {
+        const models = _getModels();
+        const rev = models.planRevisionModel.updateStatus(id, opts.status as RevisionStatus);
+        output(rev, `Revision ${rev.id} updated to: ${rev.status}`);
       });
     });
 }

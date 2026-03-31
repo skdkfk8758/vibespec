@@ -17,6 +17,8 @@ import { QAFindingModel } from '../core/models/qa-finding.js';
 import { BacklogModel } from '../core/models/backlog.js';
 import { MergeReportModel } from '../core/models/merge-report.js';
 import { AgentHandoffModel } from '../core/models/agent-handoff.js';
+import { WaveGateModel } from '../core/models/wave-gate.js';
+import { PlanRevisionModel } from '../core/models/plan-revision.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 
 let jsonMode = false;
@@ -87,7 +89,9 @@ export function initModels() {
   const qaFindingModel = new QAFindingModel(db);
   const backlogModel = new BacklogModel(db, events);
   const mergeReportModel = new MergeReportModel(db);
-  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel, agentHandoffModel };
+  const waveGateModel = new WaveGateModel(db);
+  const planRevisionModel = new PlanRevisionModel(db);
+  return { db, events, planModel, taskModel, contextModel, taskMetricsModel, skillUsageModel, lifecycle, dashboard, alerts, stats, insights, qaRunModel, qaScenarioModel, qaFindingModel, backlogModel, mergeReportModel, agentHandoffModel, waveGateModel, planRevisionModel };
 }
 
 export type Models = ReturnType<typeof initModels>;

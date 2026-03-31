@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import * as fs from 'node:fs';
 import { output, outputError, withErrorHandler, initModels, initDb } from '../shared.js';
 import type { Models } from '../shared.js';
-import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAFindingSeverity, QAFindingCategory, QAFindingStatus, PlanStatus } from '../../core/types.js';
+import type { QARunTrigger, QAScenarioCategory, QAScenarioPriority, QAScenarioStatus, QAScenarioSource, QAFindingSeverity, QAFindingCategory, QAFindingStatus, PlanStatus, WaveGateVerdict } from '../../core/types.js';
 import { VALID_QA_RUN_TERMINAL_STATUSES } from '../../core/types.js';
 import { resolveConfig, validateConfig, detectProfile, QaRulesSchema, PROFILE_PRESETS, DEFAULT_QA_CONFIG } from '../../core/engine/qa-config.js';
 import type { ResolvedQaConfig } from '../../core/engine/qa-config.js';
@@ -116,8 +116,9 @@ export function registerQualityCommands(program: Command, getModels: () => Model
     .option('--priority <p>', 'Priority (critical, high, medium, low)', 'medium')
     .option('--related-tasks <ids>', 'Comma-separated related task IDs')
     .option('--agent <name>', 'Assigned agent name')
+    .option('--source <source>', 'Scenario source (seed, shadow, wave, final, manual)', 'final')
     .description('Create a QA scenario')
-    .action((runId: string, opts: { title: string; description: string; category: string; priority: string; relatedTasks?: string; agent?: string }) => withErrorHandler(() => {
+    .action((runId: string, opts: { title: string; description: string; category: string; priority: string; relatedTasks?: string; agent?: string; source?: string }) => withErrorHandler(() => {
       const { qaRun: qaRunModel, qaScenario } = getQAModels();
       const run = qaRunModel.get(runId);
       if (!run) return outputError(`QA run not found: ${runId}`);
@@ -130,6 +131,7 @@ export function registerQualityCommands(program: Command, getModels: () => Model
         description: opts.description,
         priority: opts.priority as QAScenarioPriority,
         related_tasks: opts.relatedTasks ? JSON.stringify(opts.relatedTasks.split(',').map(s => s.trim())) : undefined,
+        source: opts.source as QAScenarioSource | undefined,
       });
       output(scenario, `Created scenario: ${scenario.id} [${scenario.category}] ${scenario.title}`);
     }));
@@ -154,12 +156,14 @@ export function registerQualityCommands(program: Command, getModels: () => Model
     .argument('<run_id>', 'QA Run ID')
     .option('--category <cat>', 'Filter by category')
     .option('--status <status>', 'Filter by status')
+    .option('--source <source>', 'Filter by source (seed, shadow, wave, final, manual)')
     .description('List scenarios for a QA run')
-    .action((runId: string, opts: { category?: string; status?: string }) => withErrorHandler(() => {
+    .action((runId: string, opts: { category?: string; status?: string; source?: string }) => withErrorHandler(() => {
       const { qaScenario } = getQAModels();
       const scenarios = qaScenario.listByRun(runId, {
         category: opts.category,
         status: opts.status,
+        source: opts.source,
       });
       if (scenarios.length === 0) {
         output(scenarios, 'No scenarios found.');
@@ -281,6 +285,46 @@ export function registerQualityCommands(program: Command, getModels: () => Model
       ].join('\n'));
     }));
 
+  // qa seed
+  const qaSeed = qa.command('seed').description('Manage QA seed scenarios (pre-generated from spec)');
+
+  qaSeed
+    .command('create')
+    .argument('<plan_id>', 'Plan ID')
+    .option('--trigger <type>', 'Trigger type (manual, auto)', 'manual')
+    .description('Create a QA run for seeding and display agent prompt')
+    .action((planId: string, opts: { trigger: string }) => withErrorHandler(() => {
+      const { qaRun: qaRunModel, planModel } = getQAModels();
+      const plan = planModel.getById(planId);
+      if (!plan) return outputError(`Plan not found: ${planId}`);
+      const run = qaRunModel.create(planId, opts.trigger as QARunTrigger);
+      output(run, [
+        `Created QA run for seeding: ${run.id} (plan: ${planId})`,
+        '',
+        'Dispatch qa-seeder agent with:',
+        `  plan_id: ${planId}`,
+        `  run_id: ${run.id}`,
+        `  plan_spec: (from plan show)`,
+        `  task_list: (from plan show --tasks)`,
+      ].join('\n'));
+    }));
+
+  qaSeed
+    .command('list')
+    .argument('<plan_id>', 'Plan ID')
+    .description('List seed scenarios for a plan (source=seed)')
+    .action((planId: string) => withErrorHandler(() => {
+      const { qaScenario } = getQAModels();
+      const scenarios = qaScenario.listByPlanSource(planId, 'seed');
+      if (scenarios.length === 0) {
+        output(scenarios, 'No seed scenarios found for this plan.');
+        return;
+      }
+      output(scenarios, scenarios.map(s =>
+        `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  ${s.title}`
+      ).join('\n'));
+    }));
+
   // qa config
   const qaConfig = qa.command('config').description('Manage QA configuration');
 
@@ -290,12 +334,12 @@ export function registerQualityCommands(program: Command, getModels: () => Model
     .argument('[plan_id]', 'Plan ID for L2 overrides')
     .description('Resolve and display merged QA configuration')
     .action((planId?: string) => withErrorHandler(() => {
-      const options: { planId?: string; db?: any } = {};
+      const resolveOpts: { planId?: string; db?: ReturnType<typeof initDb> } = {};
       if (planId) {
-        options.planId = planId;
-        options.db = initDb();
+        resolveOpts.planId = planId;
+        resolveOpts.db = initDb();
       }
-      const config = resolveConfig(options);
+      const config = resolveConfig(resolveOpts);
       output(config, formatConfigHuman(config));
     }));
 
@@ -382,19 +426,65 @@ export function registerQualityCommands(program: Command, getModels: () => Model
       );
     }));
 
-  // qa config show
+  // qa config show (alias for resolve with human-friendly output)
   qaConfig
     .command('show')
     .argument('[plan_id]', 'Plan ID for L2 overrides')
-    .description('Show resolved QA configuration in formatted view')
+    .description('Show resolved QA configuration (alias for resolve)')
     .action((planId?: string) => withErrorHandler(() => {
-      const options: { planId?: string; db?: any } = {};
+      // Delegate to the same logic as resolve
+      const resolveOpts: { planId?: string; db?: ReturnType<typeof initDb> } = {};
       if (planId) {
-        options.planId = planId;
-        options.db = initDb();
+        resolveOpts.planId = planId;
+        resolveOpts.db = initDb();
       }
-      const config = resolveConfig(options);
+      const config = resolveConfig(resolveOpts);
       output(config, formatConfigHuman(config));
+    }));
+
+  // wave-gate
+  const waveGate = program.command('wave-gate').description('Manage wave gates for integration verification');
+
+  waveGate
+    .command('create')
+    .argument('<plan_id>', 'Plan ID')
+    .requiredOption('--wave <number>', 'Wave number')
+    .requiredOption('--verdict <verdict>', 'Verdict (GREEN, YELLOW, RED)')
+    .requiredOption('--task-ids <ids>', 'Comma-separated task IDs')
+    .option('--summary <text>', 'Summary of wave gate results')
+    .option('--findings-count <n>', 'Number of findings', '0')
+    .description('Create a wave gate record')
+    .action((planId: string, opts: { wave: string; verdict: string; taskIds: string; summary?: string; findingsCount: string }) => withErrorHandler(() => {
+      const validVerdicts = ['GREEN', 'YELLOW', 'RED'];
+      if (!validVerdicts.includes(opts.verdict)) {
+        return outputError(`Invalid verdict: ${opts.verdict}. Must be one of: ${validVerdicts.join(', ')}`);
+      }
+      const m = initModels();
+      const plan = m.planModel.getById(planId);
+      if (!plan) return outputError(`Plan not found: ${planId}`);
+      const waveNumber = parseInt(opts.wave, 10);
+      if (isNaN(waveNumber) || waveNumber < 0) return outputError(`Invalid wave number: ${opts.wave}`);
+      const taskIds = opts.taskIds.split(',').map(s => s.trim()).filter(Boolean);
+      if (taskIds.length === 0) return outputError('At least one task ID is required');
+      const findingsCount = parseInt(opts.findingsCount, 10) || 0;
+      const gate = m.waveGateModel.create(planId, waveNumber, taskIds, opts.verdict as WaveGateVerdict, opts.summary, findingsCount);
+      output(gate, `Created wave gate: ${gate.id} (wave ${waveNumber}, verdict: ${opts.verdict})`);
+    }));
+
+  waveGate
+    .command('list')
+    .argument('<plan_id>', 'Plan ID')
+    .description('List wave gates for a plan')
+    .action((planId: string) => withErrorHandler(() => {
+      const m = initModels();
+      const gates = m.waveGateModel.listByPlan(planId);
+      if (gates.length === 0) {
+        output(gates, 'No wave gates found.');
+        return;
+      }
+      output(gates, gates.map(g =>
+        `${g.id}  wave:${g.wave_number}  ${g.verdict.padEnd(6)}  findings:${g.findings_count}  ${g.created_at}`
+      ).join('\n'));
     }));
 }
 

@@ -31,6 +31,7 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 | Targeted | 특정 태스크만 집중 검증할 때 |
 | Visual | 브라우저 기반 시각/기능 검증이 필요할 때 |
 | Design Verification | DESIGN.md 준수 여부와 디자인 일관성을 확인할 때 |
+| Delta | 이미 검증된 시나리오를 제외하고 미검증 영역만 빠르게 재검증할 때 |
 
 **vs-qa vs vs-plan-verify 비교:**
 
@@ -93,6 +94,7 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
        - label: "타겟 (Targeted)", description: "특정 태스크만 대상으로 QA 수행"
        - label: "Visual", description: "browser-control 기반 시각/기능 검증 포함 — 기존 QA + acceptance 테스터 병렬 실행"
        - label: "디자인 검증 (Design Verification)", description: "UI 변경 파일 대상 디자인 일관성/AI slop/반응형/DESIGN.md 준수 검증 — acceptance 테스터의 디자인 체크리스트 실행"
+       - label: "델타 (Delta)", description: "이미 검증된 시나리오(seed/shadow/wave-gate)를 제외하고 미검증 영역만 실행 — 빠른 재검증"
    - incremental 선택 시: **Diff-aware 라우트 매핑** 자동 실행:
      1. `git diff --name-only HEAD~5` (또는 마지막 QA 이후)로 변경 파일 수집
      2. 변경 파일에서 영향 라우트를 자동 추론:
@@ -111,6 +113,10 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
    - targeted 선택 시 추가 질문: 대상 태스크 선택
    - visual 선택 시: mode를 `visual`로 설정. coordinator가 기존 func/flow 테스터와 함께 qa-acceptance-tester도 디스패치합니다
    - design-verification 선택 시: mode를 `design-verification`으로 설정. coordinator가 design verification 시나리오만 생성하여 qa-acceptance-tester에게 위임합니다. func/flow 테스터는 디스패치하지 않습니다
+   - delta 선택 시:
+     - `vs --json qa run list --plan <plan_id>`로 이전 QA Run에서 pass된 seed/shadow/wave 시나리오 수를 확인
+     - "이전 QA에서 {N}개 시나리오가 이미 통과했습니다. 미검증 영역만 실행합니다." 안내
+     - 이전 QA Run이 없으면: "이전 검증 기록이 없습니다. Full 모드로 전환할까요?" 제안
 
 4. **QA 깊이 선택**
    - `AskUserQuestion`으로 깊이 선택:
@@ -147,7 +153,7 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 
        - plan_id: {plan_id}
        - run_id: {run_id}
-       - mode: {full|incremental|targeted|visual|design-verification}
+       - mode: {full|incremental|targeted|visual|design-verification|delta}
        - depth: {quick|standard|thorough}
        - review_mode: {review|auto}
        - target_tasks: {targeted 모드 시 태스크 ID 목록}

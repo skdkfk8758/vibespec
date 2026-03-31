@@ -130,6 +130,69 @@ invocation: user
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
      → `verifier` 에이전트를 디스패치하세요 (전달 정보: 태스크, 플랜 컨텍스트, impl_report, scope)
+
+     **QA Shadow 병렬 디스패치** (선택적):
+     verifier 디스패치와 동시에, qa-shadow 에이전트도 병렬로 디스패치하세요:
+     - 조건: `vs --json qa config resolve <plan_id>`의 `modules.shadow`가 `true`
+     - 조건 미충족 시 이 단계를 건너뛰세요
+     - Agent 도구로 qa-shadow 디스패치 (run_in_background: true, model: haiku):
+       ```
+       당신은 qa-shadow 에이전트입니다.
+       agents/qa-shadow.md의 Execution Process를 따라 실행하세요.
+
+       task: {title, spec, acceptance}
+       impl_report_path: .claude/handoff/{task_id}/impl_report.json
+       seed_scenarios: (vs qa scenario list로 source='seed' + related_tasks에 현재 태스크 포함 항목 조회)
+       ```
+     - shadow 결과 통합:
+       - verifier PASS + shadow CLEAN → `vs --json task update <id> done`
+       - verifier PASS + shadow WARNING → `vs --json task update <id> done --has-concerns` + shadow 결과 표시
+       - verifier PASS + shadow ALERT → 사용자에게 AskUserQuestion:
+         - "QA Shadow가 ALERT를 발생시켰습니다: {요약}. 어떻게 처리할까요?"
+         - 선택지: "무시하고 완료" / "수정 후 재검증" / "태스크 차단"
+       - shadow 결과를 DB에 기록: `vs --json task update <id> --shadow-result <clean|warning|alert>`
+         (CLI에서 shadow-result 옵션이 지원되지 않으면 이 기록을 건너뛰세요)
+
+     **Adaptive Planner Watcher** (선택적):
+     태스크 완료 판정 후, 플랜 수준의 이상을 감지합니다.
+
+     - 조건: `vs --json qa config resolve <plan_id>`의 `modules.adaptive_planner`가 `true`
+     - 조건 미충족 시 이 단계를 건너뛰세요
+
+     **경량 감지 (DB 쿼리 2회)**:
+     1. 현재 태스크 결과 조회: `vs --json handoff read <task_id>` (verifier verdict + shadow result)
+     2. 플랜 누적 이상 카운트: `vs --json plan show <plan_id>` (blocked_tasks 수 + tasks의 shadow_result='alert' 수)
+
+     **5개 트리거 감지 규칙**:
+     | 트리거 | 감지 조건 | 근거 |
+     |--------|----------|------|
+     | `assumption_violation` | verifier WARN 리포트에 "스펙 가정", "assumption", "전제" 키워드 포함 | 스펙이 가정한 것이 실제와 다름 |
+     | `scope_explosion` | impl_report의 변경 파일 수가 allowed_files 수의 2배 이상 | 태스크 범위가 예상보다 큼 |
+     | `design_flaw` | shadow verdict = ALERT AND category = 'design_flaw' | QA shadow가 설계 결함 감지 |
+     | `complexity_exceeded` | acceptance criteria 8개 이상 OR 변경 줄 수 200줄 이상 | 태스크가 15-30분 원칙 위반 |
+     | `dependency_shift` | 현재 태스크 완료 후 depends_on 체인의 다른 태스크가 blocked 상태 | 의존성 구조 변경 필요 |
+
+     **트리거 감지 시 처리**:
+     1. 사용자에게 알림:
+        ```
+        ⚠️ Adaptive Planner 트리거 감지: {trigger_type}
+        원인: {감지 근거 1문장}
+        영향: {영향받는 태스크 수}개 태스크
+        ```
+     2. plan-advisor 디스패치 제안 (AskUserQuestion):
+        - "플랜 수정이 필요할 수 있습니다. plan-advisor를 실행할까요?"
+        - 선택지: "advisor 실행" / "무시하고 계속" / "수동 처리"
+     3. "advisor 실행" 선택 시:
+        Agent 도구로 plan-advisor 디스패치:
+        ```
+        당신은 plan-advisor 에이전트입니다. agents/plan-advisor.md를 따르세요.
+        plan_id: {id}
+        trigger_type: {type}
+        trigger_source: {task_id}
+        ```
+        advisor 결과의 수정안을 사용자에게 표시하고 승인 받기
+     4. 승인 시: `vs plan revision create` + 태스크 업데이트 실행
+
      → **판정:** verifier 결과를 그대로 사용합니다 (PASS / WARN / FAIL)
      → **검증 리포트**를 다음 형식으로 출력하세요:
        ```
@@ -143,6 +206,10 @@ invocation: user
        ### Scope Verification (범위 검증)
        [scope 리포트 요약 — verdict, 범위 내/외 파일 수, 위반 상세]
        (scope 미지정인 경우: "Scope 규칙 미지정 — SKIP")
+
+       ### QA Shadow (shadow 실행 시)
+       [shadow verdict: CLEAN/WARNING/ALERT — findings 요약]
+       (shadow 미실행 시: "Shadow 비활성화 — SKIP")
        ```
      → done 처리 시 verifier 리포트에서 `changed_files_detail`과 `scope_violations` JSON을 추출하여 옵션으로 전달하세요
      → PASS: `vs --json task update <id> done`
@@ -209,6 +276,21 @@ invocation: user
      - tdd-implementer 디스패치 또는 직접 구현 판단
      - verifier 에이전트 검증
      - 판정 (PASS/WARN/FAIL)
+
+   #### Wave Gate 검증 (선택적)
+   Wave의 모든 태스크가 done 처리된 후:
+   - 조건: `vs --json qa config resolve <plan_id>`의 `modules.wave_gate`가 `true`
+   - 조건 미충족 시 이 단계를 건너뛰세요
+   - Wave Gate 실행:
+     1. 이 Wave에서 완료된 태스크들의 변경 파일을 수집
+     2. 태스크 간 통합 시나리오를 경량 검증 (cross-task flow 확인)
+     3. 판정:
+        - GREEN: 통합 이슈 없음 → 다음 Wave 진행
+        - YELLOW: 경미한 이슈 → 경고 표시 후 다음 Wave 진행
+        - RED: 심각한 이슈 → 구현 일시정지 + AskUserQuestion:
+          "Wave Gate RED: {요약}. 어떻게 처리할까요?"
+          - "수정 후 재검증" / "무시하고 계속" / "배치 중단"
+     4. `vs wave-gate create <plan_id> --wave <n> --verdict <v> --task-ids <ids>` 기록
 
    #### 자동 재시도 정책 (debugger 에이전트 연동)
    - **PASS**: 다음 태스크 진행

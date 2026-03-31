@@ -357,6 +357,18 @@ invocation: user
    - scope 규칙이 정의된 태스크는 `--allowed-files "파일1,파일2"` 및 `--forbidden-patterns "패턴1,패턴2"` 옵션을 추가하세요
    - spec과 acceptance를 반드시 포함하세요
 
+8a. **QA Seed 시나리오 생성** (선택적)
+   - qa-rules.yaml에서 `modules.shadow: true` 또는 `modules.seed: true`인지 확인
+     - Bash 도구로 `vs --json qa config resolve <plan_id>` 실행
+     - resolved_config.modules.shadow 또는 resolved_config.modules.seed가 true이면:
+   - QA Run 생성: `vs --json qa run create <plan_id> --trigger auto`
+   - qa-seeder 에이전트 디스패치 (Agent 도구, haiku 모델)
+   - 생성된 시나리오 수를 사용자에게 표시:
+     ```
+     ✓ QA Seed 시나리오 {N}개 사전 생성됨
+     ```
+   - 해당 설정이 false이거나 없으면 이 단계를 건너뛰세요
+
 9. **워크트리 추천**
 
    태스크 생성이 완료되면 작업 환경의 격리 필요성을 판단하세요.

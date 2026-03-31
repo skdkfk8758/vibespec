@@ -42,7 +42,7 @@ export class QAScenarioModel {
     return row ?? null;
   }
 
-  listByRun(runId: string, filters?: { category?: string; status?: string; agent?: string }): QAScenario[] {
+  listByRun(runId: string, filters?: { category?: string; status?: string; agent?: string; source?: string }): QAScenario[] {
     const conditions: string[] = ['run_id = ?'];
     const params: unknown[] = [runId];
 
@@ -57,6 +57,10 @@ export class QAScenarioModel {
     if (filters?.agent) {
       conditions.push('agent = ?');
       params.push(filters.agent);
+    }
+    if (filters?.source) {
+      conditions.push('source = ?');
+      params.push(filters.source);
     }
 
     const where = conditions.join(' AND ');
@@ -75,6 +79,15 @@ export class QAScenarioModel {
         `UPDATE qa_scenarios SET status = ? WHERE id = ?`
       ).run(status, id);
     }
+  }
+
+  listByPlanSource(planId: string, source: string): QAScenario[] {
+    return this.db.prepare(
+      `SELECT s.* FROM qa_scenarios s
+       INNER JOIN qa_runs r ON s.run_id = r.id
+       WHERE r.plan_id = ? AND s.source = ?
+       ORDER BY s.created_at ASC`
+    ).all(planId, source) as QAScenario[];
   }
 
   getStatsByRun(runId: string): Array<{ category: string; total: number; passed: number; failed: number }> {
