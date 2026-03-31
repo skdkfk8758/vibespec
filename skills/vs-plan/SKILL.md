@@ -1,6 +1,6 @@
 ---
 name: vs-plan
-description: Use when creating a spec-driven plan. 요구사항을 분석하여 SDD 스펙을 작성하고, 태스크로 분해하여 플랜을 생성합니다.
+description: Create spec-driven plans. (플래닝, 계획, 스펙)
 invocation: user
 ---
 

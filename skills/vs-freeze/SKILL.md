@@ -1,6 +1,6 @@
 ---
 name: vs-freeze
-description: Use when restricting file edits to a specific directory. 지정 디렉토리 외부의 Edit/Write를 PreToolUse hook으로 차단합니다. vs-worktree 생성 시 자동 제안됩니다.
+description: Restrict file edits to a specific directory.
 invocation: agent
 argument-hint: "[set <path>|off|status]"
 ---

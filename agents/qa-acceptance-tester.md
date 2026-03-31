@@ -1,6 +1,6 @@
 ---
 name: qa-acceptance-tester
-description: QA Acceptance 테스터 에이전트. browser-control을 활용한 시각/기능 검증을 수행하고, 불가 시 코드 분석 기반 정적 검증으로 fallback합니다.
+description: 브라우저 기반 수용 테스트 검증
 ---
 
 # QA Acceptance Tester Agent

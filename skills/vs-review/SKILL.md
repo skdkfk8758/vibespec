@@ -1,6 +1,6 @@
 ---
 name: vs-review
-description: Use when reviewing and editing specs. 플랜의 스펙과 태스크를 인터랙티브하게 선택하여 외부 에디터에서 확인/수정하고, DB에 반영합니다.
+description: Review and edit plan specs interactively.
 invocation: user
 ---
 

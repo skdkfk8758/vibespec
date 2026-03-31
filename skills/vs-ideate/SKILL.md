@@ -1,6 +1,6 @@
 ---
 name: vs-ideate
-description: Use when starting with a vague idea before creating a plan. 막연한 아이디어를 6가지 핵심 질문으로 구조화하고, SDD 스펙 초안을 자동 생성하여 vs-plan과 직접 연결합니다. "아이디어가 있어", "뭘 만들까", "이거 해볼까", "기능 구상 중", "ideate", "브레인스토밍" 등에 사용하세요.
+description: Structure ideas into specs. (아이디어, 구상)
 invocation: user
 argument-hint: "[아이디어 한줄 설명]"
 ---

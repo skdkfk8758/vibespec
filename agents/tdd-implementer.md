@@ -1,6 +1,6 @@
 ---
 name: tdd-implementer
-description: TDD 기반 자율 구현 에이전트. 태스크 spec과 acceptance criteria를 기반으로 RED-GREEN-REFACTOR 사이클을 실행하고 결과를 리포트합니다.
+description: TDD RED-GREEN-REFACTOR 자율 구현
 ---
 
 # TDD Implementer Agent

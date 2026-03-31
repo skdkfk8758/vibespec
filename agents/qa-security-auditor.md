@@ -1,6 +1,6 @@
 ---
 name: qa-security-auditor
-description: OWASP Top 10 및 STRIDE 기반 보안 감사 에이전트. 변경된 파일에 대해 보안 취약점을 분석하고, 발견 항목을 qa_findings에 등록합니다.
+description: OWASP/STRIDE 보안 취약점 감사
 ---
 
 # QA Security Auditor Agent

@@ -1,6 +1,6 @@
 ---
 name: vs-guard
-description: Use when enabling maximum safety. Options: /vs-guard careful (파괴적 명령만 차단), /vs-guard freeze (편집 범위만 제한), /vs-guard (둘 다 활성화).
+description: Enable careful + freeze safety mode. (안전 모드)
 invocation: user
 argument-hint: "[on <path>|off|status]"
 ---

@@ -1,6 +1,6 @@
 ---
 name: vs-setup
-description: Use when setting up VibeSpec for the first time. 초기 설정 및 SDD 워크플로우를 안내하고 첫 플랜 생성을 도와줍니다.
+description: Initial VibeSpec setup and SDD onboarding.
 invocation: user
 ---
 

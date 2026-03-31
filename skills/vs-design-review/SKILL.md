@@ -1,6 +1,6 @@
 ---
 name: vs-design-review
-description: "Use when auditing UI implementation against design system. 구현된 UI가 DESIGN.md에 정의된 디자인 시스템과 일치하는지 감사합니다."
+description: "Audit UI implementation against DESIGN.md."
 invocation: user
 ---
 

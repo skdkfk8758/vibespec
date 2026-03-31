@@ -1,6 +1,6 @@
 ---
 name: vs-dashboard
-description: Use when checking project status dashboard. 활성 플랜 진행률, 알림, 속도 통계를 한눈에 조회합니다.
+description: Show project status, progress, and alerts.
 invocation: user
 ---
 

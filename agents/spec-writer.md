@@ -1,6 +1,6 @@
 ---
 name: spec-writer
-description: SDD 스펙 작성 전문 에이전트. 요구사항을 분석하여 구조화된 스펙 문서를 작성하고 태스크로 분해합니다.
+description: SDD 스펙 작성 및 태스크 분해
 ---
 
 # Spec Writer Agent

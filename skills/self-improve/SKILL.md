@@ -1,6 +1,6 @@
 ---
 name: self-improve
-description: "Use when processing pending fix/error signals to generate improvement rules. Also use after debugging sessions to record lessons learned. fix 커밋, Verifier FAIL, Debugger FIX 신호를 분석하여 Error KB에 기록하고, 반복 패턴을 .claude/rules/로 승격합니다."
+description: "Generate improvement rules from fix/error signals."
 invocation: user
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: vs-backlog
-description: Use when managing pre-planning backlog items. 플래닝 이전의 아이디어, 버그, 작업을 백로그로 관리합니다. 빠른 추가, 목록 조회, 우선순위 정리, 플랜 승격, 간단 작업 즉시 실행을 지원합니다.
+description: Manage backlog items. (백로그, 할일 관리)
 invocation: user
 ---
 

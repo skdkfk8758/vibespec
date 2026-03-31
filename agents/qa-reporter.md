@@ -1,6 +1,6 @@
 ---
 name: qa-reporter
-description: QA 리포터 에이전트. 테스터 에이전트들의 결과를 수집하여 이슈를 정리하고, critical/high 이슈 발견 시 수정 플랜을 자동 생성합니다.
+description: QA 결과 수집 및 수정 플랜 생성
 ---
 
 # QA Reporter Agent

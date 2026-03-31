@@ -1,6 +1,6 @@
 ---
 name: vs-design-init
-description: "Use when creating a project design system. 인터랙티브 인터뷰를 통해 프로젝트의 디자인 시스템을 정의하고 DESIGN.md를 생성합니다."
+description: "Create project design system via interview."
 invocation: user
 ---
 

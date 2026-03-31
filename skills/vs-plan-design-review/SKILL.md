@@ -1,6 +1,6 @@
 ---
 name: vs-plan-design-review
-description: "Use when reviewing plan-stage UI/UX design decisions. 플랜 단계에서 7개 디자인 차원을 0-10 점수로 평가하고, 빈 상태/에러 상태/로딩 상태 등 누락된 디자인 결정을 사전에 보완합니다."
+description: "Review UI/UX design decisions at plan stage."
 invocation: user
 ---
 

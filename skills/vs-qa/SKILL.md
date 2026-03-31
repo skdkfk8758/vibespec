@@ -1,6 +1,6 @@
 ---
 name: vs-qa
-description: QA 에이전트 팀을 실행합니다. Subcommands: /vs-qa findings (이슈 조회), /vs-qa scenarios (시나리오 조회), /vs-qa status (현황 조회). 인자 없으면 QA 팀 전체 실행.
+description: Run QA team. Subs: findings/scenarios/status.
 invocation: user
 ---
 

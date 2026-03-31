@@ -1,6 +1,6 @@
 ---
 name: vs-exec
-description: Use when the user wants to execute ALL tasks in a plan at once in a single session — run the entire plan end-to-end with minimal subagent usage (verifier agent for verification, direct implementation without tdd-implementer). Use --inline flag for fully subagent-free execution. This is the go-to skill when the user says "플랜 실행", "전체 실행", "쭉 돌려", "전부 구현", "끝까지 실행", "execute plan", "run all tasks", or any variation of "implement everything". Also use when the user is in a cowork/non-subagent environment and wants to process multiple tasks sequentially, or when they explicitly say "서브에이전트 없이", "에이전트 안 쓰고", "이 세션에서 전부", "한번에 끝내고 싶어". If the user wants to run just ONE task, use vs-next instead. If they want to PICK a specific task, use vs-pick. But if they want batch/full/all execution in a single session, this is the right skill.
+description: Execute all tasks in one session. (일괄 실행)
 invocation: user
 ---
 

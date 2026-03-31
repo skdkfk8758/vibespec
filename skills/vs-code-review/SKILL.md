@@ -1,6 +1,6 @@
 ---
 name: vs-code-review
-description: "Use when reviewing code changes before commit/PR. git diff 기반 프로덕션 버그 탐지 + 기계적 문제 자동 수정. race condition, trust boundary, missing index 등 10개 패턴 카테고리 스캔."
+description: "Review code changes and detect production bugs."
 invocation: user
 argument-hint: "[--base <branch>]"
 ---
