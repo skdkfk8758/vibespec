@@ -94,14 +94,6 @@ export interface SuccessRates {
   by_plan: Array<{ title: string; rate: number; count: number }>;
 }
 
-export interface InsightsResult {
-  blocked_patterns: BlockedPattern[];
-  duration_stats: DurationStats;
-  success_rates: SuccessRates;
-  recommendations: string[];
-  confidence: 'high' | 'medium' | 'low';
-}
-
 export interface TaskMetrics {
   id: number;
   task_id: string;

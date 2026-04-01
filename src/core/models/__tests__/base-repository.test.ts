@@ -86,14 +86,6 @@ describe('BaseRepository', () => {
       expect(model.getById('t1')).toBeNull();
     });
 
-    it('AC02: count returns number of entities', () => {
-      expect(model.count()).toBe(0);
-
-      db.prepare("INSERT INTO test_items (id, name, value) VALUES (?, ?, ?)").run('t1', 'item1', 10);
-      db.prepare("INSERT INTO test_items (id, name, value) VALUES (?, ?, ?)").run('t2', 'item2', 20);
-
-      expect(model.count()).toBe(2);
-    });
 
     it('AC02: update modifies entity fields', () => {
       db.prepare("INSERT INTO test_items (id, name, value) VALUES (?, ?, ?)").run('t1', 'item1', 10);

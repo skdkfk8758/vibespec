@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
-import { generateId, hasColumn, nowISO, toDateOnly, buildUpdateQuery, validateTransition, InvalidTransitionError } from '../utils.js';
+import { generateId, hasColumn, buildUpdateQuery, validateTransition, InvalidTransitionError } from '../utils.js';
 
 describe('utils', () => {
   describe('generateId', () => {
@@ -30,19 +30,6 @@ describe('utils', () => {
       db.exec('CREATE TABLE test (id TEXT)');
       expect(hasColumn(db, 'test', 'missing')).toBe(false);
       db.close();
-    });
-  });
-
-  describe('nowISO', () => {
-    it('should return a valid ISO string', () => {
-      const iso = nowISO();
-      expect(new Date(iso).toISOString()).toBe(iso);
-    });
-  });
-
-  describe('toDateOnly', () => {
-    it('should extract date from ISO string', () => {
-      expect(toDateOnly('2026-03-24T10:30:00.000Z')).toBe('2026-03-24');
     });
   });
 

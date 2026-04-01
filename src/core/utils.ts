@@ -52,20 +52,6 @@ export function hasColumn(db: Database.Database, table: string, column: string):
 }
 
 /**
- * Get current ISO timestamp.
- */
-export function nowISO(): string {
-  return new Date().toISOString();
-}
-
-/**
- * Extract date-only string from ISO timestamp.
- */
-export function toDateOnly(iso: string): string {
-  return iso.split('T')[0];
-}
-
-/**
  * Build a dynamic UPDATE query from a fields object.
  * Returns null if no fields to update.
  */

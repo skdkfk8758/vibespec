@@ -98,7 +98,6 @@ describe('AC02: Inherited CRUD methods work correctly', () => {
     // The custom get() method should still work correctly
     expect(typeof model.getById).toBe('function');
     expect(typeof model.requireById).toBe('function');
-    expect(typeof model.count).toBe('function');
     expect(typeof model.delete).toBe('function');
   });
 });

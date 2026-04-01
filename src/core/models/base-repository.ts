@@ -34,11 +34,6 @@ export abstract class BaseRepository<T extends { id: string }> {
     this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`).run(id);
   }
 
-  count(): number {
-    const row = this.db.prepare(`SELECT count(*) as cnt FROM ${this.tableName}`).get() as { cnt: number };
-    return row.cnt;
-  }
-
   update(id: string, fields: Partial<Omit<T, 'id'>>): T {
     this.requireById(id);
     const query = buildUpdateQuery(this.tableName, id, fields as Record<string, unknown>);
