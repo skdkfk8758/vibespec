@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.32.0] - 2026-04-01
+
+### 새 기능
+- **qa-scenario**: plan 기반 시나리오 조회 CLI 및 listByPlan 메서드 추가 (cd3bf56)
+- **vs-merge**: Review Checklist에 버려진 코드 의도 요약(discarded_intent) 추가 (6432bac)
+- **skills**: 35개 스킬에 그룹 prefix 적용 — [Core]/[QA]/[Lifecycle]/[Env]/[Design]/[Learn]/[Ref]/[Util] (d114c08)
+- **hooks**: Session Stash 훅 활성화 + vs-next에 stash 복원 통합 (5e56a80)
+- **qa**: QA 자동 트리거 도입 및 에이전트 경량화 (6fd97db)
+- **agents**: plan-critical-reviewer 에이전트 및 vs-plan 자동 디스패치 추가 (da4588c)
+- **vs-next,vs-pick**: complex 태스크 시 워크트리 생성 자동 추천 (2d4eed2)
+
+### 버그 수정
+- **agent-orchestration**: handoff 디렉토리 사전 생성 + verifier baseline 스냅샷 도입 (4712b25)
+- **qa-pipeline**: qa-seeder 디스패치 구체화 + qa-shadow 빈 시나리오 WARN 판정 (3100531)
+
+### 리팩토링
+- **core**: 데드코드 정리 — nowISO, toDateOnly, BaseRepository.count, InsightsResult 제거 (c56299d)
+- **skills**: context save 호출 제거 + self-improve 파이프라인 단축 (95db055)
+- **context**: Context Log 시스템 제거 (42b2348)
+- **qa**: TDD 자동 판별 + vs-exec 공통 로직 축약 (55bbadf)
+
+### 기타
+- **docs**: vs-resume 스킬 폐지 및 문서 참조 정리 (0dc8e62)
+- **dist**: 빌드 아티팩트 갱신 (623da87)
+
 ## [0.31.1] - 2026-04-01
 
 ### 새 기능

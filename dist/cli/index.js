@@ -1726,10 +1726,6 @@ var BaseRepository = class {
     this.requireById(id);
     this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`).run(id);
   }
-  count() {
-    const row = this.db.prepare(`SELECT count(*) as cnt FROM ${this.tableName}`).get();
-    return row.cnt;
-  }
   update(id, fields) {
     this.requireById(id);
     const query = buildUpdateQuery(this.tableName, id, fields);
