@@ -395,6 +395,27 @@ invocation: user
 
    **플랜 완료 감지**: 태스크 done 처리 후 `vs --json task next <plan_id>`를 실행하세요.
    - 남은 todo 태스크가 없으면 (모든 태스크가 done/skipped/blocked):
+     → **Skeleton Evolve 자동 실행** (선택적):
+       - 조건: 골격 문서 1개 이상 존재 AND `resolved_config.modules.skeleton_guard`가 `true`
+       - 조건 충족 시:
+         1. skeleton-evolve 에이전트를 디스패치 (model: haiku):
+            ```
+            당신은 skeleton-evolve 에이전트입니다.
+            agents/skeleton-evolve.md의 Execution Process를 따라 실행하세요.
+
+            plan_id: {plan_id}
+            plan_spec: {플랜 스펙}
+            task_results: {태스크 결과}
+            changed_files: {git diff --name-only로 수집한 변경 파일}
+            skeleton_docs: {골격 문서 내용}
+            ```
+         2. evolve 결과 처리:
+            - Auto 변경: 자동 적용 + "골격 문서 자동 업데이트: {N}건" 표시
+            - Suggest 변경: 사용자에게 AskUserQuestion으로 각 제안 승인/거부
+            - Locked 변경: 사유 입력 요청
+            - cross-reference 충돌: 해결 선택 요청
+         3. 완료 후 아래 체크포인트 제시
+       - 조건 미충족 시: 바로 체크포인트 제시
      → 다음 체크포인트에서 "플랜 검증" 선택지를 **우선 표시**하세요
    - 남은 태스크가 있으면 일반 체크포인트를 표시하세요
 

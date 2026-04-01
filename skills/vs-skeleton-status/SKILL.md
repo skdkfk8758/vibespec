@@ -66,7 +66,24 @@ invocation: user
    (존재하지 않는 문서는 0점으로 계산)
    ```
 
-5. **다음 액션 제안**
+5. **변경 이력 표시** (선택적)
+   - `vs --json context search "[skeleton-change]"` 또는 git log에서 골격 문서 관련 커밋을 조회하세요
+   - 최근 5건의 변경 이력을 테이블로 표시:
+     ```
+     ### 최근 변경 이력
+     | 날짜 | 문서 | 섹션 | 유형 | 플랜 |
+     |------|------|------|------|------|
+     | 2026-04-02 | ARCHITECTURE.md | Module Structure | auto | #plan123 |
+     | 2026-04-01 | PRD.md | Feature Priority | suggest | #plan456 |
+     ```
+   - 이력이 없으면 "변경 이력 없음" 표시
+   - cross-reference 충돌이 open 상태로 있으면:
+     ```
+     ### 미해결 충돌
+     ⚠️ PRD.md ↔ POLICY.md: "결제 기능 필수" vs "외부 PG 금지"
+     ```
+
+6. **다음 액션 제안**
    `AskUserQuestion`으로 제안:
    - 누락 문서가 있으면:
      - label: "골격 문서 생성", description: "/vs-skeleton-init으로 누락 문서를 생성합니다"

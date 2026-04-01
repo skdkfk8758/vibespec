@@ -122,7 +122,24 @@ EOF
 | 2 | def5678 | chore(config): eslint 설정 추가 | - |
 ```
 
-### Phase 6.5: 백로그 자동 매칭
+### Phase 6.5: 골격 Auto 업데이트 트리거
+
+커밋된 파일 중 골격 관련 영역 변경이 있으면 Auto tier 수정을 자동 적용합니다.
+
+- 조건: 프로젝트 루트에 골격 문서 1개 이상 존재 AND 커밋 파일에 아래 패턴 포함:
+  - `src/` 하위 디렉토리 구조 변경 → ARCHITECTURE.md Module Structure 업데이트 후보
+  - `package.json` 변경 → POLICY.md Dependencies 업데이트 후보
+  - `tsconfig.json`/eslint config 변경 → POLICY.md Naming Convention 업데이트 후보
+- 조건 미충족 시 이 단계를 스킵하세요
+- skeleton-evolve의 Auto tier 로직만 경량 실행:
+  1. 해당 골격 문서를 Read
+  2. 변경 사항과 대조하여 Auto 수준(경로 업데이트, 의존성 추가)만 감지
+  3. 감지되면 .bak 백업 후 자동 적용
+  4. skeleton_changes에 기록: `{ plan_id, change_type: 'auto', approved_by: 'system' }`
+  5. "골격 문서 자동 업데이트: {N}건 적용됨" 표시
+- 변경 없으면 조용히 스킵
+
+### Phase 6.6: 백로그 자동 매칭
 
 커밋된 파일과 관련된 백로그 항목이 있는지 확인하세요:
 

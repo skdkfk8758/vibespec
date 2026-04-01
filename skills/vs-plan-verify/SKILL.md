@@ -82,6 +82,36 @@ invocation: user
    - 없으면 `SKIP` 처리하세요
    - 결과: exit code
 
+2a. **골격 정합성 최종 게이트** (선택적)
+   - 조건: 프로젝트 루트에 골격 문서(PRD.md/DESIGN.md/POLICY.md/ARCHITECTURE.md) 1개 이상 존재
+   - 조건 미충족 시 이 단계를 SKIP 처리하세요
+   - skeleton-evolve 에이전트를 디스패치하세요 (model: haiku):
+     ```
+     당신은 skeleton-evolve 에이전트입니다.
+     agents/skeleton-evolve.md의 Execution Process를 따라 실행하세요.
+
+     plan_id: {plan_id}
+     plan_spec: {플랜 스펙}
+     task_results: {태스크 결과 목록}
+     changed_files: {플랜 전체 변경 파일}
+     skeleton_docs: {골격 문서 내용}
+     ```
+   - 결과 처리 (10초 이내 판정):
+     - Auto 변경이 있으면: 자동 적용 (게이트 통과 상태이므로)
+     - Suggest/Locked 변경이 있으면: WARN 요소로 추가
+     - cross-reference 충돌이 있으면: 충돌 심각도에 따라 WARN 또는 FAIL
+     - 변경/충돌 없으면: PASS
+   - 리포트에 추가:
+     ```
+     ### 골격 정합성
+     - Auto 적용: N건
+     - Suggest 대기: N건 (승인 필요)
+     - Locked 대기: N건 (사유 필요)
+     - 충돌: N건
+     - 판정: [PASS | WARN | FAIL | SKIP]
+     ```
+   - WARN/FAIL 시: "골격 문서 업데이트가 필요합니다. 플랜 완료 전 `/vs-skeleton-status`를 확인하세요." 안내
+
 3. **Success Criteria 검증**
    - 플랜 스펙에서 `## Success Criteria` 섹션을 파싱하세요
    - 섹션이 없으면 이 단계를 건너뛰세요
