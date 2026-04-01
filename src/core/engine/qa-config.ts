@@ -67,6 +67,7 @@ export const QaRulesSchema = z.object({
       wave_gate: z.boolean().optional(),
       adaptive_planner: z.boolean().optional(),
       design_review: z.boolean().optional(),
+      skeleton_guard: z.boolean().optional(),
       auto_trigger: z
         .object({
           enabled: z.boolean().default(true),
@@ -100,6 +101,7 @@ export interface ResolvedQaConfig {
     wave_gate: boolean;
     adaptive_planner: boolean;
     design_review: boolean;
+    skeleton_guard: boolean;
     auto_trigger: {
       enabled: boolean;
       milestones: number[];
@@ -125,6 +127,7 @@ export const DEFAULT_QA_CONFIG: ResolvedQaConfig = {
     wave_gate: false,
     adaptive_planner: false,
     design_review: false,
+    skeleton_guard: false,
     auto_trigger: {
       enabled: true,
       milestones: [50, 100],
@@ -148,6 +151,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       wave_gate: false,
       adaptive_planner: false,
       design_review: true,
+      skeleton_guard: true,
       auto_trigger: { enabled: true, milestones: [50, 100] },
     },
     severity_weights: { critical: 0.4, high: 0.3, medium: 0.2, low: 0.1 },
@@ -164,6 +168,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       wave_gate: true,
       adaptive_planner: false,
       design_review: false,
+      skeleton_guard: false,
       auto_trigger: { enabled: true, milestones: [50, 100] },
     },
     severity_weights: { critical: 0.5, high: 0.3, medium: 0.15, low: 0.05 },
@@ -180,6 +185,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       wave_gate: true,
       adaptive_planner: false,
       design_review: true,
+      skeleton_guard: true,
       auto_trigger: { enabled: true, milestones: [50, 100] },
     },
   },
@@ -195,6 +201,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       wave_gate: false,
       adaptive_planner: false,
       design_review: false,
+      skeleton_guard: false,
       auto_trigger: { enabled: true, milestones: [50, 100] },
     },
     regression_bonus: 0.3,
@@ -211,6 +218,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       wave_gate: false,
       adaptive_planner: false,
       design_review: false,
+      skeleton_guard: false,
       auto_trigger: { enabled: true, milestones: [50, 100] },
     },
   },

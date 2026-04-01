@@ -127,6 +127,7 @@ describe('QaConfigEngine', () => {
       expect(DEFAULT_QA_CONFIG.modules.wave_gate).toBe(false);
       expect(DEFAULT_QA_CONFIG.modules.adaptive_planner).toBe(false);
       expect(DEFAULT_QA_CONFIG.modules.design_review).toBe(false);
+      expect(DEFAULT_QA_CONFIG.modules.skeleton_guard).toBe(false);
       expect(DEFAULT_QA_CONFIG.regression_bonus).toBe(0.2);
     });
   });
@@ -202,6 +203,14 @@ describe('QaConfigEngine', () => {
       expect(PROFILE_PRESETS['api-server']!.modules!.design_review).toBe(false);
       expect(PROFILE_PRESETS['library']!.modules!.design_review).toBe(false);
       expect(PROFILE_PRESETS['cli-tool']!.modules!.design_review).toBe(false);
+    });
+
+    it('AC06: web-frontend and fullstack presets should enable skeleton_guard', () => {
+      expect(PROFILE_PRESETS['web-frontend']!.modules!.skeleton_guard).toBe(true);
+      expect(PROFILE_PRESETS['fullstack']!.modules!.skeleton_guard).toBe(true);
+      expect(PROFILE_PRESETS['api-server']!.modules!.skeleton_guard).toBe(false);
+      expect(PROFILE_PRESETS['library']!.modules!.skeleton_guard).toBe(false);
+      expect(PROFILE_PRESETS['cli-tool']!.modules!.skeleton_guard).toBe(false);
     });
 
     it('AC06: explicit values should override profile preset', () => {
