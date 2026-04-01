@@ -121,7 +121,11 @@ description: TDD RED-GREEN-REFACTOR 자율 구현
 
 ### AC Mapping 출력 (GREEN 완료 후)
 
-`.claude/handoff/{task_id}/ac_mapping.json` 파일을 생성하세요:
+`.claude/handoff/{task_id}/ac_mapping.json` 파일을 생성하세요.
+
+> **디렉토리 확인**: 파일 작성 전 `.claude/handoff/{task_id}/` 디렉토리가 존재하는지 확인하세요. 존재하지 않으면 Bash 도구로 `mkdir -p .claude/handoff/{task_id}`를 실행하여 생성하세요. (일반적으로 vs-next가 사전 생성하지만, 직접 실행 등 예외 상황에 대비합니다.)
+
+파일 구조:
 ```json
 {
   "AC01": { "test_file": "tests/xxx.test.ts", "test_name": "AC01: ..." },

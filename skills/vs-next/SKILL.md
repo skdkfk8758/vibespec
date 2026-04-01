@@ -150,6 +150,31 @@ invocation: user
    3. **혼합 (1:1:1 또는 판별 불가)** → 직접 구현 기본값
    4. 배치 모드(Step 8)에서는 이 테이블을 **자동 적용**하여 사용자 체크포인트 없이 판별
 
+   **Handoff 디렉토리 사전 생성** (TDD/직접 구현 공통):
+     → 구현 시작 전에 Bash 도구로 `mkdir -p .claude/handoff/{task_id}` 를 실행하세요
+     → 이 디렉토리는 tdd-implementer의 ac_mapping.json, impl_report.json, verifier의 baseline_snapshot.json 등 에이전트 간 핸드오프 파일이 저장되는 경로입니다
+     → 디렉토리가 이미 존재하면 무시됩니다 (`-p` 플래그)
+
+   **Baseline 테스트 스냅샷 기록** (TDD/직접 구현 공통, handoff 디렉토리 생성 후):
+     → 구현 시작 전에 현재 테스트 상태를 기록하세요
+     → JSON 리포터 사용: `npx vitest run --reporter=json 2>/dev/null` 또는 `npx jest --json 2>/dev/null`
+     → JSON 파싱이 불가하면 일반 실행 후 출력에서 실패 테스트 이름을 grep으로 추출 (fallback)
+     → 테스트 러너가 없거나 실행 실패 시: baseline을 생성하지 않고 진행 (verifier가 fallback 처리)
+     → 결과를 `.claude/handoff/{task_id}/baseline_snapshot.json`에 저장:
+       ```json
+       {
+         "task_id": "{task_id}",
+         "timestamp": "{ISO8601}",
+         "test_runner": "vitest|jest|other",
+         "reporter_format": "json|grep_fallback",
+         "total": 0,
+         "passed": 0,
+         "failed": 0,
+         "failed_tests": ["test name 1", "test name 2"],
+         "exit_code": 0
+       }
+       ```
+
    **TDD 에이전트 디스패치:**
      → `tdd-implementer` 에이전트를 디스패치하세요
      → 전달 정보: 태스크(제목, spec, acceptance), 플랜 컨텍스트(제목, 스펙 요약), **scope**(allowed_files, forbidden_patterns — 태스크에 설정되어 있으면)
@@ -183,6 +208,7 @@ invocation: user
      verifier 디스패치와 동시에, qa-shadow 에이전트도 병렬로 디스패치하세요:
      - 조건: `vs --json qa config resolve <plan_id>`의 `modules.shadow`가 `true`
      - 조건 미충족 시 이 단계를 건너뛰세요
+     - **시나리오 수집**: Bash 도구로 `vs --json qa scenario list-by-plan <plan_id> --source seed --task-id <task_id>` 실행하여 이 태스크 관련 seed 시나리오를 조회하세요
      - Agent 도구로 qa-shadow 디스패치 (run_in_background: true, model: haiku):
        ```
        당신은 qa-shadow 에이전트입니다.
@@ -190,7 +216,7 @@ invocation: user
 
        task: {title, spec, acceptance}
        impl_report_path: .claude/handoff/{task_id}/impl_report.json
-       seed_scenarios: (vs qa scenario list로 source='seed' + related_tasks에 현재 태스크 포함 항목 조회)
+       seed_scenarios: {위에서 조회한 시나리오 JSON 배열 — 빈 배열이면 그대로 전달}
        ```
      - shadow 결과 통합:
        - verifier PASS + shadow CLEAN → `vs --json task update <id> done`
