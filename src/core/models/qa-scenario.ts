@@ -79,13 +79,40 @@ export class QAScenarioModel extends BaseRepository<QAScenario> {
     }
   }
 
-  listByPlanSource(planId: string, source: string): QAScenario[] {
+  listByPlan(planId: string, filters?: { taskId?: string; source?: string; category?: string; status?: string }): QAScenario[] {
+    const conditions: string[] = ['r.plan_id = ?'];
+    const params: unknown[] = [planId];
+
+    if (filters?.source) {
+      conditions.push('s.source = ?');
+      params.push(filters.source);
+    }
+    if (filters?.category) {
+      conditions.push('s.category = ?');
+      params.push(filters.category);
+    }
+    if (filters?.status) {
+      conditions.push('s.status = ?');
+      params.push(filters.status);
+    }
+    if (filters?.taskId) {
+      // related_tasks is stored as JSON array (e.g. '["task-1","task-2"]') or plain ID
+      // Use exact quoted match to avoid false positives (e.g. "task-1" matching "task-10")
+      conditions.push("(s.related_tasks LIKE ? OR s.related_tasks = ?)");
+      params.push(`%"${filters.taskId}"%`, filters.taskId);
+    }
+
+    const where = conditions.join(' AND ');
     return this.db.prepare(
       `SELECT s.* FROM qa_scenarios s
        INNER JOIN qa_runs r ON s.run_id = r.id
-       WHERE r.plan_id = ? AND s.source = ?
+       WHERE ${where}
        ORDER BY s.created_at ASC`
-    ).all(planId, source) as QAScenario[];
+    ).all(...params) as QAScenario[];
+  }
+
+  listByPlanSource(planId: string, source: string): QAScenario[] {
+    return this.listByPlan(planId, { source });
   }
 
   getStatsByRun(runId: string): Array<{ category: string; total: number; passed: number; failed: number }> {

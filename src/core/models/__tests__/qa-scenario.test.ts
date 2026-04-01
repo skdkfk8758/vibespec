@@ -164,6 +164,46 @@ describe('QAScenarioModel', () => {
     });
   });
 
+  describe('listByPlan', () => {
+    it('AC01: should list scenarios by plan ID', () => {
+      model.create(runId, makeScenario({ title: 'Plan Scenario A', source: 'seed' }));
+      model.create(runId, makeScenario({ title: 'Plan Scenario B', source: 'final' }));
+
+      const list = model.listByPlan('test-plan');
+      expect(list).toHaveLength(2);
+    });
+
+    it('AC02: should filter by task ID via related_tasks (JSON format)', () => {
+      model.create(runId, makeScenario({ title: 'Task1 Scenario', related_tasks: JSON.stringify(['task-1', 'task-2']), source: 'seed' }));
+      model.create(runId, makeScenario({ title: 'Task3 Scenario', related_tasks: JSON.stringify(['task-3']), source: 'seed' }));
+
+      const list = model.listByPlan('test-plan', { taskId: 'task-1' });
+      expect(list).toHaveLength(1);
+      expect(list[0].title).toBe('Task1 Scenario');
+    });
+
+    it('AC02: should not false-positive match task-1 against task-10', () => {
+      model.create(runId, makeScenario({ title: 'Task10 Scenario', related_tasks: JSON.stringify(['task-10']), source: 'seed' }));
+
+      const list = model.listByPlan('test-plan', { taskId: 'task-1' });
+      expect(list).toHaveLength(0);
+    });
+
+    it('AC03: should filter by source', () => {
+      model.create(runId, makeScenario({ title: 'Seed', source: 'seed' }));
+      model.create(runId, makeScenario({ title: 'Final', source: 'final' }));
+
+      const list = model.listByPlan('test-plan', { source: 'seed' });
+      expect(list).toHaveLength(1);
+      expect(list[0].title).toBe('Seed');
+    });
+
+    it('AC04: should return empty for non-existent plan', () => {
+      const list = model.listByPlan('non-existent-plan');
+      expect(list).toHaveLength(0);
+    });
+  });
+
   describe('getStatsByRun', () => {
     it('AC03: should return stats grouped by category', () => {
       const s1 = model.create(runId, makeScenario({ category: 'functional' }));

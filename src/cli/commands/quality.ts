@@ -174,6 +174,31 @@ export function registerQualityCommands(program: Command, getModels: () => Model
       ).join('\n'));
     }));
 
+  qaScenarioCmd
+    .command('list-by-plan')
+    .argument('<plan_id>', 'Plan ID')
+    .option('--task-id <taskId>', 'Filter by related task ID')
+    .option('--source <source>', 'Filter by source (seed, shadow, wave, final, manual)')
+    .option('--category <cat>', 'Filter by category')
+    .option('--status <status>', 'Filter by status')
+    .description('List scenarios for a plan (with optional task/source filters)')
+    .action((planId: string, opts: { taskId?: string; source?: string; category?: string; status?: string }) => withErrorHandler(() => {
+      const { qaScenario } = getQAModels();
+      const scenarios = qaScenario.listByPlan(planId, {
+        taskId: opts.taskId,
+        source: opts.source,
+        category: opts.category,
+        status: opts.status,
+      });
+      if (scenarios.length === 0) {
+        output(scenarios, 'No scenarios found for this plan.');
+        return;
+      }
+      output(scenarios, scenarios.map(s =>
+        `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  src:${s.source ?? 'n/a'}  ${s.title}`
+      ).join('\n'));
+    }));
+
   // qa finding
   const qaFindingCmd = qa.command('finding').description('Manage QA findings');
 
