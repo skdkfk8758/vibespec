@@ -283,6 +283,18 @@ invocation: user
          - "Skeleton Guard에서 Critical 이슈가 발견되었습니다: {요약}. 어떻게 처리할까요?"
          - 선택지: "수정 후 재검증" / "무시하고 완료" / "태스크 차단"
 
+     **경량 Skeleton Evolve (Auto only)** (선택적):
+     skeleton-guard 결과 통합 후, Auto tier 변경만 경량 실행합니다.
+     - 조건: `resolved_config.modules.skeleton_guard`가 `true` AND 골격 문서 1개+ AND skeleton-guard verdict가 ALERT가 아닌 경우
+     - 조건 미충족 시 스킵
+     - skeleton-evolve의 **Phase 1(구현 분석) + Phase 3 Auto 분류만** 실행 (Suggest/Locked/충돌 감지 스킵)
+     - Locked 문서(Vision, Tech Stack, Security Policy 섹션)는 수정 대상에서 제외
+     - Auto 변경 적용 후 completeness_score 재계산:
+       - 점수 하락 → .bak에서 자동 롤백 + "Auto 적용이 점수를 하락시켜 롤백되었습니다" 경고
+       - 점수 유지/상승 → 적용 확정 + "경량 evolve: Auto {N}건 적용" 표시
+     - 5초 이내 완료 목표
+     - **전체 evolve(Suggest/Locked/충돌)는 플랜 완료 감지 시에만 실행** (기존 로직 유지)
+
      **Adaptive Planner Watcher** (선택적):
      태스크 완료 판정 후, 플랜 수준의 이상을 감지합니다.
 

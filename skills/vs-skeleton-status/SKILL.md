@@ -44,7 +44,11 @@ invocation: user
    | POLICY.md | Tech Stack, Dependencies Policy, Security Policy, Data Policy, Naming Convention (5) | Code Review Policy, Testing Policy, Deployment Policy (3) |
    | ARCHITECTURE.md | System Overview, Module Structure, Data Flow, ADR (4) | Infrastructure, Monitoring, Scaling Strategy (3) |
 
-   섹션 존재 판단: 해당 제목(##)이 문서에 존재하고, 그 아래에 플레이스홀더({값})가 아닌 실제 내용이 1줄 이상 있으면 "존재"로 판정.
+   섹션 존재 판단 (품질 기준 포함):
+   1. 해당 제목(##)이 문서에 존재하는지 확인
+   2. 제목 아래 내용에서 **플레이스홀더 패턴**을 제거: `{값}`, `{예:...}`, `TODO`, `TBD`, `나중에 작성`, `PLACEHOLDER`, `(미정)`, `(작성 예정)`, `FIXME`, `[작성 필요]`
+   3. 플레이스홀더 제거 후 **실제 내용이 50자 이상**이면 "존재"로 판정
+   4. 50자 미만이면 "미완성"으로 판정 → 점수 0 + 대시보드에 "⚠️ 미완성" 표시
    `<!-- skeleton:type -->` 마커가 없는 문서(수동 생성)도 제목 기반으로 섹션을 매칭합니다.
    섹션 파싱 오류 시 (EC10): 해당 섹션 점수 0 처리 + 경고 출력.
 

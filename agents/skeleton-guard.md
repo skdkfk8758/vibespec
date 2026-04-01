@@ -109,6 +109,18 @@ ALERT = Critical finding 1건 이상
 {PASS인 경우: "골격 문서와 정합성이 확인되었습니다."}
 ```
 
+## 골격 문서 계층 (Hierarchy)
+
+충돌 감지/해결 시 상위 문서 우선 원칙을 적용합니다:
+
+```
+PRD (비즈니스 결정) > POLICY (제약 조건) > ARCHITECTURE (구현 결정) > DESIGN (표현)
+```
+
+- plan-check에서 PRD↔ARCHITECTURE 불일치 발견 시: "PRD가 비즈니스 결정이므로 ARCHITECTURE 수정을 권장합니다" 안내
+- impl-check에서 POLICY↔DESIGN 불일치 발견 시: "POLICY가 제약이므로 DESIGN 수정을 권장합니다" 안내
+- 상위 문서의 변경은 더 높은 severity로 분류 (PRD 관련 → Warning 이상)
+
 ## Rules
 - 5초 이내 완료 목표 — 키워드 매칭 기반 경량 체크
 - 골격 문서가 없으면 에러 없이 SKIP (graceful degradation)
@@ -136,9 +148,21 @@ ALERT = Critical finding 1건 이상
 - vs-next 호출 시 새 세션 시작 → dismissed_warnings 빈 배열로 초기화
 - E2E 테스트 시 `--reset-dismissed` 플래그로 강제 초기화 가능
 
+### Warning 누적 임계값 (Escalation)
+- dismissed_warnings 배열의 길이가 **5건 이상**이면:
+  - 새 ALERT finding 자동 생성:
+    ```
+    { rule_id: "ESCALATION-01", severity: "critical", message: "동일 플랜에서 경고가 5건 이상 무시되었습니다. 골격 문서를 업데이트하세요. 무시된 경고: {dismissed 목록 요약}" }
+    ```
+  - 이 ALERT는 **dismiss 불가** (Critical은 억제 불가 규칙 적용)
+  - vs-next에서 ESCALATION-01 ALERT를 우선 표시
+- 사용자가 골격 문서를 실제 업데이트하면 (skeleton-evolve Suggest 승인 등):
+  - dismissed_warnings 카운터 리셋 (빈 배열로 초기화)
+
 ### 제약
 - 세션 간 영속성 없음 (의도적 — 매 세션 fresh start)
 - Critical(ALERT) finding은 억제 불가 — 항상 표시
+- ESCALATION-01은 특수 Critical — dismiss 불가, 카운터 리셋으로만 해제
 
 ---
 
