@@ -8,7 +8,6 @@ import { SelfImproveEngine } from '../core/engine/self-improve.js';
 import { TaskModel } from '../core/models/task.js';
 import { EventModel } from '../core/models/event.js';
 import { PlanModel } from '../core/models/plan.js';
-import { ContextModel } from '../core/models/context.js';
 import { TaskMetricsModel } from '../core/models/task-metrics.js';
 import { SkillUsageModel } from '../core/models/skill-usage.js';
 import { QARunModel } from '../core/models/qa-run.js';
@@ -90,7 +89,6 @@ export function initModels() {
   const lazyAgentHandoff = lazy('agentHandoffModel', () => new AgentHandoffModel(db));
   const lazyPlan = lazy('planModel', () => new PlanModel(db, events, lazyAgentHandoff.get()));
   const lazyTask = lazy('taskModel', () => new TaskModel(db, events));
-  const lazyContext = lazy('contextModel', () => new ContextModel(db));
   const lazyTaskMetrics = lazy('taskMetricsModel', () => new TaskMetricsModel(db));
   const lazySkillUsage = lazy('skillUsageModel', () => new SkillUsageModel(db));
   const lazyLifecycle = lazy('lifecycle', () => new LifecycleEngine(db, lazyPlan.get(), lazyTask.get(), events));
@@ -111,7 +109,6 @@ export function initModels() {
     events,
     get planModel() { return lazyPlan.get(); },
     get taskModel() { return lazyTask.get(); },
-    get contextModel() { return lazyContext.get(); },
     get taskMetricsModel() { return lazyTaskMetrics.get(); },
     get skillUsageModel() { return lazySkillUsage.get(); },
     get lifecycle() { return lazyLifecycle.get(); },

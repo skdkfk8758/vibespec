@@ -57,15 +57,6 @@ export interface Event {
   created_at: string;
 }
 
-export interface ContextLog {
-  id: number;
-  plan_id: string | null;
-  session_id: string | null;
-  summary: string;
-  last_task_id: string | null;
-  created_at: string;
-}
-
 export interface PlanProgress {
   id: string;
   title: string;

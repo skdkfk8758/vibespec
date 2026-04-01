@@ -3,7 +3,6 @@ import { createMemoryDb } from '../../db/connection.js';
 import { initSchema } from '../../db/schema.js';
 import { BaseRepository } from '../base-repository.js';
 import { EventModel } from '../event.js';
-import { ContextModel } from '../context.js';
 import { SkillUsageModel } from '../skill-usage.js';
 import { TaskMetricsModel } from '../task-metrics.js';
 import type Database from 'better-sqlite3';
@@ -19,11 +18,6 @@ describe('Type A BaseRepository Conversion', () => {
   describe('AC01: 4개 모델이 BaseRepository를 상속해야 한다', () => {
     it('AC01: EventModel extends BaseRepository', () => {
       const model = new EventModel(db);
-      expect(model).toBeInstanceOf(BaseRepository);
-    });
-
-    it('AC01: ContextModel extends BaseRepository', () => {
-      const model = new ContextModel(db);
       expect(model).toBeInstanceOf(BaseRepository);
     });
 
@@ -82,55 +76,6 @@ describe('Type A BaseRepository Conversion', () => {
       for (let i = 0; i < 5; i++) model.record('plan', `p${i}`, 'created');
       expect(model.getRecent(3)).toHaveLength(3);
       expect(model.getRecent()).toHaveLength(5);
-    });
-
-    it('AC02: ContextModel.save works with all options', () => {
-      db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run('plan-1', 'Test', 'active');
-      db.prepare("INSERT INTO tasks (id, plan_id, title, status) VALUES (?, ?, ?, ?)").run('task-1', 'plan-1', 'T', 'todo');
-      const model = new ContextModel(db);
-      const log = model.save('test summary', { planId: 'plan-1', sessionId: 's1', lastTaskId: 'task-1' });
-      expect(log.summary).toBe('test summary');
-      expect(log.plan_id).toBe('plan-1');
-    });
-
-    it('AC02: ContextModel.getLatest works', () => {
-      const model = new ContextModel(db);
-      model.save('a');
-      model.save('b');
-      const latest = model.getLatest(1);
-      expect(latest).toHaveLength(1);
-      expect(latest[0].summary).toBe('b');
-    });
-
-    it('AC02: ContextModel.getById works with numeric id', () => {
-      const model = new ContextModel(db);
-      const saved = model.save('test');
-      const found = model.getById(saved.id);
-      expect(found).not.toBeNull();
-      expect(found!.summary).toBe('test');
-    });
-
-    it('AC02: ContextModel.getByPlan works', () => {
-      db.prepare("INSERT INTO plans (id, title, status) VALUES (?, ?, ?)").run('p1', 'Test', 'active');
-      const model = new ContextModel(db);
-      model.save('log', { planId: 'p1' });
-      const results = model.getByPlan('p1');
-      expect(results).toHaveLength(1);
-    });
-
-    it('AC02: ContextModel.getBySession works', () => {
-      const model = new ContextModel(db);
-      model.save('log', { sessionId: 's1' });
-      const result = model.getBySession('s1');
-      expect(result).not.toBeNull();
-    });
-
-    it('AC02: ContextModel.search works', () => {
-      const model = new ContextModel(db);
-      model.save('hello world');
-      model.save('goodbye');
-      const results = model.search('hello');
-      expect(results).toHaveLength(1);
     });
 
     it('AC02: SkillUsageModel.record works', () => {

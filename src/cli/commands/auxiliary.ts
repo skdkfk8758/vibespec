@@ -8,58 +8,6 @@ import { formatDashboard, formatStats, formatHistory, formatSkillUsage } from '.
 import type { MergeReport } from '../../core/types.js';
 
 export function registerAuxiliaryCommands(program: Command, getModels: () => Models): void {
-  // ── context ────────────────────────────────────────────────────────────
-
-  const context = program.command('context').description('Manage session context');
-
-  context
-    .command('resume')
-    .option('--session-id <id>', 'Optional session ID to filter')
-    .description('Resume context from previous sessions')
-    .action((opts: { sessionId?: string }) => {
-      const { contextModel, dashboard, alerts } = getModels();
-      const contextLogs = opts.sessionId
-        ? [contextModel.getBySession(opts.sessionId)].filter(Boolean)
-        : contextModel.getLatest(3);
-      const overview = dashboard.getOverview();
-      const alertList = alerts.getAlerts();
-      output({ context_logs: contextLogs, overview, alerts: alertList });
-    });
-
-  context
-    .command('save')
-    .requiredOption('--summary <summary>', 'Summary of context to save')
-    .option('--plan-id <id>', 'Plan ID to link context to')
-    .option('--session-id <id>', 'Session ID')
-    .description('Save a context log entry')
-    .action((opts: { summary: string; planId?: string; sessionId?: string }) => {
-      const { contextModel } = getModels();
-      const log = contextModel.save(opts.summary, {
-        planId: opts.planId,
-        sessionId: opts.sessionId,
-      });
-      output(log, `Context saved: ${log.id} "${log.summary.slice(0, 50)}..."`);
-    });
-
-  context
-    .command('search')
-    .argument('<query>', 'Search query (tag or keyword)')
-    .option('--limit <n>', 'Max results', '10')
-    .description('Search context log entries by tag or keyword')
-    .action((query: string, opts: { limit: string }) => {
-      const { contextModel } = getModels();
-      const results = contextModel.search(query);
-      const limited = results.slice(0, parseInt(opts.limit, 10));
-      if (limited.length === 0) {
-        output([], `No context logs matching "${query}".`);
-        return;
-      }
-      const formatted = limited.map((l: { id: number; summary: string; created_at: string }, i: number) =>
-        `${i + 1}. [#${l.id}] ${l.summary.slice(0, 100)} (${l.created_at})`
-      ).join('\n');
-      output(limited, `## Context Search: "${query}"\n\n${formatted}`);
-    });
-
   // ── config ────────────────────────────────────────────────────────────
 
   const config = program.command('config').description('Manage configuration');

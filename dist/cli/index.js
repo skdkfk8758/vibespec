@@ -2261,52 +2261,6 @@ var PlanModel = class extends BaseRepository {
   }
 };
 
-// src/core/models/context.ts
-var ContextModel = class extends BaseRepository {
-  constructor(db) {
-    super(db, "context_log");
-  }
-  save(summary, opts) {
-    const stmt = this.db.prepare(
-      `INSERT INTO context_log (summary, plan_id, session_id, last_task_id)
-       VALUES (?, ?, ?, ?)`
-    );
-    const result = stmt.run(
-      summary,
-      opts?.planId ?? null,
-      opts?.sessionId ?? null,
-      opts?.lastTaskId ?? null
-    );
-    return this.db.prepare(`SELECT * FROM context_log WHERE id = ?`).get(result.lastInsertRowid);
-  }
-  getLatest(limit = 5) {
-    const stmt = this.db.prepare(
-      `SELECT * FROM context_log ORDER BY created_at DESC, id DESC LIMIT ?`
-    );
-    return stmt.all(limit);
-  }
-  getByPlan(planId) {
-    const stmt = this.db.prepare(
-      `SELECT * FROM context_log WHERE plan_id = ? ORDER BY created_at DESC, id DESC`
-    );
-    return stmt.all(planId);
-  }
-  getBySession(sessionId) {
-    const stmt = this.db.prepare(
-      `SELECT * FROM context_log WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`
-    );
-    return stmt.get(sessionId) ?? null;
-  }
-  getById(id) {
-    return this.db.prepare("SELECT * FROM context_log WHERE id = ?").get(id) ?? null;
-  }
-  search(tag, limit = 100) {
-    return this.db.prepare(
-      `SELECT * FROM context_log WHERE summary LIKE ? ORDER BY created_at DESC, id DESC LIMIT ?`
-    ).all(`%${tag}%`, limit);
-  }
-};
-
 // src/core/models/task-metrics.ts
 var TaskMetricsModel = class extends BaseRepository {
   constructor(db) {
@@ -3103,7 +3057,6 @@ function initModels() {
   const lazyAgentHandoff = lazy("agentHandoffModel", () => new AgentHandoffModel(db));
   const lazyPlan = lazy("planModel", () => new PlanModel(db, events, lazyAgentHandoff.get()));
   const lazyTask = lazy("taskModel", () => new TaskModel(db, events));
-  const lazyContext = lazy("contextModel", () => new ContextModel(db));
   const lazyTaskMetrics = lazy("taskMetricsModel", () => new TaskMetricsModel(db));
   const lazySkillUsage = lazy("skillUsageModel", () => new SkillUsageModel(db));
   const lazyLifecycle = lazy("lifecycle", () => new LifecycleEngine(db, lazyPlan.get(), lazyTask.get(), events));
@@ -3126,9 +3079,6 @@ function initModels() {
     },
     get taskModel() {
       return lazyTask.get();
-    },
-    get contextModel() {
-      return lazyContext.get();
     },
     get taskMetricsModel() {
       return lazyTaskMetrics.get();
@@ -3946,37 +3896,6 @@ function registerPlanningCommands(program2, getModels) {
 
 // src/cli/commands/auxiliary.ts
 function registerAuxiliaryCommands(program2, getModels) {
-  const context = program2.command("context").description("Manage session context");
-  context.command("resume").option("--session-id <id>", "Optional session ID to filter").description("Resume context from previous sessions").action((opts) => {
-    const { contextModel, dashboard, alerts } = getModels();
-    const contextLogs = opts.sessionId ? [contextModel.getBySession(opts.sessionId)].filter(Boolean) : contextModel.getLatest(3);
-    const overview = dashboard.getOverview();
-    const alertList = alerts.getAlerts();
-    output({ context_logs: contextLogs, overview, alerts: alertList });
-  });
-  context.command("save").requiredOption("--summary <summary>", "Summary of context to save").option("--plan-id <id>", "Plan ID to link context to").option("--session-id <id>", "Session ID").description("Save a context log entry").action((opts) => {
-    const { contextModel } = getModels();
-    const log = contextModel.save(opts.summary, {
-      planId: opts.planId,
-      sessionId: opts.sessionId
-    });
-    output(log, `Context saved: ${log.id} "${log.summary.slice(0, 50)}..."`);
-  });
-  context.command("search").argument("<query>", "Search query (tag or keyword)").option("--limit <n>", "Max results", "10").description("Search context log entries by tag or keyword").action((query, opts) => {
-    const { contextModel } = getModels();
-    const results = contextModel.search(query);
-    const limited = results.slice(0, parseInt(opts.limit, 10));
-    if (limited.length === 0) {
-      output([], `No context logs matching "${query}".`);
-      return;
-    }
-    const formatted = limited.map(
-      (l, i) => `${i + 1}. [#${l.id}] ${l.summary.slice(0, 100)} (${l.created_at})`
-    ).join("\n");
-    output(limited, `## Context Search: "${query}"
-
-${formatted}`);
-  });
   const config = program2.command("config").description("Manage configuration");
   config.command("set").argument("<key>", "Config key").argument("<value>", "Config value").description("Set a configuration value").action((key, value) => {
     const db = getDb();
@@ -5066,7 +4985,11 @@ var QaRulesSchema = z2.object({
     complexity_analysis: z2.boolean().optional(),
     shadow: z2.boolean().optional(),
     wave_gate: z2.boolean().optional(),
-    adaptive_planner: z2.boolean().optional()
+    adaptive_planner: z2.boolean().optional(),
+    auto_trigger: z2.object({
+      enabled: z2.boolean().default(true),
+      milestones: z2.array(z2.number()).default([50, 100])
+    }).optional()
   }).optional(),
   regression_bonus: z2.number().optional(),
   custom_rules: z2.array(CustomRuleSchema).optional(),
@@ -5085,7 +5008,11 @@ var DEFAULT_QA_CONFIG = {
     complexity_analysis: true,
     shadow: false,
     wave_gate: false,
-    adaptive_planner: false
+    adaptive_planner: false,
+    auto_trigger: {
+      enabled: true,
+      milestones: [50, 100]
+    }
   },
   regression_bonus: 0.2
 };
@@ -5100,7 +5027,8 @@ var PROFILE_PRESETS = {
       complexity_analysis: true,
       shadow: true,
       wave_gate: false,
-      adaptive_planner: false
+      adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] }
     },
     severity_weights: { critical: 0.4, high: 0.3, medium: 0.2, low: 0.1 }
   },
@@ -5114,7 +5042,8 @@ var PROFILE_PRESETS = {
       complexity_analysis: true,
       shadow: false,
       wave_gate: true,
-      adaptive_planner: false
+      adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] }
     },
     severity_weights: { critical: 0.5, high: 0.3, medium: 0.15, low: 0.05 }
   },
@@ -5128,7 +5057,8 @@ var PROFILE_PRESETS = {
       complexity_analysis: true,
       shadow: true,
       wave_gate: true,
-      adaptive_planner: false
+      adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] }
     }
   },
   library: {
@@ -5141,7 +5071,8 @@ var PROFILE_PRESETS = {
       complexity_analysis: true,
       shadow: false,
       wave_gate: false,
-      adaptive_planner: false
+      adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] }
     },
     regression_bonus: 0.3
   },
@@ -5155,7 +5086,8 @@ var PROFILE_PRESETS = {
       complexity_analysis: true,
       shadow: false,
       wave_gate: false,
-      adaptive_planner: false
+      adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] }
     }
   }
 };
@@ -5247,7 +5179,7 @@ function validateConfig(config) {
     }
   }
   if (config.modules) {
-    const allFalse = Object.values(config.modules).every((v) => v === false);
+    const allFalse = Object.entries(config.modules).filter(([key]) => key !== "auto_trigger").every(([, v]) => v === false);
     if (allFalse) {
       warnings.push("All modules are disabled. No QA checks will be performed.");
     }
