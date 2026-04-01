@@ -35,7 +35,14 @@ description: 태스크별 경량 QA 동반 에이전트. 구현 완료 시 verif
    - 리소스 정리 누락 (열린 파일/커넥션 미닫힘)
 
 ### Phase 3: Seed 시나리오 대조
-seed_scenarios가 있으면:
+seed_scenarios가 **비어 있거나 없으면**:
+- Phase 3를 skip하되, **WARNING** finding을 생성하세요:
+  - title: "QA 시나리오 부재"
+  - description: "seed_scenarios가 비어 있습니다. qa-seeder가 정상 실행되었는지 확인하세요. vs-plan Step 7b에서 qa-seeder 디스패치를 확인하거나, `vs qa scenario list-by-plan <plan_id> --source seed`로 시나리오 존재 여부를 점검하세요."
+  - severity: medium
+- Phase 4 판정에서 이 WARNING을 반영하세요 (CLEAN이 아닌 WARNING으로 판정)
+
+seed_scenarios가 **있으면**:
 1. 각 seed 시나리오의 description과 변경 코드를 대조
 2. 시나리오가 요구하는 동작이 코드에 구현되었는지 확인
 3. 구현되지 않은 시나리오 → WARNING finding

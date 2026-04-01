@@ -400,8 +400,18 @@ invocation: user
    - qa-rules.yaml에서 `modules.shadow: true` 또는 `modules.seed: true`인지 확인
      - Bash 도구로 `vs --json qa config resolve <plan_id>` 실행
      - resolved_config.modules.shadow 또는 resolved_config.modules.seed가 true이면:
-   - QA Run 생성: `vs --json qa run create <plan_id> --trigger auto`
-   - qa-seeder 에이전트 디스패치 (Agent 도구, haiku 모델)
+   - QA Run 생성: Bash 도구로 `vs --json qa run create <plan_id> --trigger auto` 실행
+   - qa-seeder 에이전트 디스패치: Agent 도구로 다음과 같이 디스패치하세요 (model: haiku, run_in_background: true):
+     ```
+     당신은 qa-seeder 에이전트입니다.
+     agents/qa-seeder.md의 Execution Process를 따라 실행하세요.
+
+     plan_id: {plan_id}
+     run_id: {위에서 생성한 QA Run ID}
+     plan_spec: {생성된 스펙 전문}
+     tasks: {생성된 태스크 목록 — 각 태스크의 title, spec, acceptance}
+     ```
+   - 디스패치 완료 후 시나리오 수 확인: Bash 도구로 `vs --json qa scenario list-by-plan <plan_id> --source seed` 실행
    - 생성된 시나리오 수를 사용자에게 표시:
      ```
      ✓ QA Seed 시나리오 {N}개 사전 생성됨
