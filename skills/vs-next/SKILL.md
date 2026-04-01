@@ -20,7 +20,27 @@ invocation: user
 
 ## Steps
 
-1. **워크트리 환경 확인**
+1. **Stash 복원 확인**
+   - Bash 도구로 `git stash list 2>/dev/null | grep vibespec-session` 을 실행하여 vibespec stash를 검색하세요
+   - 현재 브랜치를 `git rev-parse --abbrev-ref HEAD`로 확인하세요
+   - 매칭되는 stash가 있으면:
+     - stash 메시지에서 브랜치를 파싱하세요 (형식: `vibespec-session:{branch}:{worktree}:{plan}:{task}:{timestamp}`)
+     - 현재 브랜치와 일치하는 stash만 복원 대상으로 표시하세요
+     - `AskUserQuestion`으로 복원 여부를 확인하세요:
+       - question: "이전 세션의 미커밋 변경사항이 stash에 보존되어 있습니다. 어떻게 처리할까요?"
+       - header: "Stash 복원"
+       - multiSelect: false
+       - 선택지:
+         - label: "복원", description: "변경사항을 현재 브랜치에 적용합니다"
+         - label: "건너뛰기", description: "stash를 유지한 채 다음 단계로 진행합니다"
+         - label: "삭제", description: "해당 stash를 제거합니다"
+     - **복원** 선택 시: `git stash apply stash@{N}` 실행
+       - 성공하면 `git stash drop stash@{N}`으로 정리
+       - 충돌 시: `git diff --name-only --diff-filter=U`로 충돌 파일을 표시하고 수동 해결을 안내하세요
+     - **삭제** 선택 시: `git stash drop stash@{N}` 실행
+   - 매칭되는 stash가 없으면 조용히 다음 단계로 진행하세요
+
+2. **워크트리 환경 확인**
    - `git worktree list`로 현재 워크트리 내부인지 확인하세요
    - 워크트리 밖이면 (메인 저장소에서 직접 작업 중):
      → `AskUserQuestion`으로 확인하세요:
@@ -31,12 +51,12 @@ invocation: user
        - label: "워크트리 생성", description: "`/vs-worktree`로 격리 환경을 세팅합니다"
        - label: "그대로 진행", description: "메인 브랜치에서 직접 작업합니다"
 
-2. **활성 플랜 확인**
+3. **활성 플랜 확인**
    - Bash 도구로 `vs --json plan list` 명령을 실행하세요. 플랜 목록을 가져오고 status가 active 또는 approved인 플랜을 필터링하세요
    - 플랜이 여러 개면 사용자에게 어느 플랜에서 작업할지 물어보세요
    - 활성 플랜이 없으면 `/vs-plan`으로 새 플랜을 만들도록 안내하세요
 
-3. **다음 태스크 조회**
+4. **다음 태스크 조회**
    - Bash 도구로 `vs --json task next <plan_id>` 명령을 실행하여 다음 todo 태스크를 가져오세요
    - **순환 의존성 검증**: 반환된 태스크의 `depends_on` 필드를 따라가며 의존성 체인을 순회하세요
      - 이미 방문한 태스크 ID가 다시 나타나면 순환 의존성입니다
@@ -66,11 +86,11 @@ invocation: user
    - **Note**: 이 추천은 Step 1의 일반 워크트리 확인과 독립적입니다. Step 1에서 "그대로 진행"을 선택했더라도 complex 태스크가 조회되면 재추천합니다.
    - **Note**: 배치 모드(Step 8)에서는 이 추천을 적용하지 않습니다 (배치 시작 전 워크트리 확인이 이미 완료되었으므로).
 
-4. **태스크 상세 표시**
+5. **태스크 상세 표시**
    - 태스크 제목, spec, acceptance criteria를 보여주세요
    - 서브태스크가 있으면 함께 표시하세요
 
-5. **에러 KB 사전 조회**
+6. **에러 KB 사전 조회**
    - 태스크 제목과 spec에서 핵심 키워드(모듈명, 기술명, 에러 유형 등)를 추출하세요
    - Bash 도구로 `vs --json error-kb search "<추출된 키워드>"` 명령을 실행하세요
    - 결과가 있으면:
@@ -78,7 +98,7 @@ invocation: user
      → occurrences >= 3인 에러가 있으면: "반복 패턴입니다. patterns/ 문서 생성을 고려하세요." 추가 안내하세요
    - 결과가 없으면: 조용히 다음 단계로 진행하세요
 
-6. **스코프 규칙 우선순위**
+7. **스코프 규칙 우선순위**
 
    3단계 스코프 규칙이 존재하며, 우선순위는 다음과 같습니다:
    | 우선순위 | 메커니즘 | 동작 |
@@ -91,7 +111,7 @@ invocation: user
    - allowed_files 위반은 WARN이며 FAIL을 발생시키지 않음
    - 상세: verifier 에이전트 문서의 "스코프 규칙 우선순위" 섹션 참조
 
-7. **크로스 플랜 파일 겹침 확인**
+8. **크로스 플랜 파일 겹침 확인**
    - 현재 태스크에 `allowed_files`가 설정되어 있으면:
      1. `vs --json plan list --status active`로 다른 활성 플랜 조회
      2. 각 플랜의 태스크 중 `allowed_files`가 설정된 태스크와 현재 태스크의 `allowed_files`를 비교
@@ -104,7 +124,7 @@ invocation: user
      4. **경고만 표시하고 진행은 차단하지 않습니다** (advisory 수준)
    - `allowed_files`가 없으면 이 단계를 스킵하세요
 
-7. **구현**
+9. **구현**
    - Bash 도구로 `vs --json task update <id> in_progress` 명령을 실행하여 status를 in_progress로 변경하세요
 
    **체크포인트**: `AskUserQuestion`으로 구현 방식을 선택받으세요:
@@ -151,7 +171,7 @@ invocation: user
      - "수정 시도": stash를 복원하고 수동 수정
      - "강제 완료": 현재 상태로 WARN 처리 후 진행
 
-7. **완료 처리**
+10. **완료 처리**
    구현이 끝나면 (에이전트 리포트 수신 또는 직접 구현 완료):
    - 에이전트 status가 BLOCKED인 경우:
      → 차단 사유를 사용자에게 보여주고 대응 방법을 논의하세요
@@ -245,7 +265,6 @@ invocation: user
      → WARN: 리포트를 보여주고 사용자 판단에 따라 `vs --json task update <id> done --has-concerns`
      → FAIL (단일 태스크 모드): 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
      → FAIL (배치 모드): `debugger` 에이전트를 자동 디스패치하세요 (Step 8의 자동 재시도 정책 참조)
-   - Bash 도구로 `vs --json context save --summary "..." --plan-id <plan_id>` 명령을 실행하여 완료 내용을 저장하세요
 
    **백로그 매칭**: 태스크 done 처리 후, 변경 파일과 관련된 백로그 항목이 있는지 확인하세요:
    1. `git diff --name-only HEAD~1`로 변경 파일 목록을 수집하세요
@@ -309,7 +328,7 @@ invocation: user
    - "커밋 정리" → `/vs-commit`
    - "대시보드" → `/vs-dashboard`
 
-8. **배치 실행 모드**
+11. **배치 실행 모드**
 
    남은 todo 태스크를 서브에이전트 기반으로 자동 연속 실행합니다. 각 태스크는 fresh 서브에이전트에서 구현하여 컨텍스트 오염을 방지합니다.
 

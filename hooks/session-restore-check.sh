@@ -86,7 +86,7 @@ fi
 # 컨텍스트 구성
 CONTEXT=""
 if [ "$MATCHED_COUNT" -gt 0 ]; then
-  CONTEXT="현재 브랜치(${CURRENT_BRANCH})의 미커밋 변경사항 ${MATCHED_COUNT}개가 stash에 보존되어 있습니다. /vs-resume으로 복원하세요.\n${MATCHED_DETAILS}"
+  CONTEXT="현재 브랜치(${CURRENT_BRANCH})의 미커밋 변경사항 ${MATCHED_COUNT}개가 stash에 보존되어 있습니다. /vs-next 실행 시 자동으로 복원됩니다.\n${MATCHED_DETAILS}"
 fi
 if [ "$OTHER_COUNT" -gt 0 ]; then
   CONTEXT="${CONTEXT}(다른 브랜치의 stash ${OTHER_COUNT}개 존재)\n"
