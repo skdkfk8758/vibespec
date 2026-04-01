@@ -200,8 +200,7 @@ invocation: user
    - "스펙에 추가" 선택 시: `vs plan edit <plan_id> --append-spec "## Design Review 수정\n{수정 내용}"` 실행
    - "태스크로 생성" 선택 시: 각 수정 항목에 대해 `vs task create --plan <plan_id> --title "디자인 수정: {항목}" --spec "{수정 내용}"` 실행
 
-2. 리포트를 context_log에 저장: `vs context save --summary "[plan-design-review] {등급}: {플랜 제목} — {주요 개선점 요약}"`
-3. `AskUserQuestion`으로 다음 단계 제시:
+2. `AskUserQuestion`으로 다음 단계 제시:
    - "구현 시작" → `/vs-next` 안내
    - "추가 수정" → 특정 차원 재검토
    - "리포트만 저장" → 종료

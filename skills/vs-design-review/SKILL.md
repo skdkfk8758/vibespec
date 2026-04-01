@@ -264,7 +264,6 @@ invocation: user
      - label: "리포트만 저장", description: "결과를 확인만 하고 수정은 나중에 합니다"
 
    - 자동 수정 시: Step 7(수정 루프)로 진행
-   - 리포트 저장 시: 결과를 context에 저장하세요 (`vs context save --summary "[design-review] {등급}: ..."`)
    - DESIGN.md 부분 정의 시: 정의된 섹션만 검증하고, 미정의 카테고리는 SKIP 표시
 
 7. **수정 루프 (Atomic Commit)**

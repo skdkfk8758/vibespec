@@ -144,12 +144,24 @@ description: Internal gate for task completion verification.
 
    **WARN:**
    → 리포트를 사용자에게 보여주세요
-   → **체크포인트**: "검증에 미확인 항목이 있습니다. 완료 처리 / 추가 구현 / 건너뛰기 중 선택해주세요."
+   → **체크포인트**: `AskUserQuestion`으로 선택을 받으세요:
+   ```
+   [1] 완료 처리 → has_concerns: true로 done
+   [2] 추가 구현 → 미확인 항목 구현 후 재검증
+   [3] 건너뛰기
+   선택 (1/2/3):
+   ```
    → 사용자가 "완료 처리"를 선택하면 `has_concerns: true`로 metrics 기록 후 `done` 처리
 
    **FAIL:**
    → 리포트를 사용자에게 보여주세요
-   → **체크포인트**: "검증 실패 항목이 있습니다. 수정 후 재검증 / 강제 완료 / 건너뛰기 중 선택해주세요."
+   → **체크포인트**: `AskUserQuestion`으로 선택을 받으세요:
+   ```
+   [1] 수정 후 재검증 → 실패 항목 수정 후 Step 1부터 재실행
+   [2] 강제 완료 → has_concerns: true로 done
+   [3] 건너뛰기
+   선택 (1/2/3):
+   ```
    → "강제 완료" 선택 시 `has_concerns: true`로 metrics 기록 후 `done` 처리
    → "수정 후 재검증" 선택 시 수정 작업 후 Step 1부터 재실행
 

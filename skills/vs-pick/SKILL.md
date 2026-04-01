@@ -148,7 +148,6 @@ invocation: user
      → PASS: Bash 도구로 `vs task update <id> done --json` 명령을 실행하세요
      → WARN: 리포트를 보여주고 사용자 판단에 따라 done 처리 (Bash 도구로 `vs task update <id> done --json --has-concerns` 명령을 실행하세요)
      → FAIL: 리포트를 보여주고 수정 후 재검증 또는 강제 완료를 사용자에게 선택받으세요
-   - Bash 도구로 `vs context save --json --summary "..."` 명령을 실행하세요. 완료 내용을 저장하세요
 
 
 ## 다음 단계

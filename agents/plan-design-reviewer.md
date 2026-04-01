@@ -52,8 +52,7 @@ vs-plan-design-review SKILL.md의 7개 차원을 동일하게 적용하되, **As
 
 1. 가중 평균으로 Design Score 산출 (SKILL.md의 가중치 테이블 적용)
 2. A~F 등급 부여
-3. context_log에 저장: `vs context save --summary "[plan-design-review] {등급}: {plan_title}"`
-4. 결과 반환:
+3. 결과 반환:
 
 ```json
 {

@@ -438,7 +438,6 @@ invocation: user
 
 9. **결과 확인**
    - Bash 도구로 `vs --json plan show <plan_id>` 명령을 실행하여 생성된 플랜과 태스크 트리를 보여주세요
-   - Bash 도구로 `vs --json context save --summary "..."` 명령을 실행하여 플랜 생성 내용을 저장하세요
    - Step 8에서 이미 다음 단계를 안내하지 않았다면, `/vs-next`로 바로 작업을 시작할 수 있다고 안내하세요
 
 ## 다음 단계

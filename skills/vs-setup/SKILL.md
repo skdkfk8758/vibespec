@@ -44,10 +44,6 @@ VibeSpec을 처음 사용하는 사용자의 초기 설정을 도와줍니다.
    - 사용자에게 첫 플랜을 만들지 물어보세요
    - 원하면 `/vs-plan`을 실행하여 스펙 기반 플랜을 생성하세요
 
-5. **컨텍스트 저장**
-   - Bash 도구로 `vs context save --json --summary "VibeSpec 초기 셋업 완료"` 명령을 실행하세요
-   - 이 컨텍스트는 다음 세션에서 `/vs-resume` 실행 시 자동으로 복원됩니다
-
 ## Troubleshooting
 
 `vs dashboard --json` 실패 시 아래 순서로 원인을 진단하세요:

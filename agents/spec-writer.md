@@ -47,4 +47,3 @@ SDD(Spec-Driven Development) 스펙 작성 전문가입니다.
 스펙 승인 후:
 1. Bash 도구로 `vs plan create --json --title "..." --spec "..."` 실행하여 플랜 생성
 2. Bash 도구로 `vs task create --json --plan <plan_id> --title "..." --spec "..." --acceptance "..."` 실행하여 각 태스크 생성
-3. Bash 도구로 `vs context save --json --summary "..."` 실행하여 스펙 작성 내용 기록

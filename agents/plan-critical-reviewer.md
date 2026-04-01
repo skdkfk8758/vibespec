@@ -98,12 +98,7 @@ AskUserQuestion 없이 자동 판정합니다:
      - 3~4개: D (상당한 개선 필요)
      - 5~6개: F (전면 재검토 필요)
 
-2. context_log에 저장:
-   ```bash
-   vs context save --summary "[plan-critical-review] {등급}: {plan_id} — {total_fixes}건 개선 제안"
-   ```
-
-3. 결과 반환:
+2. 결과 반환:
 
 ```json
 {
