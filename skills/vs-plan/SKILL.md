@@ -39,6 +39,44 @@ invocation: user
    d. 추론 결과를 내부적으로 보관하여 Step 1 인터뷰에서 활용하세요
    e. **Fallback**: 관련 코드를 찾지 못하면 해당 항목을 `[감지실패]`로 표시하고, Step 1 인터뷰에서 기존처럼 직접 질문하세요
 
+   f. **골격 문서 존재 체크**
+      프로젝트 루트에서 4종 골격 문서를 스캔하세요:
+      - PRD.md, DESIGN.md, POLICY.md, ARCHITECTURE.md 존재 여부 확인
+      - 누락 문서가 있으면 안내 표시 (차단하지 않음):
+        ```
+        💡 골격 문서가 누락되었습니다: {누락 문서 목록}
+           /vs-skeleton-init으로 생성하면 플래닝 시 자동 정합성 체크가 활성화됩니다.
+        ```
+      - 존재하는 문서가 1개 이상이면: `resolved_config`의 `modules.skeleton_guard`를 확인하여 Step 3 이후 skeleton-guard 디스패치 여부를 결정하세요
+      - 모든 문서 존재 시: 조용히 진행
+
+0a. **Skeleton Guard 디스패치** (스펙 작성 후, Step 5a 비판적 검토와 병렬)
+
+   **조건** (모두 충족 시):
+   1. `vs --json qa config resolve <plan_id>`의 `modules.skeleton_guard`가 `true`
+   2. 골격 문서가 1개 이상 존재 (Step 0f에서 확인)
+
+   조건 미충족 시 이 단계를 건너뛰세요.
+
+   - 존재하는 골격 문서를 Read로 읽어 `skeleton_docs` 변수에 저장
+   - Agent 도구로 skeleton-guard 디스패치 (run_in_background: true, model: haiku):
+     ```
+     당신은 skeleton-guard 에이전트입니다.
+     agents/skeleton-guard.md의 Execution Process — plan-check 모드를 따라 실행하세요.
+
+     mode: plan-check
+     plan_spec: {생성된 스펙 전문}
+     skeleton_docs: {읽은 골격 문서 내용}
+     ```
+   - 결과를 통합 체크포인트(Step 6)에 "골격 정합성" 섹션으로 표시:
+     ```
+     ### 골격 정합성 (Skeleton Guard)
+     - Verdict: [PASS | WARNING | ALERT | SKIP]
+     - Findings: {건수} (Critical: {N}, Warning: {N}, Info: {N})
+     {ALERT인 경우: "⚠️ Critical 이슈가 감지되었습니다. 스펙을 수정하세요."}
+     ```
+   - ALERT 시 통합 체크포인트에서 "스펙 수정"을 강력 권장 표시
+
 1. **요구사항 인터뷰**
 
    **Ideation 참조**: 인터뷰 시작 전에 Bash 도구로 `vs ideate list --json`을 실행하여 최근 ideation 기록을 확인하세요.

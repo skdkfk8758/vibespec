@@ -255,6 +255,34 @@ invocation: user
        - design 결과를 DB에 기록: `vs --json task update <id> --design-result <skip|clean|warning|alert>`
          (CLI에서 design-result 옵션이 지원되지 않으면 이 기록을 건너뛰세요)
 
+     **Skeleton Guard impl-check 병렬 디스패치** (선택적):
+     verifier/qa-shadow/design-review-light와 동시에, skeleton-guard impl-check도 병렬 디스패치하세요:
+     - 조건 (모두 충족 시):
+       1. `resolved_config`의 `modules.skeleton_guard`가 `true`
+       2. 프로젝트 루트에 POLICY.md가 존재
+     - 조건 미충족 시 이 단계를 건너뛰세요
+     - 존재하는 골격 문서(POLICY.md 필수, 나머지는 있으면 포함)를 Read로 읽기
+     - Agent 도구로 skeleton-guard 디스패치 (run_in_background: true, model: haiku):
+       ```
+       당신은 skeleton-guard 에이전트입니다.
+       agents/skeleton-guard.md의 Execution Process — impl-check 모드를 따라 실행하세요.
+
+       mode: impl-check
+       task: {title, spec, acceptance}
+       changed_files: {변경 파일 목록}
+       skeleton_docs: {읽은 골격 문서 내용}
+       dismissed_warnings: {세션 내 억제된 경고 목록}
+       ```
+     - skeleton-guard 결과 통합:
+       - SKIP → 판정에 영향 없음
+       - PASS → 판정에 영향 없음
+       - WARNING → `done --has-concerns`에 골격 이슈 포함 + 리포트 표시
+         - 각 WARNING에 대해 "이 경고를 이번 세션에서 억제할까요?" 선택 제공 (alert fatigue 방지)
+         - 억제 선택 시 dismissed_warnings 세션 목록에 추가
+       - ALERT → 사용자에게 AskUserQuestion:
+         - "Skeleton Guard에서 Critical 이슈가 발견되었습니다: {요약}. 어떻게 처리할까요?"
+         - 선택지: "수정 후 재검증" / "무시하고 완료" / "태스크 차단"
+
      **Adaptive Planner Watcher** (선택적):
      태스크 완료 판정 후, 플랜 수준의 이상을 감지합니다.
 
@@ -317,6 +345,10 @@ invocation: user
        ### Design Review (design review 실행 시)
        [design verdict: SKIP/CLEAN/WARNING/ALERT — findings 요약, 토큰 준수율]
        (design review 미실행 시: "Design Review 비활성화 — SKIP")
+
+       ### Skeleton Guard (skeleton-guard 실행 시)
+       [skeleton verdict: SKIP/PASS/WARNING/ALERT — findings 요약, 억제된 경고 수]
+       (skeleton-guard 미실행 시: "Skeleton Guard 비활성화 — SKIP")
        ```
      → done 처리 시 verifier 리포트에서 `changed_files_detail`과 `scope_violations` JSON을 추출하여 옵션으로 전달하세요
      → PASS: `vs --json task update <id> done`
