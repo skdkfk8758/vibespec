@@ -320,10 +320,15 @@ argument-hint: "[target-branch]"
 
    충돌이 있었다면, 각 충돌 파일의 해결 기록을 아래 구조로 메모리에 유지하세요:
    ```json
-   [{"file": "src/api/auth.ts", "hunks": 3, "resolution": "ai_merge", "choice_reason": "양쪽 의도를 모두 반영 — ours의 파라미터 추가 + theirs의 async 변환"}]
+   [{"file": "src/api/auth.ts", "hunks": 3, "resolution": "ai_merge", "choice_reason": "양쪽 의도를 모두 반영 — ours의 파라미터 추가 + theirs의 async 변환", "discarded_intent": null}]
    ```
    - `resolution`: `ours`, `theirs`, `ai_merge`, `manual` 중 하나
    - AI 병합을 선택한 경우 `choice_reason`에 통합 근거를 기록하세요
+   - `discarded_intent`: 선택되지 않은 쪽의 의도를 1줄로 요약하세요
+     - `ours` 선택 시: "버려진 theirs 의도: {theirs가 하려던 변경 1줄 요약}"
+     - `theirs` 선택 시: "버려진 ours 의도: {ours가 하려던 변경 1줄 요약}"
+     - `ai_merge` 선택 시: 양쪽 의도를 모두 기록 — "ours 의도: {요약} / theirs 의도: {요약}"
+     - `manual` 선택 시: 해당하는 경우에만 기록 (선택사항)
 
 ### Phase 4.5: Integration Gate
 
@@ -495,7 +500,7 @@ EOF
       - 🟡 `should` (가능하면 확인):
         - 테스트 파일이 없는 변경된 소스 파일 (Phase 2 step 7c에서 식별)
         - `confidence: medium`인 AI 판단
-        - 충돌 해결에서 `ours` 또는 `theirs`를 선택했지만 다른 쪽의 의도도 유효한 경우
+        - 충돌 해결에서 `ours` 또는 `theirs`를 선택했지만 다른 쪽의 의도도 유효한 경우 — `discarded_intent`를 함께 표시하세요
       - 🟢 `info` (참고):
         - `confidence: high`인 기계적 변환
         - 빌드/테스트가 통과한 항목
@@ -524,7 +529,8 @@ EOF
       - ...
 
       ## 충돌 해결 기록
-      {conflict_log가 있을 때만 — 파일별 hunk 수, 선택, 근거}
+      {conflict_log가 있을 때만 — 파일별 hunk 수, 선택, 근거, 버려진 코드 의도}
+      - 🟡 {file} — {resolution} 선택, {discarded_intent} (있을 때만)
 
       ## AI 판단 로그
       {ai_judgments가 있을 때만 — confidence별로 그룹화}
