@@ -1,6 +1,6 @@
 ---
 name: vs-review
-description: Review and edit plan specs interactively.
+description: [Lifecycle] Review and edit plan specs interactively.
 invocation: user
 ---
 

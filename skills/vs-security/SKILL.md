@@ -1,6 +1,6 @@
 ---
 name: vs-security
-description: "OWASP Top 10 security audit for codebase."
+description: "[QA] OWASP Top 10 security audit for codebase."
 invocation: user
 type: workflow
 ---

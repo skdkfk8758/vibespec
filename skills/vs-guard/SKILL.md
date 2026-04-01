@@ -1,6 +1,6 @@
 ---
 name: vs-guard
-description: Enable careful + freeze safety mode. (안전 모드)
+description: [Env] Enable careful + freeze safety mode. (안전 모드)
 invocation: user
 argument-hint: "[on <path>|off|status]"
 ---

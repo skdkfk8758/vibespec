@@ -1,6 +1,6 @@
 ---
 name: vs-backlog
-description: Manage backlog items. (백로그, 할일 관리)
+description: [Lifecycle] Manage backlog items. (백로그, 할일 관리)
 invocation: user
 ---
 

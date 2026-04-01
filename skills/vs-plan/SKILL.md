@@ -1,6 +1,6 @@
 ---
 name: vs-plan
-description: Create spec-driven plans. (플래닝, 계획, 스펙)
+description: [Core] Create spec-driven plans. (플래닝, 계획, 스펙)
 invocation: user
 ---
 

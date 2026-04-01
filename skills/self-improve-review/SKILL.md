@@ -1,6 +1,6 @@
 ---
 name: self-improve-review
-description: "Review and clean up self-improve rules."
+description: "[Learn] Review and clean up self-improve rules."
 invocation: user
 ---
 

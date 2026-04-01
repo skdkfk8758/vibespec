@@ -1,6 +1,6 @@
 ---
 name: error-kb
-description: "Search and record error patterns and solutions."
+description: "[Learn] Search and record error patterns and solutions."
 invocation: user
 ---
 

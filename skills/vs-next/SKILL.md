@@ -1,6 +1,6 @@
 ---
 name: vs-next
-description: Start the next pending task. (다음 태스크)
+description: [Core] Start the next pending task. (다음 태스크)
 invocation: user
 ---
 

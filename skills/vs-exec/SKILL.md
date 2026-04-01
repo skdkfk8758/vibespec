@@ -1,6 +1,6 @@
 ---
 name: vs-exec
-description: Execute all tasks in one session. (일괄 실행)
+description: [Core] Execute all tasks in one session. (일괄 실행)
 invocation: user
 ---
 

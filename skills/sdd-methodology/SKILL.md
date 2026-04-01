@@ -1,6 +1,6 @@
 ---
 name: sdd-methodology
-description: "Use when referencing SDD principles. spec first, code second 철학, 스펙 구조(Overview→Requirements→Data Model→API→Edge Cases→Success Criteria), 스펙 품질 기준을 제공합니다. vs-plan, spec-writer가 참조합니다."
+description: "[Ref] Use when referencing SDD principles. spec first, code second 철학, 스펙 구조(Overview→Requirements→Data Model→API→Edge Cases→Success Criteria), 스펙 품질 기준을 제공합니다. vs-plan, spec-writer가 참조합니다."
 invocation: agent
 type: domain
 ---

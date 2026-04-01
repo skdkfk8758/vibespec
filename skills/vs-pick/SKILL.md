@@ -1,6 +1,6 @@
 ---
 name: vs-pick
-description: Pick a specific task from the plan to start.
+description: [Core] Pick a specific task from the plan to start.
 invocation: user
 ---
 

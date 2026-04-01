@@ -1,6 +1,6 @@
 ---
 name: vs-dashboard
-description: Show project status, progress, and alerts.
+description: [Core] Show project status, progress, and alerts.
 invocation: user
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: vs-plan-verify
-description: Verify completed plan with regression tests.
+description: [QA] Verify completed plan with regression tests.
 invocation: user
 ---
 

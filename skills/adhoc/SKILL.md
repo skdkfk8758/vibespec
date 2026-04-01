@@ -1,6 +1,6 @@
 ---
 name: adhoc
-description: Quick fixes without spec/plan workflow.
+description: [Util] Quick fixes without spec/plan workflow.
 ---
 
 # Ad-hoc 즉시 처리

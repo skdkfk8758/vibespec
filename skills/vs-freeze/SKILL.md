@@ -1,6 +1,6 @@
 ---
 name: vs-freeze
-description: Restrict file edits to a specific directory.
+description: [Env] Restrict file edits to a specific directory.
 invocation: agent
 argument-hint: "[set <path>|off|status]"
 ---

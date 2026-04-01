@@ -1,6 +1,6 @@
 ---
 name: vs-code-review
-description: "Review code changes and detect production bugs."
+description: "[QA] Review code changes and detect production bugs."
 invocation: user
 argument-hint: "[--base <branch>]"
 ---

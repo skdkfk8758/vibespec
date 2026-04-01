@@ -1,6 +1,6 @@
 ---
 name: vs-design-review
-description: "Audit UI implementation against DESIGN.md."
+description: "[Design] Audit UI implementation against DESIGN.md."
 invocation: user
 ---
 

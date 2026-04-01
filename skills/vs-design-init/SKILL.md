@@ -1,6 +1,6 @@
 ---
 name: vs-design-init
-description: "Create project design system via interview."
+description: "[Design] Create project design system via interview."
 invocation: user
 ---
 

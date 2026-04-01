@@ -1,6 +1,6 @@
 ---
 name: vs-qa
-description: Run QA team. Subs: findings/scenarios/status.
+description: [QA] Run QA team. Subs: findings/scenarios/status.
 invocation: user
 ---
 

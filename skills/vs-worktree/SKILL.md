@@ -1,6 +1,6 @@
 ---
 name: vs-worktree
-description: Create and set up an isolated git worktree.
+description: [Env] Create and set up an isolated git worktree.
 invocation: user
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: vs-recap
-description: Review merge results from previous sessions.
+description: [Lifecycle] Review merge results from previous sessions.
 invocation: user
 argument-hint: "[--list | --regenerate | <commit-hash>]"
 ---

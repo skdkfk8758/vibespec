@@ -1,6 +1,6 @@
 ---
 name: vs-commit
-description: Commit changes with task tracing. (커밋)
+description: [Core] Commit changes with task tracing. (커밋)
 invocation: user
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: vs-merge
-description: Squash-merge worktree branch into target.
+description: [Env] Squash-merge worktree branch into target.
 invocation: user
 argument-hint: "[target-branch]"
 ---

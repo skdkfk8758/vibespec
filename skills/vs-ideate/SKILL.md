@@ -1,6 +1,6 @@
 ---
 name: vs-ideate
-description: Structure ideas into specs. (아이디어, 구상)
+description: [Lifecycle] Structure ideas into specs. (아이디어, 구상)
 invocation: user
 argument-hint: "[아이디어 한줄 설명]"
 ---

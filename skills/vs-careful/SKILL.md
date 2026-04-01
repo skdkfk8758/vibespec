@@ -1,6 +1,6 @@
 ---
 name: vs-careful
-description: Block destructive commands via PreToolUse hook.
+description: [Env] Block destructive commands via PreToolUse hook.
 invocation: agent
 argument-hint: "[on|off|status]"
 ---

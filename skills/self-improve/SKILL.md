@@ -1,6 +1,6 @@
 ---
 name: self-improve
-description: "Generate improvement rules from fix/error signals."
+description: "[Learn] Generate improvement rules from fix/error signals."
 invocation: user
 ---
 

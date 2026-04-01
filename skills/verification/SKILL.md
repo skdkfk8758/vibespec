@@ -1,6 +1,6 @@
 ---
 name: verification
-description: Internal gate for task completion verification.
+description: [QA] Internal gate for task completion verification.
 ---
 
 # Task Verification (Internal Gate)

@@ -1,6 +1,6 @@
 ---
 name: vs-acceptance
-description: Verify features via browser and AC checks.
+description: [QA] Verify features via browser and AC checks.
 invocation: user
 argument-hint: "[plan_id] [--url <dev-server-url>]"
 ---

@@ -1,6 +1,6 @@
 ---
 name: vs-update
-description: Update VibeSpec plugin to the latest version.
+description: [Util] Update VibeSpec plugin to the latest version.
 invocation: user
 ---
 

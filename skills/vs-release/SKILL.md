@@ -1,6 +1,6 @@
 ---
 name: vs-release
-description: Release new version with changelog and git tag.
+description: [Lifecycle] Release new version with changelog and git tag.
 invocation: user
 ---
 

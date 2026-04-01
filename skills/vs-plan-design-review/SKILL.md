@@ -1,6 +1,6 @@
 ---
 name: vs-plan-design-review
-description: "Review UI/UX design decisions at plan stage."
+description: "[Design] Review UI/UX design decisions at plan stage."
 invocation: user
 ---
 
