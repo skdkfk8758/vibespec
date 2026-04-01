@@ -126,6 +126,7 @@ describe('QaConfigEngine', () => {
       expect(DEFAULT_QA_CONFIG.modules.shadow).toBe(false);
       expect(DEFAULT_QA_CONFIG.modules.wave_gate).toBe(false);
       expect(DEFAULT_QA_CONFIG.modules.adaptive_planner).toBe(false);
+      expect(DEFAULT_QA_CONFIG.modules.design_review).toBe(false);
       expect(DEFAULT_QA_CONFIG.regression_bonus).toBe(0.2);
     });
   });
@@ -193,6 +194,14 @@ describe('QaConfigEngine', () => {
       expect(PROFILE_PRESETS).toHaveProperty('fullstack');
       expect(PROFILE_PRESETS).toHaveProperty('library');
       expect(PROFILE_PRESETS).toHaveProperty('cli-tool');
+    });
+
+    it('AC06: web-frontend and fullstack presets should enable design_review', () => {
+      expect(PROFILE_PRESETS['web-frontend']!.modules!.design_review).toBe(true);
+      expect(PROFILE_PRESETS['fullstack']!.modules!.design_review).toBe(true);
+      expect(PROFILE_PRESETS['api-server']!.modules!.design_review).toBe(false);
+      expect(PROFILE_PRESETS['library']!.modules!.design_review).toBe(false);
+      expect(PROFILE_PRESETS['cli-tool']!.modules!.design_review).toBe(false);
     });
 
     it('AC06: explicit values should override profile preset', () => {

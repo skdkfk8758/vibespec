@@ -202,11 +202,12 @@ invocation: user
      → 차단 사유를 사용자에게 보여주고 대응 방법을 논의하세요
      → 해결 후 에이전트를 재디스패치하거나 직접 구현하세요
    - 에이전트 status가 DONE 또는 DONE_WITH_CONCERNS인 경우, 또는 직접 구현 완료 시:
+     → **QA config 1회 조회**: `vs --json qa config resolve <plan_id>`를 실행하고 결과를 `resolved_config` 변수에 캐싱하세요. 이후 shadow/design_review/adaptive_planner 조건 확인 시 이 캐싱된 값을 재사용합니다.
      → `verifier` 에이전트를 디스패치하세요 (전달 정보: 태스크, 플랜 컨텍스트, impl_report, scope)
 
      **QA Shadow 병렬 디스패치** (선택적):
      verifier 디스패치와 동시에, qa-shadow 에이전트도 병렬로 디스패치하세요:
-     - 조건: `vs --json qa config resolve <plan_id>`의 `modules.shadow`가 `true`
+     - 조건: `resolved_config`의 `modules.shadow`가 `true`
      - 조건 미충족 시 이 단계를 건너뛰세요
      - **시나리오 수집**: Bash 도구로 `vs --json qa scenario list-by-plan <plan_id> --source seed --task-id <task_id>` 실행하여 이 태스크 관련 seed 시나리오를 조회하세요
      - Agent 도구로 qa-shadow 디스패치 (run_in_background: true, model: haiku):
@@ -227,10 +228,37 @@ invocation: user
        - shadow 결과를 DB에 기록: `vs --json task update <id> --shadow-result <clean|warning|alert>`
          (CLI에서 shadow-result 옵션이 지원되지 않으면 이 기록을 건너뛰세요)
 
+     **Design Review Light 병렬 디스패치** (선택적):
+     verifier/qa-shadow와 동시에, design-review-light 에이전트도 병렬로 디스패치하세요:
+     - 조건 (모두 충족 시):
+       1. `resolved_config`의 `modules.design_review`가 `true`
+       2. 프로젝트 루트에 DESIGN.md가 존재
+       3. 변경 파일 중 UI 파일(`.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.html`)이 1개 이상
+     - 조건 미충족 시 이 단계를 건너뛰세요
+     - **변경 파일 수집**: impl_report.json의 `changed_files`에서 UI 파일을 필터링하거나, `git diff --name-only HEAD~1`에서 추출하세요
+     - Agent 도구로 design-review-light 디스패치 (run_in_background: true, model: haiku):
+       ```
+       당신은 design-review-light 에이전트입니다.
+       agents/design-review-light.md의 Execution Process를 따라 실행하세요.
+
+       task: {title, spec, acceptance}
+       changed_files: {UI 파일 목록}
+       design_md_path: DESIGN.md
+       ```
+     - design review 결과 통합 (shadow 결과와 함께 최종 판정에 반영):
+       - design SKIP → 판정에 영향 없음 (무시)
+       - design CLEAN → 판정에 영향 없음
+       - design WARNING → `done --has-concerns`에 디자인 이슈 포함 + 리포트 표시
+       - design ALERT → 사용자에게 AskUserQuestion:
+         - "Design Review에서 Critical 이슈가 발견되었습니다: {요약}. 어떻게 처리할까요?"
+         - 선택지: "수정 후 재검증" / "무시하고 완료" / "전체 감사 실행 (/vs-design-review)"
+       - design 결과를 DB에 기록: `vs --json task update <id> --design-result <skip|clean|warning|alert>`
+         (CLI에서 design-result 옵션이 지원되지 않으면 이 기록을 건너뛰세요)
+
      **Adaptive Planner Watcher** (선택적):
      태스크 완료 판정 후, 플랜 수준의 이상을 감지합니다.
 
-     - 조건: `vs --json qa config resolve <plan_id>`의 `modules.adaptive_planner`가 `true`
+     - 조건: `resolved_config`의 `modules.adaptive_planner`가 `true`
      - 조건 미충족 시 이 단계를 건너뛰세요
 
      **경량 감지 (DB 쿼리 2회)**:
@@ -285,6 +313,10 @@ invocation: user
        ### QA Shadow (shadow 실행 시)
        [shadow verdict: CLEAN/WARNING/ALERT — findings 요약]
        (shadow 미실행 시: "Shadow 비활성화 — SKIP")
+
+       ### Design Review (design review 실행 시)
+       [design verdict: SKIP/CLEAN/WARNING/ALERT — findings 요약, 토큰 준수율]
+       (design review 미실행 시: "Design Review 비활성화 — SKIP")
        ```
      → done 처리 시 verifier 리포트에서 `changed_files_detail`과 `scope_violations` JSON을 추출하여 옵션으로 전달하세요
      → PASS: `vs --json task update <id> done`
@@ -307,7 +339,7 @@ invocation: user
    5. 매칭 항목이 없으면 이 단계를 조용히 건너뛰세요
 
    **마일스톤 QA 자동 트리거**: 태스크 done 처리 후 QA 실행을 자동 제안합니다.
-   1. `vs --json qa config resolve <plan_id>`로 auto_trigger 설정을 조회하세요
+   1. 캐싱된 `resolved_config`의 `modules.auto_trigger` 설정을 확인하세요 (Step 10 초반에 이미 조회됨)
    2. `auto_trigger.enabled`가 `false`이면 이 단계를 스킵하세요
    3. 플랜 진행률을 계산하세요: `done / (total - skipped) * 100`
    4. `auto_trigger.milestones` 배열의 각 값과 비교하여, 처음 도달한 마일스톤이 있는지 확인하세요
