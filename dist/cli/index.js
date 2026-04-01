@@ -2484,13 +2484,35 @@ var QAScenarioModel = class extends BaseRepository {
       ).run(status, id);
     }
   }
-  listByPlanSource(planId, source) {
+  listByPlan(planId, filters) {
+    const conditions = ["r.plan_id = ?"];
+    const params = [planId];
+    if (filters?.source) {
+      conditions.push("s.source = ?");
+      params.push(filters.source);
+    }
+    if (filters?.category) {
+      conditions.push("s.category = ?");
+      params.push(filters.category);
+    }
+    if (filters?.status) {
+      conditions.push("s.status = ?");
+      params.push(filters.status);
+    }
+    if (filters?.taskId) {
+      conditions.push("(s.related_tasks LIKE ? OR s.related_tasks = ?)");
+      params.push(`%"${filters.taskId}"%`, filters.taskId);
+    }
+    const where = conditions.join(" AND ");
     return this.db.prepare(
       `SELECT s.* FROM qa_scenarios s
        INNER JOIN qa_runs r ON s.run_id = r.id
-       WHERE r.plan_id = ? AND s.source = ?
+       WHERE ${where}
        ORDER BY s.created_at ASC`
-    ).all(planId, source);
+    ).all(...params);
+  }
+  listByPlanSource(planId, source) {
+    return this.listByPlan(planId, { source });
   }
   getStatsByRun(runId) {
     return this.db.prepare(
@@ -5313,6 +5335,22 @@ function registerQualityCommands(program2, getModels) {
     }
     output(scenarios, scenarios.map(
       (s) => `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  ${s.title}`
+    ).join("\n"));
+  }));
+  qaScenarioCmd.command("list-by-plan").argument("<plan_id>", "Plan ID").option("--task-id <taskId>", "Filter by related task ID").option("--source <source>", "Filter by source (seed, shadow, wave, final, manual)").option("--category <cat>", "Filter by category").option("--status <status>", "Filter by status").description("List scenarios for a plan (with optional task/source filters)").action((planId, opts) => withErrorHandler(() => {
+    const { qaScenario } = getQAModels();
+    const scenarios = qaScenario.listByPlan(planId, {
+      taskId: opts.taskId,
+      source: opts.source,
+      category: opts.category,
+      status: opts.status
+    });
+    if (scenarios.length === 0) {
+      output(scenarios, "No scenarios found for this plan.");
+      return;
+    }
+    output(scenarios, scenarios.map(
+      (s) => `${s.id}  [${s.category}]  ${s.status.padEnd(7)}  ${s.priority.padEnd(8)}  src:${s.source ?? "n/a"}  ${s.title}`
     ).join("\n"));
   }));
   const qaFindingCmd = qa.command("finding").description("Manage QA findings");
