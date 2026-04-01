@@ -90,6 +90,23 @@ invocation: user
    - 태스크 제목, spec, acceptance criteria를 보여주세요
    - 서브태스크가 있으면 함께 표시하세요
 
+5a. **Complex 태스크 워크트리 추천**
+   - 선택된 태스크의 `complexity_hint` 필드를 확인하세요
+   - 다음 조건을 **모두** 만족하면 워크트리를 추천하세요:
+     1. `complexity_hint`가 `complex`임
+     2. 현재 워크트리 밖에서 작업 중 (Step 1에서 확인한 결과 활용)
+   - 조건 미충족 시 (complexity_hint가 null/simple/moderate이거나 이미 워크트리 안) 이 단계를 스킵하세요
+   - 추천 시 `AskUserQuestion`으로 안내하세요:
+     - question: "이 태스크는 complex 복잡도로, 여러 파일/모듈을 변경할 수 있습니다. 격리 환경을 강력히 권장합니다. 워크트리를 생성하시겠습니까?"
+     - header: "Complex 태스크"
+     - multiSelect: false
+     - 선택지:
+       - label: "워크트리 생성", description: "`/vs-worktree`로 격리 환경을 세팅합니다"
+       - label: "그대로 진행", description: "현재 환경에서 작업합니다"
+   - "워크트리 생성" 선택 시: `/vs-worktree`를 안내하세요
+   - "그대로 진행" 선택 시: 체크포인트로 진행하세요
+   - **Note**: 이 추천은 Step 1의 일반 워크트리 확인과 독립적입니다. Step 1에서 "그대로 진행"을 선택했더라도 complex 태스크면 재추천합니다.
+
    **체크포인트**: "선택한 태스크: {title}. 시작 / 다른 태스크 선택 / 취소 중 선택해주세요."
 
 6. **구현**
