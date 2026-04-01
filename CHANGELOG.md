@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.1] - 2026-04-01
+
+### 새 기능
+- **hooks**: SessionStart 버전 체크 hook 추가 (351c22a)
+
+### 버그 수정
+- **hooks**: worktree-guard에서 CLAUDE_TOOL_INPUT unbound variable 수정 (7ff3ab8)
+
 ## [0.31.0] - 2026-04-01
 
 ### 새 기능
