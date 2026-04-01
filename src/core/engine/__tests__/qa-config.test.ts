@@ -6,6 +6,7 @@ import {
   resolveConfig,
   deepMerge,
   PROFILE_PRESETS,
+  type ResolvedQaConfig,
 } from '../qa-config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -258,6 +259,63 @@ describe('QaConfigEngine', () => {
         expect(warnSpy).toHaveBeenCalled();
       } finally {
         warnSpy.mockRestore();
+        fs.rmSync(tmpDir, { recursive: true });
+      }
+    });
+  });
+
+  // --- auto_trigger module tests ---
+
+  describe('auto_trigger module schema', () => {
+    it('AC01: qa-config.ts에 auto_trigger 모듈이 Zod 스키마에 정의되어 있어야 한다', () => {
+      // auto_trigger가 modules 내부에 Zod 스키마로 정의되어 있어야 한다
+      const configWithAutoTrigger = {
+        modules: {
+          auto_trigger: {
+            enabled: true,
+            milestones: [50, 100],
+          },
+        },
+      };
+      const result = QaRulesSchema.parse(configWithAutoTrigger);
+      expect(result.modules!.auto_trigger).toBeDefined();
+      expect(result.modules!.auto_trigger!.enabled).toBe(true);
+      expect(result.modules!.auto_trigger!.milestones).toEqual([50, 100]);
+    });
+
+    it('AC01: auto_trigger는 optional이어야 한다', () => {
+      const configWithoutAutoTrigger = {
+        modules: {
+          lint_check: true,
+        },
+      };
+      const result = QaRulesSchema.parse(configWithoutAutoTrigger);
+      expect(result.modules!.auto_trigger).toBeUndefined();
+    });
+
+    it('AC02: 기본값이 enabled: true, milestones: [50, 100]이어야 한다', () => {
+      expect(DEFAULT_QA_CONFIG.modules.auto_trigger).toBeDefined();
+      expect(DEFAULT_QA_CONFIG.modules.auto_trigger.enabled).toBe(true);
+      expect(DEFAULT_QA_CONFIG.modules.auto_trigger.milestones).toEqual([50, 100]);
+    });
+
+    it('AC03: resolveConfig가 auto_trigger 필드를 포함하여 반환해야 한다', () => {
+      const config = resolveConfig({ rawConfig: { ...DEFAULT_QA_CONFIG } });
+      expect(config.modules.auto_trigger).toBeDefined();
+      expect(config.modules.auto_trigger.enabled).toBe(true);
+      expect(config.modules.auto_trigger.milestones).toEqual([50, 100]);
+    });
+
+    it('AC03: YAML 오버라이드로 auto_trigger를 변경할 수 있어야 한다', () => {
+      const tmpDir = fs.mkdtempSync('/tmp/qa-config-test-');
+      const tmpFile = path.join(tmpDir, 'qa-rules.yaml');
+      fs.writeFileSync(tmpFile, 'modules:\n  auto_trigger:\n    enabled: false\n    milestones: [25, 75]\n');
+
+      try {
+        const config = resolveConfig({ yamlPath: tmpFile });
+        expect(config.modules.auto_trigger.enabled).toBe(false);
+        expect(config.modules.auto_trigger.milestones).toEqual([25, 75]);
+      } finally {
         fs.rmSync(tmpDir, { recursive: true });
       }
     });

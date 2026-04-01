@@ -66,6 +66,12 @@ export const QaRulesSchema = z.object({
       shadow: z.boolean().optional(),
       wave_gate: z.boolean().optional(),
       adaptive_planner: z.boolean().optional(),
+      auto_trigger: z
+        .object({
+          enabled: z.boolean().default(true),
+          milestones: z.array(z.number()).default([50, 100]),
+        })
+        .optional(),
     })
     .optional(),
   regression_bonus: z.number().optional(),
@@ -92,6 +98,10 @@ export interface ResolvedQaConfig {
     shadow: boolean;
     wave_gate: boolean;
     adaptive_planner: boolean;
+    auto_trigger: {
+      enabled: boolean;
+      milestones: number[];
+    };
   };
   regression_bonus: number;
   custom_rules?: Array<z.infer<typeof CustomRuleSchema>>;
@@ -112,6 +122,10 @@ export const DEFAULT_QA_CONFIG: ResolvedQaConfig = {
     shadow: false,
     wave_gate: false,
     adaptive_planner: false,
+    auto_trigger: {
+      enabled: true,
+      milestones: [50, 100],
+    },
   },
   regression_bonus: 0.2,
 };
@@ -130,6 +144,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       shadow: true,
       wave_gate: false,
       adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] },
     },
     severity_weights: { critical: 0.4, high: 0.3, medium: 0.2, low: 0.1 },
   },
@@ -144,6 +159,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       shadow: false,
       wave_gate: true,
       adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] },
     },
     severity_weights: { critical: 0.5, high: 0.3, medium: 0.15, low: 0.05 },
   },
@@ -158,6 +174,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       shadow: true,
       wave_gate: true,
       adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] },
     },
   },
   library: {
@@ -171,6 +188,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       shadow: false,
       wave_gate: false,
       adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] },
     },
     regression_bonus: 0.3,
   },
@@ -185,6 +203,7 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       shadow: false,
       wave_gate: false,
       adaptive_planner: false,
+      auto_trigger: { enabled: true, milestones: [50, 100] },
     },
   },
 };
@@ -343,7 +362,9 @@ export function validateConfig(config: ResolvedQaConfig): ValidationResult {
 
   // 3. All modules false warning
   if (config.modules) {
-    const allFalse = Object.values(config.modules).every((v) => v === false);
+    const allFalse = Object.entries(config.modules)
+      .filter(([key]) => key !== 'auto_trigger')
+      .every(([, v]) => v === false);
     if (allFalse) {
       warnings.push('All modules are disabled. No QA checks will be performed.');
     }

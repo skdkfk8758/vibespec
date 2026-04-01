@@ -251,6 +251,29 @@ invocation: user
       - "같이 처리" 선택 시: 해당 백로그 항목의 내용을 기반으로 즉시 작업 수행 후 `vs --json backlog update <id> --status done`
    5. 매칭 항목이 없으면 이 단계를 조용히 건너뛰세요
 
+   **마일스톤 QA 자동 트리거**: 태스크 done 처리 후 QA 실행을 자동 제안합니다.
+   1. `vs --json qa config resolve <plan_id>`로 auto_trigger 설정을 조회하세요
+   2. `auto_trigger.enabled`가 `false`이면 이 단계를 스킵하세요
+   3. 플랜 진행률을 계산하세요: `done / (total - skipped) * 100`
+   4. `auto_trigger.milestones` 배열의 각 값과 비교하여, 처음 도달한 마일스톤이 있는지 확인하세요
+   5. 해당 플랜의 `qa_overrides`에서 `dismissed_milestones`를 확인하세요:
+      - 이미 해당 마일스톤이 dismissed_milestones에 있으면 → 스킵
+      - 이미 해당 마일스톤에서 QA Run(`vs --json qa run list --plan <plan_id>`)이 있으면 → 스킵
+   6. 마일스톤에 도달했고 위 조건에 해당하지 않으면 `AskUserQuestion`으로 제안하세요:
+      - question: "플랜 진행률이 {N}%에 도달했습니다. QA를 실행하시겠습니까?"
+      - header: "QA 자동 트리거"
+      - multiSelect: false
+      - 선택지 (100% 마일스톤일 때):
+        - label: "QA 실행 (강력 권장)", description: "incremental QA를 실행합니다 (shadow CLEAN 태스크는 스킵)"
+        - label: "나중에", description: "이 마일스톤에서 QA를 건너뜁니다"
+      - 선택지 (50% 등 중간 마일스톤일 때):
+        - label: "QA 실행", description: "incremental QA를 실행합니다"
+        - label: "나중에", description: "이 마일스톤에서 QA를 건너뜁니다"
+   7. "QA 실행" 선택 시: `vs --json qa run create <plan_id> --trigger auto` 후 `/vs-qa` 안내
+   8. "나중에" 선택 시: `vs --json plan update <plan_id> --qa-overrides '{"dismissed_milestones": [기존 + 현재 마일스톤]}'`으로 기록
+   - **Note**: 배치 모드(Step 8)에서는 Wave 완료 시점에만 이 체크를 수행하세요 (매 태스크마다 X)
+   - **Note**: shadow ALERT가 2회 이상 누적된 경우에도 targeted QA를 제안하세요
+
    **플랜 완료 감지**: 태스크 done 처리 후 `vs --json task next <plan_id>`를 실행하세요.
    - 남은 todo 태스크가 없으면 (모든 태스크가 done/skipped/blocked):
      → 다음 체크포인트에서 "플랜 검증" 선택지를 **우선 표시**하세요

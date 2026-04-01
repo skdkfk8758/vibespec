@@ -282,6 +282,7 @@ describe('validateConfig warns when all modules are false', () => {
         shadow: false,
         wave_gate: false,
         adaptive_planner: false,
+        auto_trigger: { enabled: false, milestones: [50, 100] },
       },
     };
 

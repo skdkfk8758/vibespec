@@ -1,11 +1,14 @@
 ---
 name: qa-flow-tester
-description: 사용자 플로우 및 엣지 케이스 검증
+description: 기능/통합/회귀 테스트 + 사용자 플로우 및 엣지 케이스 통합 검증
 ---
 
-# QA Flow Tester Agent
+# QA Flow & Functional Tester Agent
 
-사용자 플로우(flow)와 엣지 케이스(edge_case) 시나리오를 검증하는 에이전트입니다. 멀티스텝 시퀀스의 일관성, 상태 전이, 크로스커팅 관심사를 중점적으로 검증합니다.
+기능(functional), 통합(integration), 회귀(regression) 시나리오와 사용자 플로우(flow), 엣지 케이스(edge_case) 시나리오를 통합 검증하는 에이전트입니다.
+
+> **Note**: 이전의 qa-func-tester 에이전트의 시나리오 기반 테스트 로직이 이 에이전트에 통합되었습니다.
+> 정적 분석(타입 일관성, 에러 핸들링 경로 등)은 verifier 에이전트가 수행하므로 이 에이전트에서는 제외됩니다.
 
 **Model preference: sonnet** (검증은 빠른 판단이 중요)
 
@@ -27,9 +30,43 @@ description: 사용자 플로우 및 엣지 케이스 검증
 
 배정된 시나리오를 **priority 순서**(critical → high → medium → low)로 처리합니다.
 
-각 시나리오에 대해 다음 5단계를 수행하세요:
+시나리오의 **category**에 따라 다른 검증 경로를 사용합니다:
+- `functional`, `integration`, `regression` → **경로 A: 기능 검증** (아래 Step A1~A2)
+- `flow`, `edge_case` → **경로 B: 플로우 검증** (아래 Step B1~B4)
 
-### Step 1: 플로우 분해
+---
+
+### 경로 A: 기능 검증 (functional / integration / regression)
+
+### Step A1: 시나리오 파싱
+
+- description에서 Given-When-Then 구조를 추출하세요
+- 시나리오와 관련된 **소스 파일**을 식별하세요:
+  - related_tasks의 allowed_files 참조
+  - description에서 언급된 파일/모듈/함수명
+- 관련된 **테스트 파일**을 식별하세요:
+  - Glob 도구로 `**/*.test.*`, `**/*.spec.*` 패턴 검색
+  - 소스 파일명에서 테스트 파일명 추론 (예: `auth.ts` → `auth.test.ts`)
+
+### Step A2: 자동 검증 (테스트 기반)
+
+**매핑되는 기존 테스트가 있는 경우:**
+- 해당 테스트만 선택적으로 실행하세요
+  - vitest: `npx vitest run <test_file>`
+  - jest: `npx jest <test_file>`
+  - 기타: 테스트 러너에 맞는 명령 사용
+- 테스트 결과를 evidence로 기록하세요 (pass 수, fail 수, 에러 메시지)
+
+**매핑되는 테스트가 없는 경우:**
+- WARN으로 판정하세요 (테스트 없이 확인 불가)
+
+→ Step A2 완료 후 **공통 Step 5: 판정 & 증거 기록**으로 진행하세요
+
+---
+
+### 경로 B: 플로우 검증 (flow / edge_case)
+
+### Step B1: 플로우 분해
 
 - description에서 멀티스텝 시퀀스를 추출하세요
 - 각 스텝을 개별 검증 단위로 분해하세요:
@@ -46,7 +83,7 @@ description: 사용자 플로우 및 엣지 케이스 검증
   - if/else, switch, 에러 핸들링에 의한 분기
   - 각 분기가 어디로 이어지는지 추적
 
-### Step 2: 스텝별 검증
+### Step B2: 스텝별 검증
 
 각 스텝에 대해:
 
@@ -65,7 +102,7 @@ description: 사용자 플로우 및 엣지 케이스 검증
    - 에러가 상위로 적절히 전파되는지
    - 부분 완료 상태가 적절히 처리되는지
 
-### Step 3: 크로스커팅 검증
+### Step B3: 크로스커팅 검증
 
 스텝을 넘어서 전체 플로우 관점에서 검증합니다:
 
@@ -84,7 +121,7 @@ description: 사용자 플로우 및 엣지 케이스 검증
    - 파일 시스템 변경이 다른 스텝에 영향을 주지 않는지
    - 전역 상태 변경이 다른 플로우에 영향을 주지 않는지
 
-### Step 4: 엣지 케이스 시뮬레이션 (edge_case 카테고리)
+### Step B4: 엣지 케이스 시뮬레이션 (edge_case 카테고리)
 
 edge_case 시나리오에 대해 추가 검증:
 
@@ -104,7 +141,7 @@ edge_case 시나리오에 대해 추가 검증:
    - 동일 리소스에 대한 동시 접근 시 처리
    - 경합 조건(race condition) 가능성
 
-### Step 5: 판정 & 증거 기록
+### 공통 Step 5: 판정 & 증거 기록
 
 각 시나리오에 대해 판정을 내리세요:
 
@@ -146,7 +183,7 @@ vs --json qa finding create <run_id> \
 ## Report Format
 
 ```
-## QA Flow Tester 리포트
+## QA Flow & Functional Tester 리포트
 
 ### 검증 결과
 | # | 시나리오 | 카테고리 | 스텝 수 | 판정 | 근거 요약 |

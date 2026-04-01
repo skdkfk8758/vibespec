@@ -37,6 +37,27 @@ argument-hint: "[target-branch]"
 
 5. **클린 확인**: `git status --porcelain`으로 미커밋 변경사항 체크. 있으면 **중단**하고 커밋 또는 stash를 먼저 하라고 안내합니다.
 
+### Phase 1.5: Pre-merge QA 게이트
+
+머지 전에 QA 실행 여부를 확인합니다.
+
+1. 워크트리와 연결된 플랜을 확인하세요 (`vs --json plan list --status active`에서 `worktree_name`이 현재 워크트리와 일치하는 플랜)
+2. 플랜이 있으면 `vs --json qa config resolve <plan_id>`로 `auto_trigger` 설정을 조회하세요
+3. `auto_trigger.enabled`가 `false`이면 이 단계를 스킵하세요
+4. `vs --json qa run list --plan <plan_id>`로 최근 completed QA Run을 확인하세요:
+   - **QA Run이 없으면**: QA 제안
+   - **QA Run이 있지만 risk_score ≥ 0.5이면**: 재실행 제안
+   - **QA Run이 있고 risk_score < 0.5이면**: 스킵
+5. QA 제안 시 `AskUserQuestion`으로 안내하세요:
+   - question: "머지 전 QA를 실행하시겠습니까? {QA Run 없으면: 'QA가 한 번도 실행되지 않았습니다.' / risk_score 높으면: '최근 QA risk score가 {score}로 높습니다.'}"
+   - header: "Pre-merge QA"
+   - multiSelect: false
+   - 선택지:
+     - label: "QA 실행 (권장)", description: "머지 전 incremental QA를 실행합니다"
+     - label: "머지 진행", description: "QA 없이 머지를 계속합니다"
+6. "QA 실행" → `/vs-qa` 실행 후 머지 플로우로 복귀
+7. "머지 진행" → Phase 2로 진행 (강제 차단하지 않음)
+
 ### Phase 2: Research
 
 이 단계가 가장 중요합니다. 커밋 메시지 품질을 위해 변경사항을 깊이 이해해야 합니다.

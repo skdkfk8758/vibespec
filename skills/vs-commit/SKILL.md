@@ -142,12 +142,19 @@ EOF
 커밋 완료 후, 활성 플랜이 있으면 남은 태스크를 확인하세요:
 - `vs --json task next <plan_id>`를 Bash 도구로 실행하세요
 - 남은 todo 태스크가 없으면 (모든 태스크가 done/skipped/blocked):
+  1. `vs --json qa config resolve <plan_id>`로 auto_trigger 설정을 조회하세요
+  2. auto_trigger 연동:
+     - `auto_trigger.enabled`가 `true`이고 `qa_overrides.dismissed_milestones`에 100이 **없으면**:
+       → 선택지의 "플랜 검증" label을 **"플랜 검증 (강력 권장)"**으로 표시
+       → description에 "QA 자동 트리거 설정에 의한 권장"을 추가
+     - `auto_trigger.enabled`가 `false`이거나 `dismissed_milestones`에 100이 **있으면**:
+       → 기존 동작 유지 ("플랜 검증 (권장)")
   → **체크포인트**: `AskUserQuestion`으로 플랜 완료 흐름을 제시하세요:
   - question: "모든 태스크가 완료되었습니다. 플랜 검증을 진행할까요?"
   - header: "플랜 완료 감지"
   - multiSelect: false
   - 선택지:
-    - label: "플랜 검증 (권장)", description: "vs-qa → vs-plan-verify 순서로 플랜 전체를 검증합니다"
+    - label: "{위에서 결정된 라벨}", description: "vs-qa → vs-plan-verify 순서로 플랜 전체를 검증합니다 {auto_trigger 연동 문구}"
     - label: "나중에", description: "플랜 검증 없이 종료합니다"
   - "플랜 검증" → `/vs-qa` 실행 후 → `/vs-plan-verify` 실행
 - 남은 태스크가 있으면 이 Phase를 건너뛰세요

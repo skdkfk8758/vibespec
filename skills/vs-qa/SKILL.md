@@ -7,8 +7,15 @@ invocation: user
 # QA 에이전트 팀 실행
 
 프로젝트의 플랜을 대상으로 QA 에이전트 팀을 실행합니다.
-qa-coordinator가 시나리오를 생성하고, qa-func-tester/qa-flow-tester가 병렬 검증하며,
+qa-coordinator가 시나리오를 생성하고, qa-flow-tester(통합)가 검증하며,
 qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
+
+> **경량화**: 기존 6개 에이전트(coordinator, func-tester, flow-tester, acceptance-tester, security-auditor, reporter)에서 3개(coordinator, flow-tester, reporter)로 축소되었습니다.
+> - func-tester → flow-tester에 통합 (category별 자동 분기)
+> - security-auditor → `/vs-security` 스킬에 위임
+> - acceptance-tester → `/vs-acceptance` 스킬에 위임
+>
+> **auto_trigger**: 이 스킬을 수동으로 실행할 수도 있지만, `auto_trigger` 설정이 활성화되어 있으면 vs-next/vs-exec에서 마일스톤(50%, 100%) 도달 시 자동으로 QA 실행을 제안합니다.
 
 ## When to Use
 
@@ -122,8 +129,8 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
      4. 추론된 라우트 목록을 coordinator에 `affected_routes`로 전달
      5. coordinator는 해당 라우트에 집중하여 시나리오를 생성
    - targeted 선택 시 추가 질문: 대상 태스크 선택
-   - visual 선택 시: mode를 `visual`로 설정. coordinator가 기존 func/flow 테스터와 함께 qa-acceptance-tester도 디스패치합니다
-   - design-verification 선택 시: mode를 `design-verification`으로 설정. coordinator가 design verification 시나리오만 생성하여 qa-acceptance-tester에게 위임합니다. func/flow 테스터는 디스패치하지 않습니다
+   - visual 선택 시: mode를 `visual`로 설정. coordinator가 flow-tester 실행 후 `/vs-acceptance` 실행을 안내합니다
+   - design-verification 선택 시: mode를 `design-verification`으로 설정. coordinator가 design verification 시나리오를 생성하고 `/vs-acceptance` 실행을 안내합니다
    - delta 선택 시:
      - `vs --json qa run list --plan <plan_id>`로 이전 QA Run에서 pass된 seed/shadow/wave 시나리오 수를 확인
      - "이전 QA에서 {N}개 시나리오가 이미 통과했습니다. 미검증 영역만 실행합니다." 안내
@@ -171,7 +178,7 @@ qa-reporter가 이슈를 정리하고 수정 플랜을 생성합니다.
 
        agents/qa-coordinator.md의 Execution Process를 따라 실행하세요.
        ```
-   - coordinator가 내부적으로 qa-func-tester, qa-flow-tester, qa-reporter를 디스패치합니다
+   - coordinator가 내부적으로 qa-flow-tester + qa-reporter를 디스패치합니다 (경량화)
 
 8. **결과 대기 & 리포트 표시**
    - coordinator의 최종 리포트를 사용자에게 표시하세요
