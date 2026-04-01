@@ -115,7 +115,7 @@ the user has approved it.
 - 스킬 우선순위 체계: 사용자 지시 > Superpowers 스킬 > 기본 시스템 프롬프트
 
 **VibeSpec 현황:**
-- vs-setup/vs-resume가 있지만 "스킬 사용 규칙" 자체를 강제하는 메타 스킬이 없음
+- vs-setup가 있지만 "스킬 사용 규칙" 자체를 강제하는 메타 스킬이 없음
 - 각 스킬의 트리거 조건이 description에 있지만, 통합 라우팅 로직이 없음
 
 **개선 방향:**
@@ -173,7 +173,7 @@ the user has approved it.
 | **에러 학습** | error-kb + self-improve + self-improve-review | 없음 |
 | **안전 가드** | careful + freeze + guard 3단계 | 없음 |
 | **백로그 관리** | vs-backlog으로 사전 관리 | 없음 |
-| **세션 연속성** | vs-resume + vs-dashboard + context_log | 없음 |
+| **세션 연속성** | session-stash 훅 + vs-next stash 복원 + vs-dashboard | 없음 |
 | **디자인 시스템** | vs-design-init + vs-design-review + DESIGN.md | 없음 |
 | **커밋 추적성** | vs-commit으로 태스크 ID 자동 포함 | 없음 |
 

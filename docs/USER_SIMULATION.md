@@ -677,7 +677,7 @@ guardrail-status.sh → 안전장치 비활성 (워크트리 외부)
 ```
 
 ```
-> /vs-resume
+> /vs-next
 ```
 
 ```
@@ -831,7 +831,7 @@ QA를 재실행하여 수정을 확인할까요?
 │                                                         │
 │  (Claude Code 시작 → SessionStart hooks 자동 실행)      │
 │                                                         │
-│  /vs-resume          ← 어제 작업 복원                   │
+│  /vs-next            ← 어제 작업 복원 + 다음 태스크      │
 │       │                                                 │
 │  /vs-plan            ← 새 기능이면 스펙부터             │
 │       │                 (/vs-ideate로 아이디어 정리 가능)│

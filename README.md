@@ -52,8 +52,7 @@ Skills, Hooks가 자동으로 설치됩니다.
 | `/vs-setup` | 초기 설정 및 SDD 워크플로우 안내 |
 | `/vs-plan` | 스펙 작성 → 플랜 생성 → 태스크 분해 |
 | `/vs-dashboard` | 활성 플랜 진행률, 알림, 속도 통계 |
-| `/vs-resume` | 이전 세션 컨텍스트 복원 |
-| `/vs-next` | 다음 태스크 가져와서 작업 시작 |
+| `/vs-next` | 다음 태스크 가져와서 작업 시작 (세션 복원 포함) |
 | `/vs-pick` | 태스크 목록에서 선택하여 작업 시작 |
 | `/vs-exec` | 서브에이전트 없이 플랜 전체 순차 실행 |
 | `/vs-review` | 스펙/태스크를 인터랙티브 선택하여 에디터에서 확인·수정 |
@@ -99,11 +98,10 @@ Skills, Hooks가 자동으로 설치됩니다.
 ## SDD Workflow
 
 ```
-1. /vs-resume     → 이전 세션 복원 (stash 자동 감지)
-2. /vs-plan       → 스펙 작성 + 태스크 분해
-3. /vs-next       → 태스크 하나씩 구현
-4. /vs-dashboard  → 진행 현황 확인
-5. 반복
+1. /vs-plan       → 스펙 작성 + 태스크 분해
+2. /vs-next       → 태스크 하나씩 구현 (세션 시작 시 stash 자동 복원)
+3. /vs-dashboard  → 진행 현황 확인
+4. 반복
 ```
 
 ### Worktree Workflow
@@ -117,7 +115,7 @@ Skills, Hooks가 자동으로 설치됩니다.
 ### Session Safety Net
 
 세션 종료 시 미커밋 변경사항이 있으면 자동으로 `git stash`에 보존됩니다.
-다음 세션 시작 시 자동으로 감지되어 `/vs-resume`으로 복원할 수 있습니다.
+다음 세션에서 `/vs-next` 실행 시 자동으로 감지되어 복원됩니다.
 
 ## CLI Commands
 
