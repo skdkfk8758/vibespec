@@ -9,6 +9,7 @@ import { registerAuxiliaryCommands } from './commands/auxiliary.js';
 import { registerKnowledgeCommands } from './commands/knowledge.js';
 import { registerQualityCommands } from './commands/quality.js';
 import { registerGenerationCommands } from './commands/generation.js';
+import { registerCodexCommands } from './commands/codex.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -58,6 +59,9 @@ registerQualityCommands(program, initModels);
 
 // ── ideate (→ commands/generation.ts) ────────────────────────────────
 registerGenerationCommands(program, initModels);
+
+// ── codex (→ commands/codex.ts) ──────────────────────────────────────
+registerCodexCommands(program, initModels);
 
 // ── backlog (→ commands/backlog.ts) ──────────────────────────────────
 registerBacklogCommands(program, initModels);
