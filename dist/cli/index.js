@@ -126,6 +126,9 @@ function formatPlanTree(plan, tasks) {
   const doneTasks = countTasksByStatus(tasks, ["done", "skipped"]);
   const pct = totalTasks === 0 ? 0 : Math.round(doneTasks / totalTasks * 100);
   lines.push(`${plan.title} (${plan.status})${" ".repeat(5)}${pct}%`);
+  if (plan.running_summary) {
+    lines.push(`Running Summary: ${plan.running_summary.split("\n")[0]}...`);
+  }
   for (let i = 0; i < tasks.length; i++) {
     const isLast = i === tasks.length - 1;
     renderNode(tasks[i], "", isLast, lines);
@@ -456,8 +459,8 @@ function resolveDbPath() {
 }
 function getDb(dbPath) {
   if (_db) return _db;
-  const path4 = dbPath ?? resolveDbPath();
-  _db = new Database(path4);
+  const path6 = dbPath ?? resolveDbPath();
+  _db = new Database(path6);
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   return _db;
@@ -616,6 +619,7 @@ function initSchema(db) {
       branch      TEXT,
       worktree_name TEXT,
       qa_overrides TEXT,
+      running_summary TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -857,6 +861,7 @@ function applyMigrations(db) {
         branch      TEXT,
         worktree_name TEXT,
         qa_overrides TEXT,
+        running_summary TEXT,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
       );
@@ -890,6 +895,7 @@ function applyMigrations(db) {
         error_kb_id       TEXT,
         title             TEXT NOT NULL,
         category          TEXT NOT NULL,
+        rule_type         TEXT NOT NULL DEFAULT 'preventive' CHECK(rule_type IN ('preventive', 'procedural')),
         rule_path         TEXT NOT NULL,
         occurrences       INTEGER DEFAULT 0,
         prevented         INTEGER DEFAULT 0,
@@ -1193,6 +1199,16 @@ function applyMigrations(db) {
       db.exec("ALTER TABLE tasks ADD COLUMN shadow_result TEXT CHECK(shadow_result IN ('clean', 'warning', 'alert'))");
     }
     db.pragma("user_version = 13");
+  }
+  if (version < 14) {
+    if (!hasColumn(db, "plans", "running_summary")) {
+      db.exec("ALTER TABLE plans ADD COLUMN running_summary TEXT");
+    }
+    const hasSIR = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='self_improve_rules'").get();
+    if (hasSIR && !hasColumn(db, "self_improve_rules", "rule_type")) {
+      db.exec("ALTER TABLE self_improve_rules ADD COLUMN rule_type TEXT NOT NULL DEFAULT 'preventive' CHECK(rule_type IN ('preventive', 'procedural'))");
+    }
+    db.pragma("user_version = 14");
   }
 }
 
@@ -2190,6 +2206,17 @@ var PlanModel = class extends BaseRepository {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     return this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`).all(...params);
   }
+  updateRunningSummary(id, summary) {
+    try {
+      const plan = this.requireById(id);
+      this.db.prepare("UPDATE plans SET running_summary = ? WHERE id = ?").run(summary, id);
+      this.events?.record("plan", id, "updated", JSON.stringify({ running_summary: plan.running_summary }), JSON.stringify({ running_summary: summary }));
+      return this.requireById(id);
+    } catch (err) {
+      console.error(`[updateRunningSummary] failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
   update(id, fields) {
     const plan = this.requireById(id);
     const query = buildUpdateQuery("plans", id, fields);
@@ -2908,10 +2935,9 @@ var AgentHandoffModel = class {
 };
 
 // src/core/models/wave-gate.ts
-var WaveGateModel = class {
-  db;
+var WaveGateModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "wave_gates");
   }
   create(planId, waveNumber, taskIds, verdict, summary, findingsCount) {
     const id = generateId();
@@ -2919,11 +2945,11 @@ var WaveGateModel = class {
       `INSERT INTO wave_gates (id, plan_id, wave_number, task_ids, verdict, summary, findings_count)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(id, planId, waveNumber, JSON.stringify(taskIds), verdict, summary ?? null, findingsCount ?? 0);
-    return this.get(id);
+    return this.getById(id);
   }
+  /** @deprecated Use getById() instead */
   get(id) {
-    const row = this.db.prepare("SELECT * FROM wave_gates WHERE id = ?").get(id);
-    return row ?? null;
+    return this.getById(id);
   }
   listByPlan(planId) {
     return this.db.prepare(
@@ -2933,10 +2959,9 @@ var WaveGateModel = class {
 };
 
 // src/core/models/plan-revision.ts
-var PlanRevisionModel = class {
-  db;
+var PlanRevisionModel = class extends BaseRepository {
   constructor(db) {
-    this.db = db;
+    super(db, "plan_revisions");
   }
   create(planId, triggerType, triggerSource, description, changes) {
     const id = generateId();
@@ -2944,11 +2969,11 @@ var PlanRevisionModel = class {
       `INSERT INTO plan_revisions (id, plan_id, trigger_type, trigger_source, description, changes)
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(id, planId, triggerType, triggerSource, description, changes);
-    return this.get(id);
+    return this.getById(id);
   }
+  /** @deprecated Use getById() instead */
   get(id) {
-    const row = this.db.prepare("SELECT * FROM plan_revisions WHERE id = ?").get(id);
-    return row ?? null;
+    return this.getById(id);
   }
   listByPlan(planId) {
     return this.db.prepare(
@@ -2956,10 +2981,7 @@ var PlanRevisionModel = class {
     ).all(planId);
   }
   updateStatus(id, status) {
-    this.db.prepare(
-      "UPDATE plan_revisions SET status = ? WHERE id = ?"
-    ).run(status, id);
-    return this.get(id);
+    return this.update(id, { status });
   }
 };
 
@@ -4090,7 +4112,7 @@ function formatMergeReportSummary(r) {
 function formatMergeReportList(reports) {
   if (reports.length === 0) return "\uB9AC\uD3EC\uD2B8\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.";
   const header = "| # | \uB0A0\uC9DC | \uBE0C\uB79C\uCE58 | \uCEE4\uBC0B | Checklist | \uCDA9\uB3CC |";
-  const sep = "|---|------|--------|------|-----------|------|";
+  const sep2 = "|---|------|--------|------|-----------|------|";
   const rows = reports.map((r, i) => {
     const date = r.created_at.split("T")[0] || r.created_at.split(" ")[0];
     const must = r.review_checklist.filter((c) => c.level === "must").length;
@@ -4099,7 +4121,7 @@ function formatMergeReportList(reports) {
     const conflicts = r.conflict_log?.length ?? 0;
     return `| ${i + 1} | ${date} | ${r.source_branch} \u2192 ${r.target_branch} | ${r.commit_hash.slice(0, 8)} | \u{1F534}${must} \u{1F7E1}${should} \u{1F7E2}${info} | ${conflicts} |`;
   });
-  return [header, sep, ...rows].join("\n");
+  return [header, sep2, ...rows].join("\n");
 }
 
 // src/core/engine/error-kb.ts
@@ -4512,17 +4534,20 @@ var SelfImproveEngine = class {
     const rulePath = path2.join(RULES_DIR, filename);
     const fullPath = path2.join(this.projectRoot, rulePath);
     const enforcement = newRule.enforcement ?? "SOFT";
-    fs2.writeFileSync(fullPath, newRule.ruleContent, "utf-8");
+    const ruleType = newRule.rule_type ?? "preventive";
+    const content = ruleType === "procedural" ? this.buildProceduralTemplate(newRule.title, newRule.ruleContent) : newRule.ruleContent;
+    fs2.writeFileSync(fullPath, content, "utf-8");
     const now = (/* @__PURE__ */ new Date()).toISOString();
     this.db.prepare(`
-      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, enforcement, created_at)
-      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
-    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, enforcement, now);
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_type, rule_path, occurrences, prevented, status, enforcement, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, ruleType, rulePath, enforcement, now);
     return {
       id,
       error_kb_id: newRule.error_kb_id ?? null,
       title: newRule.title,
       category: newRule.category,
+      rule_type: ruleType,
       rule_path: rulePath,
       occurrences: 0,
       prevented: 0,
@@ -4533,15 +4558,20 @@ var SelfImproveEngine = class {
       last_triggered_at: null
     };
   }
-  listRules(status) {
+  listRules(status, type) {
+    const conditions = [];
+    const params = [];
     if (status) {
-      return this.db.prepare(
-        "SELECT * FROM self_improve_rules WHERE status = ? ORDER BY created_at DESC"
-      ).all(status);
+      conditions.push("status = ?");
+      params.push(status);
     }
-    return this.db.prepare(
-      "SELECT * FROM self_improve_rules ORDER BY status ASC, created_at DESC"
-    ).all();
+    if (type) {
+      conditions.push("rule_type = ?");
+      params.push(type);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const order = status ? "ORDER BY created_at DESC" : "ORDER BY status ASC, created_at DESC";
+    return this.db.prepare(`SELECT * FROM self_improve_rules ${where} ${order}`).all(...params);
   }
   getRule(id) {
     return this.db.prepare(
@@ -4678,6 +4708,19 @@ var SelfImproveEngine = class {
     this.db.prepare(
       "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
     ).run(now, id);
+  }
+  buildProceduralTemplate(title, content) {
+    return `# ${title}
+
+## When to Use
+${content}
+
+## Procedure
+(\uC808\uCC28\uB97C \uAE30\uC220\uD558\uC138\uC694)
+
+## Pitfalls
+(\uC54C\uB824\uC9C4 \uD568\uC815\uC744 \uAE30\uC220\uD558\uC138\uC694)
+`;
   }
   getRulesDir() {
     return this.rulesDir;
@@ -4981,6 +5024,20 @@ var SeverityAdjustmentSchema = z2.object({
   new_severity: z2.enum(["critical", "high", "medium", "low"]),
   condition: z2.string()
 });
+var SkipWhenSchema = z2.object({
+  task_tags: z2.array(z2.string()).optional(),
+  changed_files_only: z2.array(z2.string()).optional()
+});
+var ActivateWhenSchema = z2.object({
+  completed_tasks_gte: z2.number().optional(),
+  changed_files_pattern: z2.string().optional()
+});
+var ModuleConditionalConfigSchema = z2.object({
+  enabled: z2.boolean(),
+  skip_when: SkipWhenSchema.optional(),
+  activate_when: ActivateWhenSchema.optional()
+});
+var ConditionalModuleSchema = z2.union([z2.boolean(), ModuleConditionalConfigSchema]).optional();
 var QaRulesSchema = z2.object({
   profile: z2.enum(["web-frontend", "api-server", "fullstack", "library", "cli-tool"]).optional(),
   risk_thresholds: z2.object({
@@ -5001,9 +5058,12 @@ var QaRulesSchema = z2.object({
     dead_code: z2.boolean().optional(),
     dependency_audit: z2.boolean().optional(),
     complexity_analysis: z2.boolean().optional(),
-    shadow: z2.boolean().optional(),
+    shadow: ConditionalModuleSchema,
+    flow_tester: ConditionalModuleSchema,
     wave_gate: z2.boolean().optional(),
     adaptive_planner: z2.boolean().optional(),
+    design_review: z2.boolean().optional(),
+    skeleton_guard: z2.boolean().optional(),
     auto_trigger: z2.object({
       enabled: z2.boolean().default(true),
       milestones: z2.array(z2.number()).default([50, 100])
@@ -5024,9 +5084,12 @@ var DEFAULT_QA_CONFIG = {
     dead_code: true,
     dependency_audit: true,
     complexity_analysis: true,
-    shadow: false,
+    shadow: { enabled: false },
+    flow_tester: { enabled: false },
     wave_gate: false,
     adaptive_planner: false,
+    design_review: false,
+    skeleton_guard: false,
     auto_trigger: {
       enabled: true,
       milestones: [50, 100]
@@ -5043,9 +5106,12 @@ var PROFILE_PRESETS = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: true,
+      shadow: { enabled: true },
+      flow_tester: { enabled: false },
       wave_gate: false,
       adaptive_planner: false,
+      design_review: true,
+      skeleton_guard: true,
       auto_trigger: { enabled: true, milestones: [50, 100] }
     },
     severity_weights: { critical: 0.4, high: 0.3, medium: 0.2, low: 0.1 }
@@ -5058,9 +5124,12 @@ var PROFILE_PRESETS = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: false,
+      shadow: { enabled: false },
+      flow_tester: { enabled: false },
       wave_gate: true,
       adaptive_planner: false,
+      design_review: false,
+      skeleton_guard: false,
       auto_trigger: { enabled: true, milestones: [50, 100] }
     },
     severity_weights: { critical: 0.5, high: 0.3, medium: 0.15, low: 0.05 }
@@ -5073,9 +5142,12 @@ var PROFILE_PRESETS = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: true,
+      shadow: { enabled: true },
+      flow_tester: { enabled: false },
       wave_gate: true,
       adaptive_planner: false,
+      design_review: true,
+      skeleton_guard: true,
       auto_trigger: { enabled: true, milestones: [50, 100] }
     }
   },
@@ -5087,9 +5159,12 @@ var PROFILE_PRESETS = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: false,
+      shadow: { enabled: false },
+      flow_tester: { enabled: false },
       wave_gate: false,
       adaptive_planner: false,
+      design_review: false,
+      skeleton_guard: false,
       auto_trigger: { enabled: true, milestones: [50, 100] }
     },
     regression_bonus: 0.3
@@ -5102,9 +5177,12 @@ var PROFILE_PRESETS = {
       dead_code: true,
       dependency_audit: false,
       complexity_analysis: true,
-      shadow: false,
+      shadow: { enabled: false },
+      flow_tester: { enabled: false },
       wave_gate: false,
       adaptive_planner: false,
+      design_review: false,
+      skeleton_guard: false,
       auto_trigger: { enabled: true, milestones: [50, 100] }
     }
   }
@@ -5150,11 +5228,33 @@ function filterExpiredIgnoreRules(config) {
   });
   return { ...config, ignore: filtered };
 }
+function normalizeConditionalModule(value, defaultValue) {
+  if (value === void 0) return defaultValue;
+  if (typeof value === "boolean") return { enabled: value };
+  return value;
+}
+function normalizeConditionalModules(config) {
+  return {
+    ...config,
+    modules: {
+      ...config.modules,
+      shadow: normalizeConditionalModule(
+        config.modules.shadow,
+        DEFAULT_QA_CONFIG.modules.shadow
+      ),
+      flow_tester: normalizeConditionalModule(
+        config.modules.flow_tester,
+        DEFAULT_QA_CONFIG.modules.flow_tester
+      )
+    }
+  };
+}
 function resolveConfig(options = {}) {
   const { planId, db, yamlPath, rawConfig } = options;
   let config = { ...DEFAULT_QA_CONFIG };
   if (rawConfig) {
     config = { ...rawConfig };
+    config = normalizeConditionalModules(config);
     return filterExpiredIgnoreRules(config);
   }
   const effectiveYamlPath = yamlPath ?? ".claude/qa-rules.yaml";
@@ -5174,6 +5274,7 @@ function resolveConfig(options = {}) {
     } catch {
     }
   }
+  config = normalizeConditionalModules(config);
   config = filterExpiredIgnoreRules(config);
   return config;
 }
@@ -5197,7 +5298,11 @@ function validateConfig(config) {
     }
   }
   if (config.modules) {
-    const allFalse = Object.entries(config.modules).filter(([key]) => key !== "auto_trigger").every(([, v]) => v === false);
+    const allFalse = Object.entries(config.modules).filter(([key]) => key !== "auto_trigger").every(([, v]) => {
+      if (typeof v === "boolean") return v === false;
+      if (typeof v === "object" && v !== null && "enabled" in v) return !v.enabled;
+      return false;
+    });
     if (allFalse) {
       warnings.push("All modules are disabled. No QA checks will be performed.");
     }
@@ -5622,6 +5727,185 @@ ${log.summary}`);
   });
 }
 
+// src/core/engine/codex-detect.ts
+import * as fs6 from "fs";
+import * as path4 from "path";
+import * as os from "os";
+import { execSync as execSync2 } from "child_process";
+var CODEX_PLUGIN_PATH = ".claude/plugins/marketplaces/openai-codex/plugins/codex";
+var CODEX_AGENT_FILE = "agents/codex-rescue.md";
+var CODEX_COMPANION_FILE = "scripts/codex-companion.mjs";
+var CodexDetector = class {
+  cache = null;
+  detect() {
+    if (this.cache) return this.cache;
+    try {
+      const result = this.performDetection();
+      this.cache = result;
+      return result;
+    } catch {
+      const fallback = { available: false, authenticated: false };
+      this.cache = fallback;
+      console.warn("[codex-detect] Detection failed, returning unavailable");
+      return fallback;
+    }
+  }
+  clearCache() {
+    this.cache = null;
+  }
+  performDetection() {
+    const pluginPath = path4.join(os.homedir(), CODEX_PLUGIN_PATH);
+    if (!fs6.existsSync(pluginPath)) return { available: false, authenticated: false };
+    if (!fs6.existsSync(path4.join(pluginPath, CODEX_AGENT_FILE))) return { available: false, authenticated: false };
+    try {
+      fs6.accessSync(path4.join(pluginPath, CODEX_COMPANION_FILE), fs6.constants.R_OK);
+    } catch {
+      return { available: false, authenticated: false };
+    }
+    return { available: true, authenticated: this.checkAuthentication(), plugin_path: pluginPath };
+  }
+  checkAuthentication() {
+    try {
+      const output2 = execSync2("codex setup --status", { encoding: "utf-8", timeout: 5e3, stdio: ["pipe", "pipe", "pipe"] });
+      const lower = output2.toLowerCase();
+      return lower.includes("authenticated") || lower.includes("ready") || lower.includes("ok");
+    } catch {
+      try {
+        return fs6.existsSync(path4.join(os.homedir(), ".codex", "auth.json"));
+      } catch {
+        return false;
+      }
+    }
+  }
+};
+
+// src/core/engine/codex-prompt-builder.ts
+import * as fs7 from "fs";
+import * as path5 from "path";
+var SENSITIVE_PATTERNS = [/^\.env$/i, /^\.env\..+$/i, /secret/i, /credential/i, /\.key$/i, /\.pem$/i, /api[_-]?key/i];
+function isSensitiveFile(filePath) {
+  const normalized = path5.normalize(filePath);
+  const basename4 = path5.basename(normalized);
+  return SENSITIVE_PATTERNS.some((p) => p.test(basename4)) || normalized.split(path5.sep).some((seg) => SENSITIVE_PATTERNS.some((p) => p.test(seg)));
+}
+function buildCodexPrompt(finding, projectRoot, errorKB) {
+  if (!finding.affected_files) {
+    return { prompt: "", included_files: [], excluded_sensitive_files: [], escalation: { finding_id: finding.id, reason: "Finding has no affected_files specified" } };
+  }
+  const files = finding.affected_files.split(",").map((f) => f.trim()).filter((f) => f.length > 0);
+  const includedFiles = [];
+  const excludedSensitiveFiles = [];
+  const snippets = [];
+  for (const file of files) {
+    if (isSensitiveFile(file)) {
+      excludedSensitiveFiles.push(file);
+      continue;
+    }
+    const fullPath = path5.resolve(projectRoot, file);
+    if (!fs7.existsSync(fullPath)) continue;
+    try {
+      const content = fs7.readFileSync(fullPath, "utf-8");
+      includedFiles.push(file);
+      snippets.push(`### ${file}
+\`\`\`
+${content}
+\`\`\``);
+    } catch {
+      continue;
+    }
+  }
+  if (includedFiles.length === 0) {
+    return { prompt: "", included_files: [], excluded_sensitive_files: excludedSensitiveFiles, escalation: { finding_id: finding.id, reason: "None of the affected_files exist or all are sensitive" } };
+  }
+  const sections = [
+    `## Bug Report
+**Title:** ${finding.title}
+**Severity:** ${finding.severity}
+**Category:** ${finding.category}`,
+    `## Description
+${finding.description}`
+  ];
+  if (finding.fix_suggestion) sections.push(`## Suggested Fix
+${finding.fix_suggestion}`);
+  sections.push(`## Affected Files
+${snippets.join("\n\n")}`);
+  if (errorKB) {
+    try {
+      const results = errorKB.search(finding.title);
+      if (results.length > 0) sections.push(`## Previous Solutions (Error KB)
+${results.map((r) => `- **${r.title}**: ${r.solution ?? "N/A"}`).join("\n")}`);
+    } catch {
+    }
+  }
+  sections.push("## Instructions\nFix the bug described above. Only modify the affected files. Run tests after fixing.");
+  return { prompt: sections.join("\n\n"), included_files: includedFiles, excluded_sensitive_files: excludedSensitiveFiles };
+}
+
+// src/core/engine/codex-integration-db.ts
+var CREATE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS codex_integrations (
+  id TEXT PRIMARY KEY,
+  finding_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  codex_thread_id TEXT NOT NULL DEFAULT '',
+  attempt INTEGER NOT NULL DEFAULT 1 CHECK(attempt >= 1 AND attempt <= 3),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','verifying','passed','failed','escalated')),
+  touched_files TEXT NOT NULL DEFAULT '[]',
+  verification_result TEXT CHECK(verification_result IN ('PASS','WARN','FAIL') OR verification_result IS NULL),
+  error_kb_entry_id TEXT,
+  escalation_summary TEXT,
+  prompt_context TEXT NOT NULL DEFAULT '',
+  fallback_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`;
+function initCodexIntegrationSchema(db) {
+  db.exec(CREATE_TABLE_SQL);
+}
+function getByFindingId(db, findingId) {
+  return db.prepare("SELECT * FROM codex_integrations WHERE finding_id = ? ORDER BY created_at DESC LIMIT 1").get(findingId) ?? null;
+}
+function listByRunId(db, runId) {
+  return db.prepare("SELECT * FROM codex_integrations WHERE run_id = ? ORDER BY created_at").all(runId);
+}
+
+// src/cli/commands/codex.ts
+function registerCodexCommands(program2, _getModels) {
+  const codex = program2.command("codex").description("Codex plugin integration");
+  codex.command("detect").option("--invalidate-cache", "Invalidate cache and re-detect").description("Detect Codex plugin availability and auth status").action((opts) => withErrorHandler(() => {
+    const detector = new CodexDetector();
+    if (opts.invalidateCache) detector.clearCache();
+    const result = detector.detect();
+    output(result, result.available ? `Codex: available, ${result.authenticated ? "authenticated" : "NOT authenticated"}${result.plugin_path ? ` (${result.plugin_path})` : ""}` : "Codex: not available");
+  }));
+  const qa = program2.commands.find((c) => c.name() === "qa");
+  if (!qa) return;
+  const autofix = qa.command("autofix").description("Codex-powered autofix for QA findings");
+  autofix.command("status").argument("<finding_id>", "Finding ID").description("Show autofix status for a finding").action((findingId) => withErrorHandler(() => {
+    const db = initDb();
+    initCodexIntegrationSchema(db);
+    const record = getByFindingId(db, findingId);
+    if (!record) return outputError(`No autofix record for finding: ${findingId}`);
+    output(record, `Autofix ${findingId}: status=${record.status}, attempt=${record.attempt}, verification=${record.verification_result ?? "pending"}`);
+  }));
+  autofix.command("list").argument("<run_id>", "QA Run ID").option("--severity <levels>", "Filter by severity (comma-separated)", "critical,high").description("List autofix records for a QA run").action((runId, _opts) => withErrorHandler(() => {
+    const db = initDb();
+    initCodexIntegrationSchema(db);
+    const records = listByRunId(db, runId);
+    output(records, records.length > 0 ? `${records.length} autofix record(s) for run ${runId}` : `No autofix records for run ${runId}`);
+  }));
+  autofix.command("dry-run").argument("<finding_id>", "Finding ID").description("Generate Codex prompt without executing (dry run)").action((findingId) => withErrorHandler(() => {
+    const m = initModels();
+    const finding = m.qaFindingModel.getById(findingId);
+    if (!finding) return outputError(`Finding not found: ${findingId}`);
+    const result = buildCodexPrompt(finding, process.cwd());
+    if (result.escalation) return outputError(`Cannot generate prompt: ${result.escalation.reason}`);
+    output(result, `[DRY RUN] Prompt for ${findingId}:
+
+${result.prompt.substring(0, 500)}${result.prompt.length > 500 ? "\n... (truncated)" : ""}`);
+  }));
+}
+
 // src/cli/index.ts
 var require3 = createRequire2(import.meta.url);
 var pkg = require3("../../package.json");
@@ -5648,6 +5932,7 @@ registerGovernanceCommands(program, initModels);
 registerKnowledgeCommands(program, initModels);
 registerQualityCommands(program, initModels);
 registerGenerationCommands(program, initModels);
+registerCodexCommands(program, initModels);
 registerBacklogCommands(program, initModels);
 program.parse();
 //# sourceMappingURL=index.js.map

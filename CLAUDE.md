@@ -10,3 +10,7 @@
 - `skeleton-evolve` — 플랜 완료 시 자동 개선 제안
 
 문서 계층: PRD > POLICY > ARCHITECTURE > DESIGN (충돌 시 상위 우선)
+
+## 금지 패턴
+
+- **git stash 자동화 금지**: hooks.json에 git stash를 자동 실행하는 훅(Stop, SessionStart 등)을 등록하지 말 것. 세션 종료 시 자동 stash는 작업 파일 소실을 유발함. worktree dirty check만 허용.
