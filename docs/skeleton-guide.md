@@ -31,16 +31,78 @@ PRD (비즈니스) > POLICY (제약) > ARCHITECTURE (구현) > DESIGN (표현)
 3. 초안 확인 → "생성"
 4. 완료! 4종 문서가 프로젝트 루트에 생성됨
 
-### 기존 프로젝트
+### 기존 프로젝트 (마이그레이션)
 
 ```
 /vs-skeleton-init
 ```
 
 1. 시스템이 **자동으로 기존 프로젝트 감지** (package.json + src/ + git history)
-2. 입력 소스 → **"마이그레이션 (추천)"** 선택
-3. package.json, 디렉토리 구조, README에서 **자동 역추론**
-4. 추론 결과를 확인/수정만 하면 완료
+2. **모노레포 자동 감지** (packages/ + pnpm-workspace.yaml 등)
+3. 입력 소스 → **"마이그레이션 (추천)"** 선택
+4. package.json, 디렉토리 구조, README에서 **자동 역추론**
+5. 모노레포면 **환경 관리 정책** 추가 질문 (루트 통합 / 패키지별 분리)
+6. 추론 결과를 확인/수정만 하면 완료
+
+### 멀티소스 하이브리드 입력
+
+인터뷰 중 **어떤 질문에서든** 다양한 소스를 자유롭게 혼합할 수 있습니다:
+
+```
+시스템: "프로젝트의 핵심 비전은?"
+사용자: "docs/planning.md 읽어봐"              ← 파일 자동 감지
+
+시스템: "보안 정책은?"
+사용자: "#security 채널 최근 스레드 참고"        ← Slack 자동 감지
+
+시스템: "디자인 방향은?"
+사용자: "https://figma.com/file/abc123 이거"    ← Figma 자동 감지
+
+시스템: "기술 스택은?"
+사용자: "TypeScript + Next.js + Supabase"       ← 직접 텍스트
+```
+
+지원 소스:
+
+| 소스 | 감지 방식 | 예시 |
+|------|----------|------|
+| 로컬 파일 | 경로 또는 확장자 | `docs/prd.md`, `spec.yaml` |
+| PDF | `*.pdf` | `docs/planning.pdf` |
+| 이미지 | `*.png`, `*.jpg` | `mockup.png` (디자인 추출) |
+| 웹 URL | `http://...` | 아무 웹페이지 |
+| Slack | `#채널`, Slack URL | `#dev-planning` |
+| GitHub | `#번호`, GitHub URL | `#45` (이슈) |
+| Figma | `figma.com/` URL | 디자인 토큰 추출 |
+| Pencil | `*.pen` | 디자인 변수 추출 |
+
+MCP/도구 미연결 시 "직접 입력해주세요"로 fallback합니다.
+
+### 모노레포 환경 관리
+
+모노레포 프로젝트가 감지되면 POLICY.md에 **Environment Management** 섹션이 자동 포함됩니다:
+
+```
+## Environment Management
+
+### 환경변수 관리 전략
+- 관리 위치: 루트 .env에서 통합 관리
+- .env — 공통 기본값
+- .env.local — 로컬 오버라이드 (git 제외)
+- packages/*/ 에는 .env 금지
+
+### 금지 사항
+- 패키지 내부 독립 .env 생성 금지
+- 하드코딩 환경변수 금지
+- 루트 .env에 시크릿 직접 기록 금지
+```
+
+**skeleton-guard가 자동으로 감시하는 환경 관리 규칙:**
+
+| 규칙 | 감지 | Severity |
+|------|------|----------|
+| I-04 | 패키지 내부 `.env` 생성 | Warning |
+| I-05 | 하드코딩 환경변수 (포트, URL 등) | Warning |
+| P-04 | 플랜에서 패키지별 독립 환경 제안 (POLICY 위반) | Warning |
 
 ### 건강도 확인
 

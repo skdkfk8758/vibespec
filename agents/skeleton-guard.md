@@ -75,6 +75,14 @@ ARCHITECTURE.md가 존재하면 아래 규칙을 적용합니다.
      { rule_id: "A-02", severity: "warning", message: "새로운 데이터 흐름 도입 감지: '{흐름 설명}'. ARCHITECTURE.md Data Flow 섹션 업데이트를 권장합니다." }
      ```
 
+#### Rule P-04: 모노레포 환경 관리 불일치 (Warning)
+1. POLICY.md에 `## Environment Management` 섹션이 존재하고 "루트 통합 관리"가 정의된 경우에만 적용
+2. plan_spec에서 패키지별 독립 환경 구성을 언급하면 (예: "각 서비스별 .env", "패키지 독립 설정"):
+   - → WARNING:
+   ```
+   { rule_id: "P-04", severity: "warning", message: "Environment Management 불일치: POLICY에 '루트 통합 관리'가 정의되어 있으나 스펙이 패키지별 독립 환경을 제안합니다." }
+   ```
+
 ### Phase 3: 판정
 
 ```
@@ -201,6 +209,25 @@ PRD (비즈니스 결정) > POLICY (제약 조건) > ARCHITECTURE (구현 결정
    - 매칭 시 → WARNING:
    ```
    { rule_id: "I-03", severity: "warning", file: "{파일경로}", message: "Dependencies Policy 위반: 금지 의존성 '{패키지명}' 사용. 대안: '{POLICY에 명시된 대안}'" }
+   ```
+
+#### Rule I-04: 패키지 내부 .env 생성 (Warning) — 모노레포 전용
+1. POLICY.md에 `## Environment Management` 섹션이 존재하고 "루트 통합 관리" 또는 "패키지 내부 .env 금지"가 정의된 경우에만 적용
+2. changed_files에서 `packages/*/.env*` 또는 `apps/*/.env*` 패턴 매칭
+   - 매칭 시 → WARNING:
+   ```
+   { rule_id: "I-04", severity: "warning", file: "{파일경로}", message: "Environment Management 위반: 패키지 내부에 .env 파일이 생성되었습니다. POLICY에 따라 루트에서 통합 관리하세요." }
+   ```
+
+#### Rule I-05: 하드코딩 환경변수 (Warning)
+1. POLICY.md에 `## Environment Management` 또는 `## Security Policy`에서 "하드코딩 금지"가 정의된 경우 적용
+2. changed_files에서 아래 패턴을 Grep:
+   - `localhost:\d{4}` (포트 하드코딩, 테스트 파일 제외)
+   - `http://` + IP 주소 (localhost 제외)
+   - 환경별 URL 직접 기입 (`staging.`, `prod.`, `dev.` 포함 URL)
+   - 매칭 시 → WARNING:
+   ```
+   { rule_id: "I-05", severity: "warning", file: "{파일경로}", line: {라인}, message: "Environment Management 위반: 환경변수로 관리해야 할 값이 하드코딩되었습니다. process.env.{추천변수명}을 사용하세요." }
    ```
 
 ### Phase 2: DESIGN 위임

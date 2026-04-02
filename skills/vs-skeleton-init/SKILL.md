@@ -6,7 +6,7 @@ invocation: user
 
 # Skeleton Init (골격 문서 초기화)
 
-프로젝트의 핵심 골격 문서 4종(PRD.md, DESIGN.md, POLICY.md, ARCHITECTURE.md)을 인터뷰 기반으로 생성합니다.
+프로젝트의 핵심 골격 문서 4종(PRD.md, DESIGN.md, POLICY.md, ARCHITECTURE.md)을 인터뷰 기반으로 생성합니다. 인터뷰 중 파일, URL, Slack, 이미지 등 다양한 소스를 자유롭게 혼합하여 입력할 수 있습니다.
 
 ## When to Use
 
@@ -23,148 +23,187 @@ invocation: user
 ### Phase 0: 프로젝트 상태 스캔
 
 1. **동시 실행 잠금 확인**
-   - 프로젝트 루트에 `.skeleton.lock` 존재 여부 확인
-   - 존재하면: "다른 vs-skeleton-init 프로세스가 실행 중입니다." 출력 후 종료
+   - `.skeleton.lock` 존재 시: "다른 vs-skeleton-init 프로세스가 실행 중입니다." 출력 후 종료
    - 없으면: `.skeleton.lock` 생성 (Phase 3 완료 또는 중단 시 삭제)
 
 2. **이전 세션 복원 확인**
-   - `.skeleton.tmp` 존재 여부 확인
-   - 존재하면: JSON 파싱하여 phase, completed_docs, migration_mode를 읽기
-     → `AskUserQuestion`으로 복원 여부 확인:
-     - question: "이전 세션에서 {completed_docs 수}개 문서까지 진행되었습니다. 이어서 진행할까요?"
-     - header: "세션 복원"
-     - 선택지:
-       - label: "이어서 진행", description: "이전 세션의 응답을 복원합니다"
-       - label: "처음부터", description: "이전 세션을 삭제하고 새로 시작합니다"
+   - `.skeleton.tmp` 존재 시: AskUserQuestion으로 "이어서 진행" / "처음부터" 선택
 
 3. **4종 골격 문서 존재 여부 스캔**
-   - PRD.md, DESIGN.md, POLICY.md, ARCHITECTURE.md 존재 여부 확인
-   - 결과를 테이블로 표시
+   - PRD.md, DESIGN.md, POLICY.md, ARCHITECTURE.md 존재 여부 → 테이블 표시
 
 4. **마이그레이션 감지**
-   - 3가지 조건: package.json 존재 + src/ 존재 + git log 10개 이상
-   - 모두 충족 → migration_mode = true
-   - 미충족 → migration_mode = false
+   - 조건: package.json + src/ + git log 10개 이상 → migration_mode = true
 
-5. **유사 문서 감지**
+5. **모노레포 감지**
+   - 아래 중 하나라도 충족 시 monorepo_mode = true:
+     - `packages/` 또는 `apps/` 디렉토리 존재
+     - package.json에 `workspaces` 필드 존재
+     - `pnpm-workspace.yaml` 존재
+     - `turbo.json` 또는 `nx.json` 존재
+   - 감지 시: "모노레포 프로젝트가 감지되었습니다. 환경 관리 정책을 함께 설정합니다." 표시
+
+6. **유사 문서 감지**
    - `docs/architecture*`, `docs/prd*`, `CONTRIBUTING.md`, README.md 내 관련 섹션 탐색
-   - 발견 시 테이블로 표시
 
-6. **Pencil(.pen) 파일 감지**
-   - `**/*.pen` 존재 여부 확인
-   - 존재하면 안내, 없으면 스킵
+7. **Pencil(.pen) 파일 감지**
+   - `**/*.pen` 존재 시 안내, 없으면 스킵
 
-### Phase 1: 입력 소스 선택
+### Phase 1: 시작 분기
 
-1. **입력 소스 선택** (`AskUserQuestion`)
-   - 신규: (A) 직접 인터뷰 / (B) 기획서 텍스트 / (C) 파일 경로
-   - 마이그레이션: (D) 코드베이스 역추론 + 인터뷰 보완 (추천)
+마이그레이션 모드인 경우에만 분기합니다. 그 외에는 바로 Phase 2로 진행합니다.
 
-2. **기획서 텍스트 입력** ("기획서 텍스트" 선택 시)
-   - 텍스트 100자 미만 시 추가 입력 요청 (EC02)
-   - 4종 문서 섹션에 자동 분배:
-     - 비전/목표/사용자 → PRD.md
-     - 기술/스택/보안 → POLICY.md
-     - 구조/모듈/흐름 → ARCHITECTURE.md
-     - 디자인/UI/색상 → DESIGN.md
+- **migration_mode = true**: AskUserQuestion으로 선택
+  - "마이그레이션 (추천)": 코드베이스 역추론 + Phase 2 인터뷰 보완
+  - "직접 인터뷰": 역추론 없이 Phase 2 진행
+- **migration_mode = false**: 바로 Phase 2로
 
-3. **마이그레이션 역추론** ("마이그레이션" 선택 시)
-   - **민감 파일 제외**: .env, .env.*, *.secret, credentials.*, .npmrc, .yarnrc, *.key, *.pem, *.p12, *.jks, *.cert, id_rsa*, *.pub, .aws/*, .gcp/*, .azure/*, service-account*.json, *.log, node_modules/, .git/objects/
-   - **코드베이스 분석** (병렬 실행):
-     - package.json → Tech Stack, Dependencies → POLICY.md, ARCHITECTURE.md
-     - tsconfig.json/eslint → Naming Convention → POLICY.md
-     - 디렉토리 구조 → Module Structure → ARCHITECTURE.md
-     - README.md → Vision, Target Users → PRD.md
-     - 유사 문서 → 해당 골격 문서에 병합 제안
-   - **민감 정보 마스킹** (EC11): API 키/토큰 패턴 감지 → `[MASKED]` 치환
+**마이그레이션 역추론** (선택 시):
+- 민감 파일 제외 (기존 목록 유지)
+- 코드베이스 분석 (병렬): package.json, tsconfig, eslint, 디렉토리 구조, README.md
+- 모노레포 분석 (monorepo_mode = true 시):
+  - `pnpm-workspace.yaml` / `package.json workspaces` → 패키지 구조 추출
+  - 루트 `.env*` 파일 존재 여부 확인
+  - 각 패키지의 독립 `.env` 존재 여부 확인 → 있으면 "루트 통합 권장" 안내
+- 민감 정보 마스킹 (API 키/토큰 → `[MASKED]`)
+- 역추론 결과를 Phase 2에서 미리 채움
 
-4. **문서별 생성/스킵 선택** (`AskUserQuestion`, multiSelect: true)
+**문서별 생성/스킵 선택** (AskUserQuestion, multiSelect: true)
 
-5. **세션 상태 저장** (`.skeleton.tmp` JSON)
+### Phase 2: 4종 문서별 인터뷰 (멀티소스 하이브리드)
 
-### Phase 2: 4종 문서별 인터뷰
+각 질문에서 사용자는 **텍스트, 파일, URL, Slack, 이미지를 자유롭게 혼합**하여 답변할 수 있습니다.
 
-각 문서에 대해 순차적으로 인터뷰를 진행합니다. 마이그레이션 모드 시 역추론 결과를 미리 채운 상태에서 확인/수정만 합니다.
+#### Smart Input Detection
+
+모든 질문의 사용자 답변에 대해 아래 순서로 입력 유형을 자동 감지합니다:
+
+| 패턴 | 감지 기준 | 처리 |
+|------|----------|------|
+| **로컬 파일** | `/`로 시작, 또는 `*.md`, `*.txt`, `*.yaml`, `*.json` 확장자 | Read로 읽기 → 관련 내용 추출 |
+| **PDF** | `*.pdf` | Read(pages 파라미터) → 텍스트 추출. 10페이지 초과 시 "관련 페이지를 지정하세요" 요청 |
+| **이미지** | `*.png`, `*.jpg`, `*.jpeg`, `*.webp` | Read(멀티모달) → 시각 분석 → 디자인 토큰/텍스트 추출 |
+| **Pencil** | `*.pen` | `mcp__pencil__get_variables()` → 디자인 토큰 추출 |
+| **웹 URL** | `http://` 또는 `https://` (Slack/GitHub/Figma 외) | WebFetch → 텍스트 추출 |
+| **Slack** | `#채널명`, Slack URL (`*.slack.com/*`), "슬랙" 키워드 | `mcp__slack__slack_get_channel_history` / `get_thread_replies` → 메시지 추출 |
+| **GitHub** | `#숫자`, GitHub URL, "issue", "PR" 키워드 | `gh issue view` / `gh pr view` → 내용 추출 |
+| **Figma** | `figma.com/` URL | Figma MCP → 디자인 변수/토큰 추출 |
+| **직접 텍스트** | 위 패턴에 미매칭 | 그대로 사용 |
+
+**처리 흐름:**
+1. 사용자 답변 수신
+2. 답변 내에서 여러 소스가 포함될 수 있음 (예: "docs/prd.md 읽고, 기술은 TypeScript")
+3. 각 소스를 병렬 처리하여 내용 추출
+4. 추출된 내용을 해당 섹션에 매핑
+5. "다음 내용을 {섹션}에 반영합니다: {요약}" 확인
+
+**소스 충돌 처리:**
+- 동일 섹션에 여러 소스가 매핑되면: "PDF와 Slack에서 다른 내용이 감지되었습니다. 어느 것을 사용할까요?" AskUserQuestion
+- 소스 간 보완적 내용은 병합
+
+**Fallback 규칙:**
+- Slack MCP 미연결: "Slack에 접근할 수 없습니다. 내용을 직접 붙여넣어주세요."
+- URL fetch 실패: "URL에 접근할 수 없습니다. 내용을 직접 입력해주세요."
+- PDF 대용량: "PDF가 {N}페이지입니다. 관련 페이지를 지정해주세요 (예: 1-5)"
+- Figma MCP 미연결: "Figma에 접근할 수 없습니다. 디자인 토큰을 직접 입력해주세요."
+- GitHub CLI 미설치: "gh CLI가 필요합니다. Issue 내용을 직접 붙여넣어주세요."
 
 #### 2a. 기존 문서 처리
 
-`AskUserQuestion`: "병합" (빈 섹션만 채움) / "스킵"
-- 전체 덮어쓰기는 제공하지 않음 (Out of Scope)
-- "병합" 시 기존 파일을 `.bak`으로 백업 (EC08)
+기존 문서가 있으면: AskUserQuestion "병합" (빈 섹션만 채움) / "스킵"
+- 전체 덮어쓰기 불가 (Out of Scope)
+- "병합" 시 `.bak` 백업
 
 #### 2b. PRD.md 인터뷰 (최소 3개 필수 질문)
 
-**Q1 (Vision)**: "이 프로젝트의 핵심 비전은?" → Vision 섹션
-- 응답 50자 미만 → 후속: "좀 더 구체적으로, 어떤 문제를 해결하나요?"
+**Q1 (Vision)**: "프로젝트의 핵심 비전은? (텍스트, 파일 경로, URL 모두 가능)"
+- 응답 50자 미만 → 후속 질문
+- **입력 예시**: "docs/planning.md 의 1장 참고해줘" → Read → Vision 추출
 
-**Q2 (Target Users)**: "주요 사용자는?" → Target Users 테이블
+**Q2 (Target Users)**: "주요 사용자는?"
 
-**Q3 (핵심 기능)**: "반드시 있어야 하는 핵심 기능 3가지는?" → Feature Priority + User Stories
+**Q3 (핵심 기능)**: "반드시 있어야 하는 핵심 기능 3가지는?"
+- **입력 예시**: "GitHub issue #45, #67, #89에 정리됨" → gh CLI → 기능 추출
 
-**Q4 (Out of Scope)** (선택): "이번 범위에서 제외할 것은?" → Out of Scope
+**Q4 (Out of Scope)** (선택): "이번 범위에서 제외할 것은?"
 
-#### 2c. POLICY.md 인터뷰 (최소 3개 필수 질문)
+#### 2c. POLICY.md 인터뷰 (최소 3개 + 모노레포 시 1개 추가)
 
-**Q1 (Tech Stack)**: "사용하는 주요 기술 스택은?" → Tech Stack 테이블
+**Q1 (Tech Stack)**: "사용하는 주요 기술 스택은?"
 - 마이그레이션 모드: package.json 추출값 미리 표시
 
-**Q2 (Security)**: "보안 정책 수준은?" → Security Policy
+**Q2 (Security)**: "보안 정책 수준은?"
+- **입력 예시**: "#security 채널 최근 스레드 봐줘" → Slack MCP → 보안 논의 추출
 
-**Q3 (Naming Convention)**: "코딩 컨벤션은?" → Naming Convention 테이블
-- 마이그레이션 모드: eslint/prettier 추출 규칙 표시
+**Q3 (Naming Convention)**: "코딩 컨벤션은?"
 
-#### 2d. ARCHITECTURE.md 인터뷰 (최소 3개 필수 질문)
+**Q4 (Environment Management)** — monorepo_mode = true 시에만:
+- question: "환경변수 관리 방식은?"
+- 선택지:
+  - "루트 통합 관리 (추천)": 루트 .env에서 모든 패키지 환경변수 통합
+  - "패키지별 분리": 각 패키지가 독립 .env 관리
+  - "하이브리드": 공통은 루트, 패키지 고유는 패키지별
+- 선택 결과 → POLICY.md Environment Management 섹션에 반영
+- monorepo_mode = false 시 이 질문 스킵
 
-**Q1 (System Overview)**: "시스템 전체 구조를 간략히 설명해주세요" → System Overview
-- 마이그레이션 모드: 디렉토리 구조 추론 모듈 목록 표시
+#### 2d. ARCHITECTURE.md 인터뷰 (최소 3개)
 
-**Q2 (Module Structure)**: "주요 모듈/디렉토리의 역할은?" → Module Structure 테이블
+**Q1 (System Overview)**: "시스템 전체 구조를 간략히?"
+- **입력 예시**: "/Users/me/Desktop/architecture-diagram.png" → 이미지 분석 → 구조 추출
 
-**Q3 (Data Flow)**: "데이터는 어떤 흐름으로 처리되나요?" → Data Flow
+**Q2 (Module Structure)**: "주요 모듈/디렉토리의 역할은?"
+
+**Q3 (Data Flow)**: "데이터는 어떤 흐름으로?"
 
 #### 2e. DESIGN.md 인터뷰
 
-- 기존 vs-design-init DESIGN.md가 있으면: 스킵 권장
-- 없으면 간소화 3개 질문: 색상 / 폰트 / 간격 단위
-- Pencil(.pen) 감지 시: `mcp__pencil__get_variables()` 시도, 실패 시 스킵 (EC03)
+- vs-design-init DESIGN.md 존재 시: 스킵 권장
+- 없으면 3개 질문: 색상 / 폰트 / 간격 단위
+- **입력 예시**: "https://figma.com/file/abc123" → Figma MCP → 토큰 추출
+- Pencil(.pen) 감지 시: 자동 추출 시도, 실패 시 스킵
 
 #### 2f. 세션 중간 저장
 
-각 문서 인터뷰 완료 시마다 `.skeleton.tmp` 업데이트
+각 문서 인터뷰 완료 시 `.skeleton.tmp` 업데이트:
+```json
+{
+  "phase": 2,
+  "completed_docs": ["prd", "policy"],
+  "partial_responses": { ... },
+  "migration_mode": true,
+  "monorepo_mode": true,
+  "selected_docs": ["prd", "policy", "architecture"],
+  "input_sources": ["file:docs/planning.md", "slack:#security", "text"]
+}
+```
 
 ### Phase 3: 확인 및 문서 생성
 
 1. **수집 데이터 요약 표시**
-   4종 문서별 수집된 인터뷰 응답을 요약 테이블로 표시
+   - 4종 문서별 수집 내용 + 소스 출처 표시:
+     ```
+     ### PRD.md
+     - Vision: (docs/planning.md에서 추출) "AI 기반 코드 리뷰..."
+     - Target Users: (직접 입력) "시니어 백엔드 개발자"
+     - Features: (GitHub #45, #67, #89에서 추출) 3개 기능
+     ```
 
-2. **확인 체크포인트** (`AskUserQuestion`)
-   - "생성": 이 내용으로 골격 문서를 생성
-   - "수정": 특정 항목을 수정 (해당 질문만 재진행)
-   - "처음부터": .skeleton.tmp 삭제 후 Phase 1로
+2. **확인 체크포인트** (AskUserQuestion): "생성" / "수정" / "처음부터"
 
 3. **문서 생성**
-   - `skills/vs-skeleton-init/templates/` 에서 템플릿 Read
-   - 플레이스홀더(`{값}`)를 수집된 응답으로 치환
-   - 프로젝트 루트에 Write
-   - **병합 모드**: 기존 파일의 빈 섹션만 채움 (내용 있는 섹션 유지)
-   - 파일 쓰기 실패 시 (EC06): 에러 출력, 생성 완료 파일 보존, 미완료 삭제
+   - 템플릿 기반 생성 (기존 로직)
+   - 모노레포 감지 시 POLICY.md에 Environment Management 섹션 자동 포함
+   - 병합 모드: 기존 빈 섹션만 채움
 
-4. **completeness_score 계산 및 표시**
-   ```
-   score = (필수섹션 존재 수 / 전체 필수섹션 수) × 80 + (선택섹션 존재 수 / 전체 선택섹션 수) × 20
-   ```
-   결과를 테이블로 표시 (문서별 완성도, 필수/선택 충족 수)
+4. **completeness_score 계산** (품질 기준: 플레이스홀더 제외 후 50자+)
 
-5. **정리**
-   - `.skeleton.tmp` 삭제
-   - `.skeleton.lock` 삭제
-   - 다음 단계 안내:
-     - 60 미만 문서 있으면: 직접 편집 또는 재실행 안내
-     - 모두 60 이상: `/vs-skeleton-status` 또는 `/vs-plan` 안내
+5. **정리**: .skeleton.tmp/.lock 삭제, 다음 단계 안내
 
 ## Rules
-- .skeleton.lock은 반드시 Phase 3 완료 또는 중단 시 삭제
-- 민감 파일 제외 목록은 보안 요구사항과 일치
-- Pencil 연동 실패 시 에러 없이 스킵 (graceful degradation)
-- 텍스트 분배 시 확신 낮은 매핑은 "미분류" 표시 → Phase 2에서 사용자 확인
+- .skeleton.lock은 Phase 3 완료 또는 중단 시 반드시 삭제
+- Smart Input Detection은 모든 질문에서 동작 (특정 Phase에 국한되지 않음)
+- MCP/외부 도구 실패 시 에러 없이 fallback (graceful degradation)
+- 민감 파일 제외 + 민감 정보 마스킹 (기존 보안 정책)
+- 텍스트 분배 시 확신 낮은 매핑은 "미분류" 표시 → 사용자 확인
 - 전체 덮어쓰기 불가, 병합만 허용
+- 소스 충돌 시 사용자 선택 (자동 병합 안 함)

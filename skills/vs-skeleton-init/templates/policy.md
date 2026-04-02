@@ -66,3 +66,25 @@
 - **배포 전략**: {전략}
 - **환경**: {환경 목록}
 - **롤백 기준**: {기준}
+
+<!-- [OPTIONAL] Environment Management -->
+## Environment Management
+
+### 환경변수 관리 전략
+- **관리 위치**: {예: 루트 `.env`에서 통합 관리}
+- **파일 구조**:
+  - `.env` — 공통 환경변수 (공유 가능한 기본값)
+  - `.env.local` — 로컬 오버라이드 (git 제외)
+  - `.env.development` / `.env.production` — 환경별
+  - `packages/*/`에는 .env 금지 (루트 참조만 허용)
+- **시크릿 관리**: {예: 환경변수로만 주입, 코드 하드코딩 금지, 시크릿 매니저 사용}
+
+### 모노레포 설정
+- **워크스페이스 도구**: {예: pnpm workspaces / yarn workspaces / npm workspaces}
+- **공유 설정**: 루트 tsconfig.json, eslint, prettier를 각 패키지에서 extends
+- **패키지 간 의존성**: {예: workspace: 프로토콜 사용}
+
+### 금지 사항
+- 패키지 내부에 독립 .env 파일 생성 금지 (루트에서 통합 관리)
+- 하드코딩 환경변수 금지 (process.env를 통해서만 접근)
+- 루트 .env에 시크릿 직접 기록 금지 (시크릿 매니저 또는 CI/CD 환경변수 사용)
