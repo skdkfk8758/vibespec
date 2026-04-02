@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.1] - 2026-04-02
+
+### 버그 수정
+- **hooks**: session-stash Stop hook 제거 — 파일 revert 원인 근본 해결 (71d8900)
+
+### 리팩토링
+- **models**: PlanRevisionModel, WaveGateModel BaseRepository 상속 전환 (7be72e5)
+
 ## [0.33.0] - 2026-04-02
 
 ### 새 기능
