@@ -1,12 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { PlanRevision, RevisionTriggerType, RevisionStatus } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
-export class PlanRevisionModel {
-  private db: Database.Database;
-
+export class PlanRevisionModel extends BaseRepository<PlanRevision> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'plan_revisions');
   }
 
   create(planId: string, triggerType: RevisionTriggerType, triggerSource: string | null, description: string, changes: string): PlanRevision {
@@ -15,12 +14,12 @@ export class PlanRevisionModel {
       `INSERT INTO plan_revisions (id, plan_id, trigger_type, trigger_source, description, changes)
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(id, planId, triggerType, triggerSource, description, changes);
-    return this.get(id)!;
+    return this.getById(id)!;
   }
 
+  /** @deprecated Use getById() instead */
   get(id: string): PlanRevision | null {
-    const row = this.db.prepare('SELECT * FROM plan_revisions WHERE id = ?').get(id) as PlanRevision | undefined;
-    return row ?? null;
+    return this.getById(id);
   }
 
   listByPlan(planId: string): PlanRevision[] {
@@ -30,9 +29,6 @@ export class PlanRevisionModel {
   }
 
   updateStatus(id: string, status: RevisionStatus): PlanRevision {
-    this.db.prepare(
-      'UPDATE plan_revisions SET status = ? WHERE id = ?'
-    ).run(status, id);
-    return this.get(id)!;
+    return this.update(id, { status } as Partial<Omit<PlanRevision, 'id'>>);
   }
 }

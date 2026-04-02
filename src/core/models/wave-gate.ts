@@ -1,12 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { WaveGate, WaveGateVerdict } from '../types.js';
 import { generateId } from '../utils.js';
+import { BaseRepository } from './base-repository.js';
 
-export class WaveGateModel {
-  private db: Database.Database;
-
+export class WaveGateModel extends BaseRepository<WaveGate> {
   constructor(db: Database.Database) {
-    this.db = db;
+    super(db, 'wave_gates');
   }
 
   create(planId: string, waveNumber: number, taskIds: string[], verdict: WaveGateVerdict, summary?: string, findingsCount?: number): WaveGate {
@@ -15,12 +14,12 @@ export class WaveGateModel {
       `INSERT INTO wave_gates (id, plan_id, wave_number, task_ids, verdict, summary, findings_count)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(id, planId, waveNumber, JSON.stringify(taskIds), verdict, summary ?? null, findingsCount ?? 0);
-    return this.get(id)!;
+    return this.getById(id)!;
   }
 
+  /** @deprecated Use getById() instead */
   get(id: string): WaveGate | null {
-    const row = this.db.prepare('SELECT * FROM wave_gates WHERE id = ?').get(id) as WaveGate | undefined;
-    return row ?? null;
+    return this.getById(id);
   }
 
   listByPlan(planId: string): WaveGate[] {
