@@ -2985,6 +2985,37 @@ var PlanRevisionModel = class extends BaseRepository {
   }
 };
 
+// src/core/models/context-log.ts
+var ContextLogModel = class {
+  db;
+  constructor(db) {
+    this.db = db;
+  }
+  create(input) {
+    const stmt = this.db.prepare(
+      `INSERT INTO context_log (plan_id, session_id, summary, last_task_id)
+       VALUES (?, ?, ?, ?)`
+    );
+    const result = stmt.run(
+      input.plan_id ?? null,
+      input.session_id ?? null,
+      input.summary,
+      input.last_task_id ?? null
+    );
+    return this.db.prepare("SELECT * FROM context_log WHERE id = ?").get(result.lastInsertRowid);
+  }
+  getById(id) {
+    const row = this.db.prepare("SELECT * FROM context_log WHERE id = ?").get(id);
+    return row ?? null;
+  }
+  search(tag) {
+    return this.db.prepare("SELECT * FROM context_log WHERE summary LIKE ? ORDER BY created_at DESC").all(`%${tag}%`);
+  }
+  list(limit = 50) {
+    return this.db.prepare("SELECT * FROM context_log ORDER BY created_at DESC LIMIT ?").all(limit);
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -3111,6 +3142,7 @@ function initModels() {
   const lazyMergeReport = lazy("mergeReportModel", () => new MergeReportModel(db));
   const lazyWaveGate = lazy("waveGateModel", () => new WaveGateModel(db));
   const lazyPlanRevision = lazy("planRevisionModel", () => new PlanRevisionModel(db));
+  const lazyContextLog = lazy("contextModel", () => new ContextLogModel(db));
   return {
     db,
     events,
@@ -3164,6 +3196,9 @@ function initModels() {
     },
     get planRevisionModel() {
       return lazyPlanRevision.get();
+    },
+    get contextModel() {
+      return lazyContextLog.get();
     }
   };
 }
@@ -5697,25 +5732,28 @@ function formatConfigHuman(config) {
 }
 
 // src/cli/commands/generation.ts
+var IDEATION_TAG = "[ideation]";
 function registerGenerationCommands(program2, getModels) {
   const ideate = program2.command("ideate").description("Manage ideation records");
   ideate.command("list").description("List ideation records from context log").action(() => {
-    const { contextModel } = initModels();
-    const ideations = contextModel.search("[ideation]");
-    if (ideations.length === 0) {
-      output([], "ideation \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-ideate\uB85C \uC544\uC774\uB514\uC5B4\uB97C \uC815\uB9AC\uD574\uBCF4\uC138\uC694.");
-      return;
-    }
-    const formatted = ideations.map(
-      (l, i) => `${i + 1}. [#${l.id}] ${l.summary.replace("[ideation] ", "")} (${l.created_at})`
-    ).join("\n");
-    output(ideations, `## Ideation \uC774\uB825
+    withErrorHandler(() => {
+      const { contextModel } = getModels();
+      const ideations = contextModel.search(IDEATION_TAG);
+      if (ideations.length === 0) {
+        output([], "ideation \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. /vs-ideate\uB85C \uC544\uC774\uB514\uC5B4\uB97C \uC815\uB9AC\uD574\uBCF4\uC138\uC694.");
+        return;
+      }
+      const formatted = ideations.map(
+        (l, i) => `${i + 1}. [#${l.id}] ${l.summary.replace(`${IDEATION_TAG} `, "")} (${l.created_at})`
+      ).join("\n");
+      output(ideations, `## Ideation \uC774\uB825
 
 ${formatted}`);
+    });
   });
   ideate.command("show").argument("<id>", "Context log ID").description("Show ideation detail").action((id) => {
     withErrorHandler(() => {
-      const { contextModel } = initModels();
+      const { contextModel } = getModels();
       const log = contextModel.getById(parseInt(id, 10));
       if (!log) return outputError(`Ideation not found: ${id}`);
       output(log, `## Ideation #${log.id}
@@ -5723,6 +5761,17 @@ ${formatted}`);
 **Created**: ${log.created_at}
 
 ${log.summary}`);
+    });
+  });
+  ideate.command("save").requiredOption("--title <title>", "Ideation title").requiredOption("--summary <summary>", "One-line summary").option("--plan-id <planId>", "Associated plan ID").option("--session-id <sessionId>", "Session ID").description("Save an ideation record to context log").action((opts) => {
+    withErrorHandler(() => {
+      const { contextModel } = getModels();
+      const log = contextModel.create({
+        summary: `${IDEATION_TAG} ${opts.title}: ${opts.summary}`,
+        plan_id: opts.planId,
+        session_id: opts.sessionId
+      });
+      output(log, `Ideation saved: #${log.id} \u2014 ${opts.title}`);
     });
   });
 }

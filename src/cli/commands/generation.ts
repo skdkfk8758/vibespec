@@ -1,6 +1,8 @@
 import { Command } from 'commander';
-import { output, outputError, withErrorHandler, initModels } from '../shared.js';
+import { output, outputError, withErrorHandler } from '../shared.js';
 import type { Models } from '../shared.js';
+
+const IDEATION_TAG = '[ideation]';
 
 export function registerGenerationCommands(program: Command, getModels: () => Models): void {
   // ── ideate ────────────────────────────────────────────────────────────
@@ -10,16 +12,18 @@ export function registerGenerationCommands(program: Command, getModels: () => Mo
     .command('list')
     .description('List ideation records from context log')
     .action(() => {
-      const { contextModel } = initModels();
-      const ideations = contextModel.search('[ideation]');
-      if (ideations.length === 0) {
-        output([], 'ideation 기록이 없습니다. /vs-ideate로 아이디어를 정리해보세요.');
-        return;
-      }
-      const formatted = ideations.map((l, i) =>
-        `${i + 1}. [#${l.id}] ${l.summary.replace('[ideation] ', '')} (${l.created_at})`
-      ).join('\n');
-      output(ideations, `## Ideation 이력\n\n${formatted}`);
+      withErrorHandler(() => {
+        const { contextModel } = getModels();
+        const ideations = contextModel.search(IDEATION_TAG);
+        if (ideations.length === 0) {
+          output([], 'ideation 기록이 없습니다. /vs-ideate로 아이디어를 정리해보세요.');
+          return;
+        }
+        const formatted = ideations.map((l, i) =>
+          `${i + 1}. [#${l.id}] ${l.summary.replace(`${IDEATION_TAG} `, '')} (${l.created_at})`
+        ).join('\n');
+        output(ideations, `## Ideation 이력\n\n${formatted}`);
+      });
     });
 
   ideate
@@ -28,10 +32,29 @@ export function registerGenerationCommands(program: Command, getModels: () => Mo
     .description('Show ideation detail')
     .action((id: string) => {
       withErrorHandler(() => {
-        const { contextModel } = initModels();
+        const { contextModel } = getModels();
         const log = contextModel.getById(parseInt(id, 10));
         if (!log) return outputError(`Ideation not found: ${id}`);
         output(log, `## Ideation #${log.id}\n\n**Created**: ${log.created_at}\n\n${log.summary}`);
+      });
+    });
+
+  ideate
+    .command('save')
+    .requiredOption('--title <title>', 'Ideation title')
+    .requiredOption('--summary <summary>', 'One-line summary')
+    .option('--plan-id <planId>', 'Associated plan ID')
+    .option('--session-id <sessionId>', 'Session ID')
+    .description('Save an ideation record to context log')
+    .action((opts: { title: string; summary: string; planId?: string; sessionId?: string }) => {
+      withErrorHandler(() => {
+        const { contextModel } = getModels();
+        const log = contextModel.create({
+          summary: `${IDEATION_TAG} ${opts.title}: ${opts.summary}`,
+          plan_id: opts.planId,
+          session_id: opts.sessionId,
+        });
+        output(log, `Ideation saved: #${log.id} — ${opts.title}`);
       });
     });
 }

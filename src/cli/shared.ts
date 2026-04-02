@@ -18,6 +18,7 @@ import { MergeReportModel } from '../core/models/merge-report.js';
 import { AgentHandoffModel } from '../core/models/agent-handoff.js';
 import { WaveGateModel } from '../core/models/wave-gate.js';
 import { PlanRevisionModel } from '../core/models/plan-revision.js';
+import { ContextLogModel } from '../core/models/context-log.js';
 import { LifecycleEngine } from '../core/engine/lifecycle.js';
 
 let jsonMode = false;
@@ -103,6 +104,7 @@ export function initModels() {
   const lazyMergeReport = lazy('mergeReportModel', () => new MergeReportModel(db));
   const lazyWaveGate = lazy('waveGateModel', () => new WaveGateModel(db));
   const lazyPlanRevision = lazy('planRevisionModel', () => new PlanRevisionModel(db));
+  const lazyContextLog = lazy('contextModel', () => new ContextLogModel(db));
 
   return {
     db,
@@ -124,6 +126,7 @@ export function initModels() {
     get agentHandoffModel() { return lazyAgentHandoff.get(); },
     get waveGateModel() { return lazyWaveGate.get(); },
     get planRevisionModel() { return lazyPlanRevision.get(); },
+    get contextModel() { return lazyContextLog.get(); },
   };
 }
 
