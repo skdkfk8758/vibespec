@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.33.0] - 2026-04-02
+
+### 새 기능
+- **core**: Hermes Agent 영감 5대 개선 — Running Summary, Progressive Disclosure, Conditional QA, Procedural Memory, Budget Pressure (74a5820)
+- **skeleton-init**: 멀티소스 하이브리드 입력 + 모노레포 환경 관리 (9596766)
+- **codex-cli**: vs codex detect + vs qa autofix CLI 커맨드 추가 (d09901d)
+- **codex-integration**: QA-Codex 자동 수정 사이클 핵심 엔진 구현 (6d8894e)
+- **skeleton-evolve**: Phase 3 Evolve — 골격 문서 자동 개선 및 충돌 감지 (d044278)
+- **skeleton-guard**: Phase 2 Guard — 골격 문서 가이드라인 자동 감시 시스템 (b73f0c4)
+- **skeleton**: vs-skeleton-init/vs-skeleton-status 스킬 및 4종 골격 문서 템플릿 생성 (449b493)
+- **qa-config**: 골격 관리 시스템 skeleton_guard 모듈 추가 (ff970c9)
+- **qa-config**: 태스크 완료 시 디자인 감사 자동 트리거 — design_review 모듈 추가 (8844f4b)
+
+### 버그 수정
+- **agents**: 백그라운드 에이전트 stash 정책 분리 — orphan stash 근본 해결 (2de94ff)
+- **skeleton**: 프로필 기본값 수정 + 품질 강화 + 안전성 개선 (b66b276)
+
+### 문서
+- **codex-autofix**: 시뮬레이션 시나리오 8종 문서 작성 (5564f9f)
+- **skeleton**: 골격 문서 3종 생성 — 시뮬레이션용 (d55d137)
+- **skeleton**: 골격 시스템 사용 가이드 추가 (605fcc2)
+
 ## [0.32.0] - 2026-04-01
 
 ### 새 기능
