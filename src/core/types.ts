@@ -489,3 +489,31 @@ export interface PlanRevision {
   created_at: string;
 }
 
+
+// Codex Integration types
+export interface CodexDetectResult {
+  available: boolean;
+  authenticated: boolean;
+  plugin_path?: string;
+  version?: string;
+}
+
+export type CodexIntegrationStatus = 'pending' | 'running' | 'verifying' | 'passed' | 'failed' | 'escalated';
+export type CodexVerificationResult = 'PASS' | 'WARN' | 'FAIL';
+
+export interface CodexIntegration {
+  id: string;
+  finding_id: string;
+  run_id: string;
+  codex_thread_id: string;
+  attempt: number;
+  status: CodexIntegrationStatus;
+  touched_files: string;
+  verification_result: CodexVerificationResult | null;
+  error_kb_entry_id: string | null;
+  escalation_summary: string | null;
+  prompt_context: string;
+  fallback_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
