@@ -66,9 +66,6 @@ Skills, Hooks가 자동으로 설치됩니다.
 | `/self-improve` | fix 커밋 분석 → Error KB 기록 → 반복 패턴 규칙 승격 |
 | `/self-improve-review` | 축적된 규칙 효과 분석, 정리/통합/아카이브 |
 | `/vs-qa` | QA 에이전트 팀 실행 — 시나리오 생성 → 검증 → 이슈 수집 → 수정 플래닝 |
-| `/vs-qa-status` | QA 실행 결과 및 리스크 트렌드 조회 |
-| `/vs-qa-findings` | QA 발견 이슈 필터링 및 상태 관리 |
-| `/vs-qa-scenarios` | QA 시나리오 인터랙티브 조회 및 미리보기 |
 | `/vs-backlog` | 백로그 관리 — 아이디어/버그/작업 추가, 우선순위 정리, 플랜 승격 |
 | `/vs-acceptance` | AC 기반 브라우저/코드 검증 — 머지 후·플랜 검증·독립 호출 |
 | `/vs-browse` | 탐색적 브라우저 QA — 자유 탐색으로 시각/기능/UX 이슈 발견 |
@@ -82,6 +79,9 @@ Skills, Hooks가 자동으로 설치됩니다.
 | `/vs-design-init` | 디자인 시스템 생성 — 인터뷰 기반 DESIGN.md 생성 |
 | `/vs-design-review` | 디자인 감사 — UI 구현과 DESIGN.md 일치 여부 검증 |
 | `/vs-recap` | 머지 결과 리뷰 — 변경 요약, Review Checklist, 충돌 해결 기록 |
+| `/vs-skeleton-init` | 골격 문서 4종(PRD/POLICY/ARCHITECTURE/DESIGN) 인터뷰 기반 생성 |
+| `/vs-skeleton-status` | 골격 문서 건강도 대시보드 — 정합성·최신성 점검 |
+| `/vs-wrap` | 세션 학습 파이프라인 — 교훈 추출, 자동화 탐지, 후속 작업 제안 |
 | `/adhoc` | 빠른 수정 — 스펙/플랜 없이 단순 버그·오타·설정 즉시 처리 |
 
 ### Domain Skills (자동 참조)
@@ -89,6 +89,7 @@ Skills, Hooks가 자동으로 설치됩니다.
 | Skill | Description |
 |-------|-------------|
 | `verification` | 태스크 완료 검증 — acceptance criteria + 테스트/빌드/lint 체크 |
+| `completion-checks` | 태스크 완료 시 공통 체크 로직 — QA Shadow, Adaptive Planner, 백로그 매칭 |
 | `sdd-methodology` | SDD 원칙, 스펙 구조, 품질 체크리스트 |
 | `tdd-principles` | RED-GREEN-REFACTOR, AAA 패턴, TDD 적합성 판단 |
 | `task-decomposition` | 15-30분 분해, INVEST 원칙, AC 작성법 |
@@ -114,8 +115,8 @@ Skills, Hooks가 자동으로 설치됩니다.
 
 ### Session Safety Net
 
-세션 종료 시 미커밋 변경사항이 있으면 자동으로 `git stash`에 보존됩니다.
-다음 세션에서 `/vs-next` 실행 시 자동으로 감지되어 복원됩니다.
+세션 시작 시 미커밋 변경사항이 감지되면 안내 메시지를 표시합니다.
+`/vs-next` 실행 시 이전 작업 컨텍스트가 자동으로 복원됩니다.
 
 ## CLI Commands
 
@@ -227,8 +228,8 @@ vibespec/
 ├── .claude-plugin/        # 플러그인 매니페스트
 ├── skills/                # 39개 슬래시 커맨드 + 도메인 스킬
 ├── bin/                   # 가드레일 스크립트 (check-careful.sh, check-freeze.sh)
-├── hooks/                 # 12개 PreToolUse/PostToolUse/SessionStart 훅
-├── agents/                # 11개 에이전트 (spec-writer, tdd, verifier, debugger, QA 6종)
+├── hooks/                 # 17개 PreToolUse/PostToolUse/SessionStart 훅
+├── agents/                # 19개 에이전트 (spec-writer, tdd, verifier, debugger, QA 6종, skeleton, session 등)
 ├── scripts/               # 플러그인 유효성 검증
 └── src/                   # CLI 소스 (TypeScript)
     ├── cli/               # CLI 엔트리포인트 + 포매터 + 임포터

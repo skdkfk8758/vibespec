@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.34.0] - 2026-04-03
+
+### 새 기능
+- **plugins**: plugins-for-claude-natives 핵심 패턴 3종 도입 — 응답 재검증(doubt), 세션 학습(session-wrap), 요구사항 정제(clarify) (61273cd)
+
+### 리팩토링
+- **skills**: 공통 로직을 completion-checks [Ref] skill로 추출 — vs-next/vs-exec 인라인 로직 171줄 제거 (2e1bdd7)
+
+### 문서
+- **qa**: vs-ideate clarify QA 리포트 추가 (26afcfd)
+
+### 기타
+- **project**: 금지 패턴 정책 추가 및 빌드 산출물 동기화 (ae08c80)
+
 ## [0.33.1] - 2026-04-02
 
 ### 버그 수정
