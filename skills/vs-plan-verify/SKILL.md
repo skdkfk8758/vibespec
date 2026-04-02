@@ -61,26 +61,24 @@ invocation: user
 
    프로젝트 전체에 대해 기술 검증을 실행하세요:
 
-   **a. 테스트:**
-   - `package.json`의 test 스크립트를 확인하세요
-   - 있으면 `npm test`를 실행하세요
-   - 없으면 `SKIP` 처리하세요
-   - 결과: exit code, 통과/실패 테스트 수
-   - **부분 실패 판정**: 실패한 테스트가 있을 경우 git blame/log로 해당 테스트의 추가 시점을 확인하세요
-     - 이번 플랜에서 **새로 추가된 테스트만** 실패 → `WARN` (신규 테스트 불안정)
-     - **기존 테스트**가 실패 → `FAIL` (회귀 발생)
+   ### 공통 npm 유효성 검증
 
-   **b. 빌드:**
-   - `package.json`의 build 스크립트를 확인하세요
-   - 있으면 `npm run build`를 실행하세요
-   - 없으면 `SKIP` 처리하세요
-   - 결과: exit code
+   아래 3가지 npm 스크립트를 순차 실행합니다. 각 스크립트는 **3-step 구조**(check → execute → report)를 따릅니다:
 
-   **c. Lint:**
-   - `package.json`의 lint 스크립트를 확인하세요
-   - 있으면 `npm run lint`를 실행하세요
-   - 없으면 `SKIP` 처리하세요
-   - 결과: exit code
+   | 단계 | 스크립트 | 실행 명령 | SKIP 조건 |
+   |------|----------|-----------|-----------|
+   | a. 테스트 | `test` | `npm test` | package.json에 test 스크립트 없음 |
+   | b. 빌드 | `build` | `npm run build` | package.json에 build 스크립트 없음 |
+   | c. Lint | `lint` | `npm run lint` | package.json에 lint 스크립트 없음 |
+
+   **각 스크립트별 절차:**
+   1. **Check**: `package.json`의 scripts에서 해당 키 존재 여부를 확인. 없으면 `SKIP` 처리
+   2. **Execute**: 해당 npm 명령을 실행
+   3. **Report**: exit code를 기록. 테스트의 경우 통과/실패 테스트 수도 포함
+
+   **테스트 부분 실패 판정**: 실패한 테스트가 있을 경우 git blame/log로 해당 테스트의 추가 시점을 확인하세요
+   - 이번 플랜에서 **새로 추가된 테스트만** 실패 → `WARN` (신규 테스트 불안정)
+   - **기존 테스트**가 실패 → `FAIL` (회귀 발생)
 
 2a. **골격 정합성 최종 게이트** (선택적)
    - 조건: 프로젝트 루트에 골격 문서(PRD.md/DESIGN.md/POLICY.md/ARCHITECTURE.md) 1개 이상 존재

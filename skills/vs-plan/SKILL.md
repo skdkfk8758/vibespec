@@ -50,6 +50,25 @@ invocation: user
       - 존재하는 문서가 1개 이상이면: `resolved_config`의 `modules.skeleton_guard`를 확인하여 Step 3 이후 skeleton-guard 디스패치 여부를 결정하세요
       - 모든 문서 존재 시: 조용히 진행
 
+   g. **백로그 중복 감지**
+
+      인터뷰 시작 전에 사용자의 초기 발화와 유사한 open 백로그 항목이 있는지 확인하세요.
+
+      1. 사용자의 초기 발화에서 **scope 키워드**를 추출하세요 (모듈명, 파일명, 기능명 등)
+      2. Bash 도구로 `vs --json backlog list --status open` 실행
+      3. 추출한 키워드가 기존 백로그 항목의 title 또는 tags에 포함되는지 매칭
+      4. **매칭 결과에 따라 분기**:
+         - 유사 항목 발견 시 → `AskUserQuestion`으로 선택지 제시:
+           - question: "유사한 백로그 항목이 있습니다: '{title}'. 어떻게 진행할까요?"
+           - header: "백로그 중복 감지"
+           - multiSelect: false
+           - 선택지:
+             - label: "기존 백로그에서 승격", description: "/vs-backlog promote로 해당 항목을 플랜으로 승격합니다"
+             - label: "새로 플래닝", description: "별개 항목으로 새 플랜을 생성합니다"
+           - "기존 백로그에서 승격" 선택 시: `/vs-backlog` promote 흐름으로 안내하고 현재 플래닝을 종료
+           - "새로 플래닝" 선택 시: Step 1 인터뷰를 계속 진행
+         - 백로그가 비어있거나 매칭 없음 → 자동 스킵하고 Step 1로 진행
+
 0a. **Skeleton Guard 디스패치** (스펙 작성 후, Step 5a 비판적 검토와 병렬)
 
    **조건** (모두 충족 시):
