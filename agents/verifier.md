@@ -311,6 +311,26 @@ AC 매핑 커버리지: {매핑 수}/{전체 수} ({비율}%)
 - 미충족: N/M
 ```
 
+### Phase 5: Running Summary 누적 업데이트 (best-effort)
+
+검증 완료 후, 플랜의 running_summary를 누적 업데이트하세요. **이 Phase는 best-effort — 실패해도 verdict에 영향 없음.**
+
+1. `vs --json plan show <plan_id>`로 현재 running_summary 조회
+2. running_summary가 **null**: 아래 초기 구조로 생성
+   ```
+   ## Done
+   - {태스크 제목}: {1줄 요약}
+   ## In Progress
+   (없음)
+   ## Blocked
+   (없음)
+   ## Key Decisions
+   ## Next Steps
+   ```
+3. running_summary가 **존재**: In Progress → Done 이동, 새 항목 추가
+4. `vs --json plan update <plan_id>` 또는 Bash로 running_summary 저장
+5. **실패 시**: 경고만 출력, verdict 미변경
+
 ## Rules
 
 - 기술 검증(테스트/빌드/lint)은 반드시 실행하세요 — LLM 판단으로 대체하지 마세요

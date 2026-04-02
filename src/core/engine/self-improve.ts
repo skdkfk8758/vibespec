@@ -54,22 +54,27 @@ export class SelfImproveEngine {
     const rulePath = path.join(RULES_DIR, filename);
     const fullPath = path.join(this.projectRoot, rulePath);
     const enforcement = newRule.enforcement ?? 'SOFT';
+    const ruleType = newRule.rule_type ?? 'preventive';
 
-    // Write rule file
-    fs.writeFileSync(fullPath, newRule.ruleContent, 'utf-8');
+    // Write rule file — use procedural template if rule_type is 'procedural'
+    const content = ruleType === 'procedural'
+      ? this.buildProceduralTemplate(newRule.title, newRule.ruleContent)
+      : newRule.ruleContent;
+    fs.writeFileSync(fullPath, content, 'utf-8');
 
     // Insert DB record
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_path, occurrences, prevented, status, enforcement, created_at)
-      VALUES (?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
-    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, rulePath, enforcement, now);
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_type, rule_path, occurrences, prevented, status, enforcement, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, ruleType, rulePath, enforcement, now);
 
     return {
       id,
       error_kb_id: newRule.error_kb_id ?? null,
       title: newRule.title,
       category: newRule.category,
+      rule_type: ruleType,
       rule_path: rulePath,
       occurrences: 0,
       prevented: 0,
@@ -81,15 +86,14 @@ export class SelfImproveEngine {
     };
   }
 
-  listRules(status?: 'active' | 'archived'): SelfImproveRule[] {
-    if (status) {
-      return this.db.prepare(
-        'SELECT * FROM self_improve_rules WHERE status = ? ORDER BY created_at DESC'
-      ).all(status) as SelfImproveRule[];
-    }
-    return this.db.prepare(
-      'SELECT * FROM self_improve_rules ORDER BY status ASC, created_at DESC'
-    ).all() as SelfImproveRule[];
+  listRules(status?: 'active' | 'archived', type?: 'preventive' | 'procedural'): SelfImproveRule[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (status) { conditions.push('status = ?'); params.push(status); }
+    if (type) { conditions.push('rule_type = ?'); params.push(type); }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const order = status ? 'ORDER BY created_at DESC' : 'ORDER BY status ASC, created_at DESC';
+    return this.db.prepare(`SELECT * FROM self_improve_rules ${where} ${order}`).all(...params) as SelfImproveRule[];
   }
 
   getRule(id: string): SelfImproveRule | null {
@@ -263,6 +267,10 @@ export class SelfImproveEngine {
     this.db.prepare(
       'UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?'
     ).run(now, id);
+  }
+
+  private buildProceduralTemplate(title: string, content: string): string {
+    return `# ${title}\n\n## When to Use\n${content}\n\n## Procedure\n(절차를 기술하세요)\n\n## Pitfalls\n(알려진 함정을 기술하세요)\n`;
   }
 
   getRulesDir(): string {

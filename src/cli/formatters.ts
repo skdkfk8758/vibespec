@@ -158,6 +158,10 @@ export function formatPlanTree(plan: Plan, tasks: TaskTreeNode[]): string {
 
   lines.push(`${plan.title} (${plan.status})${' '.repeat(5)}${pct}%`);
 
+  if (plan.running_summary) {
+    lines.push(`Running Summary: ${plan.running_summary.split('\n')[0]}...`);
+  }
+
   for (let i = 0; i < tasks.length; i++) {
     const isLast = i === tasks.length - 1;
     renderNode(tasks[i], '', isLast, lines);

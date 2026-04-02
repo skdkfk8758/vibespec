@@ -34,6 +34,34 @@ export const SeverityAdjustmentSchema = z.object({
   condition: z.string(),
 });
 
+// --- Conditional Activation sub-schemas ---
+
+export const SkipWhenSchema = z.object({
+  task_tags: z.array(z.string()).optional(),
+  changed_files_only: z.array(z.string()).optional(),
+});
+
+export const ActivateWhenSchema = z.object({
+  completed_tasks_gte: z.number().optional(),
+  changed_files_pattern: z.string().optional(),
+});
+
+export const ModuleConditionalConfigSchema = z.object({
+  enabled: z.boolean(),
+  skip_when: SkipWhenSchema.optional(),
+  activate_when: ActivateWhenSchema.optional(),
+});
+
+export type ModuleConditionalConfig = z.infer<typeof ModuleConditionalConfigSchema>;
+
+export const ConditionalModuleSchema = z.union([z.boolean(), ModuleConditionalConfigSchema]).optional();
+
+export interface ConditionContext {
+  taskTags: string[];
+  changedFiles: string[];
+  completedTaskCount: number;
+}
+
 // --- Main schema ---
 
 export const QaRulesSchema = z.object({
@@ -63,7 +91,8 @@ export const QaRulesSchema = z.object({
       dead_code: z.boolean().optional(),
       dependency_audit: z.boolean().optional(),
       complexity_analysis: z.boolean().optional(),
-      shadow: z.boolean().optional(),
+      shadow: ConditionalModuleSchema,
+      flow_tester: ConditionalModuleSchema,
       wave_gate: z.boolean().optional(),
       adaptive_planner: z.boolean().optional(),
       design_review: z.boolean().optional(),
@@ -97,7 +126,8 @@ export interface ResolvedQaConfig {
     dead_code: boolean;
     dependency_audit: boolean;
     complexity_analysis: boolean;
-    shadow: boolean;
+    shadow: ModuleConditionalConfig;
+    flow_tester: ModuleConditionalConfig;
     wave_gate: boolean;
     adaptive_planner: boolean;
     design_review: boolean;
@@ -123,7 +153,8 @@ export const DEFAULT_QA_CONFIG: ResolvedQaConfig = {
     dead_code: true,
     dependency_audit: true,
     complexity_analysis: true,
-    shadow: false,
+    shadow: { enabled: false },
+    flow_tester: { enabled: false },
     wave_gate: false,
     adaptive_planner: false,
     design_review: false,
@@ -147,7 +178,8 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: true,
+      shadow: { enabled: true },
+      flow_tester: { enabled: false },
       wave_gate: false,
       adaptive_planner: false,
       design_review: true,
@@ -164,7 +196,8 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: false,
+      shadow: { enabled: false },
+      flow_tester: { enabled: false },
       wave_gate: true,
       adaptive_planner: false,
       design_review: false,
@@ -181,7 +214,8 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: true,
+      shadow: { enabled: true },
+      flow_tester: { enabled: false },
       wave_gate: true,
       adaptive_planner: false,
       design_review: true,
@@ -197,7 +231,8 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       dead_code: true,
       dependency_audit: true,
       complexity_analysis: true,
-      shadow: false,
+      shadow: { enabled: false },
+      flow_tester: { enabled: false },
       wave_gate: false,
       adaptive_planner: false,
       design_review: false,
@@ -214,7 +249,8 @@ export const PROFILE_PRESETS: Record<string, Partial<ResolvedQaConfig>> = {
       dead_code: true,
       dependency_audit: false,
       complexity_analysis: true,
-      shadow: false,
+      shadow: { enabled: false },
+      flow_tester: { enabled: false },
       wave_gate: false,
       adaptive_planner: false,
       design_review: false,
@@ -290,6 +326,34 @@ function filterExpiredIgnoreRules(config: ResolvedQaConfig): ResolvedQaConfig {
   return { ...config, ignore: filtered };
 }
 
+// --- Normalize boolean modules to object form ---
+
+function normalizeConditionalModule(
+  value: boolean | ModuleConditionalConfig | undefined,
+  defaultValue: ModuleConditionalConfig,
+): ModuleConditionalConfig {
+  if (value === undefined) return defaultValue;
+  if (typeof value === 'boolean') return { enabled: value };
+  return value;
+}
+
+function normalizeConditionalModules(config: ResolvedQaConfig): ResolvedQaConfig {
+  return {
+    ...config,
+    modules: {
+      ...config.modules,
+      shadow: normalizeConditionalModule(
+        config.modules.shadow as any,
+        DEFAULT_QA_CONFIG.modules.shadow,
+      ),
+      flow_tester: normalizeConditionalModule(
+        config.modules.flow_tester as any,
+        DEFAULT_QA_CONFIG.modules.flow_tester,
+      ),
+    },
+  };
+}
+
 // --- Resolve Config ---
 
 export interface ResolveConfigOptions {
@@ -308,6 +372,7 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedQaCon
   // If rawConfig is provided directly (for testing), use it
   if (rawConfig) {
     config = { ...rawConfig };
+    config = normalizeConditionalModules(config);
     return filterExpiredIgnoreRules(config);
   }
 
@@ -339,10 +404,57 @@ export function resolveConfig(options: ResolveConfigOptions = {}): ResolvedQaCon
     }
   }
 
+  // Normalize boolean->object for conditional modules
+  config = normalizeConditionalModules(config);
+
   // Filter expired ignore rules
   config = filterExpiredIgnoreRules(config);
 
   return config;
+}
+
+// --- Evaluate Condition ---
+
+function matchesGlobPattern(pattern: string, filePath: string): boolean {
+  const regexStr = '^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$';
+  return new RegExp(regexStr).test(filePath);
+}
+
+export function evaluateCondition(moduleConfig: ModuleConditionalConfig, context: ConditionContext): boolean {
+  if (!moduleConfig.enabled) return false;
+
+  if (moduleConfig.skip_when) {
+    const { task_tags, changed_files_only } = moduleConfig.skip_when;
+
+    if (task_tags && task_tags.length > 0) {
+      const hasMatchingTag = context.taskTags.some((tag) => task_tags.includes(tag));
+      if (hasMatchingTag) return false;
+    }
+
+    if (changed_files_only && changed_files_only.length > 0 && context.changedFiles.length > 0) {
+      const allFilesMatch = context.changedFiles.every((file) =>
+        changed_files_only.some((p) => matchesGlobPattern(p, file)),
+      );
+      if (allFilesMatch) return false;
+    }
+  }
+
+  if (moduleConfig.activate_when) {
+    const { completed_tasks_gte, changed_files_pattern } = moduleConfig.activate_when;
+
+    if (completed_tasks_gte !== undefined) {
+      if (context.completedTaskCount < completed_tasks_gte) return false;
+    }
+
+    if (changed_files_pattern !== undefined) {
+      const hasMatchingFile = context.changedFiles.some((file) =>
+        matchesGlobPattern(changed_files_pattern, file),
+      );
+      if (!hasMatchingFile) return false;
+    }
+  }
+
+  return true;
 }
 
 // --- Validate Config ---
@@ -380,7 +492,11 @@ export function validateConfig(config: ResolvedQaConfig): ValidationResult {
   if (config.modules) {
     const allFalse = Object.entries(config.modules)
       .filter(([key]) => key !== 'auto_trigger')
-      .every(([, v]) => v === false);
+      .every(([, v]) => {
+        if (typeof v === 'boolean') return v === false;
+        if (typeof v === 'object' && v !== null && 'enabled' in v) return !(v as ModuleConditionalConfig).enabled;
+        return false;
+      });
     if (allFalse) {
       warnings.push('All modules are disabled. No QA checks will be performed.');
     }

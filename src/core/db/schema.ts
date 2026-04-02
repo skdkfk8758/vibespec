@@ -26,6 +26,7 @@ export function initSchema(db: Database.Database): void {
       branch      TEXT,
       worktree_name TEXT,
       qa_overrides TEXT,
+      running_summary TEXT,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME
     );
@@ -286,6 +287,7 @@ export function applyMigrations(db: Database.Database): void {
         branch      TEXT,
         worktree_name TEXT,
         qa_overrides TEXT,
+        running_summary TEXT,
         created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
         completed_at DATETIME
       );
@@ -325,6 +327,7 @@ export function applyMigrations(db: Database.Database): void {
         error_kb_id       TEXT,
         title             TEXT NOT NULL,
         category          TEXT NOT NULL,
+        rule_type         TEXT NOT NULL DEFAULT 'preventive' CHECK(rule_type IN ('preventive', 'procedural')),
         rule_path         TEXT NOT NULL,
         occurrences       INTEGER DEFAULT 0,
         prevented         INTEGER DEFAULT 0,
@@ -666,5 +669,17 @@ export function applyMigrations(db: Database.Database): void {
     }
 
     db.pragma('user_version = 13');
+  }
+
+  if (version < 14) {
+    if (!hasColumn(db, 'plans', 'running_summary')) {
+      db.exec('ALTER TABLE plans ADD COLUMN running_summary TEXT');
+    }
+    const hasSIR = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='self_improve_rules'").get();
+    if (hasSIR && !hasColumn(db, 'self_improve_rules', 'rule_type')) {
+      db.exec("ALTER TABLE self_improve_rules ADD COLUMN rule_type TEXT NOT NULL DEFAULT 'preventive' CHECK(rule_type IN ('preventive', 'procedural'))");
+    }
+
+    db.pragma('user_version = 14');
   }
 }

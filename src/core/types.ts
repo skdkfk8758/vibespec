@@ -15,6 +15,7 @@ export interface Plan {
   branch: string | null;
   worktree_name: string | null;
   qa_overrides: string | null;
+  running_summary: string | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -195,11 +196,14 @@ export type RuleStatus = 'active' | 'archived';
 
 export type RuleEnforcement = 'SOFT' | 'HARD';
 
+export type RuleType = 'preventive' | 'procedural';
+
 export interface SelfImproveRule {
   id: string;
   error_kb_id: string | null;
   title: string;
   category: RuleCategory;
+  rule_type: RuleType;
   rule_path: string;
   occurrences: number;
   prevented: number;
@@ -232,6 +236,7 @@ export interface NewRule {
   category: RuleCategory;
   ruleContent: string;
   enforcement?: RuleEnforcement;
+  rule_type?: RuleType;
 }
 
 // QA types

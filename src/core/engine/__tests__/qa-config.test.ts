@@ -6,7 +6,10 @@ import {
   resolveConfig,
   deepMerge,
   PROFILE_PRESETS,
+  evaluateCondition,
   type ResolvedQaConfig,
+  type ModuleConditionalConfig,
+  type ConditionContext,
 } from '../qa-config.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -123,7 +126,7 @@ describe('QaConfigEngine', () => {
       });
       expect(DEFAULT_QA_CONFIG.modules.lint_check).toBe(true);
       expect(DEFAULT_QA_CONFIG.modules.type_check).toBe(true);
-      expect(DEFAULT_QA_CONFIG.modules.shadow).toBe(false);
+      expect(DEFAULT_QA_CONFIG.modules.shadow).toEqual({ enabled: false });
       expect(DEFAULT_QA_CONFIG.modules.wave_gate).toBe(false);
       expect(DEFAULT_QA_CONFIG.modules.adaptive_planner).toBe(false);
       expect(DEFAULT_QA_CONFIG.modules.design_review).toBe(false);
@@ -137,11 +140,11 @@ describe('QaConfigEngine', () => {
     it('AC04: should merge L1 yaml over L0 defaults keeping unset fields', () => {
       const l0 = {
         risk_thresholds: { green: 0.2, yellow: 0.5, orange: 0.8 },
-        modules: { lint_check: true, type_check: true, shadow: false },
+        modules: { lint_check: true, type_check: true, shadow: { enabled: false } },
       };
       const l1 = {
         risk_thresholds: { green: 0.1 },
-        modules: { shadow: true },
+        modules: { shadow: { enabled: true } },
       };
 
       const merged = deepMerge(l0, l1);
@@ -149,7 +152,7 @@ describe('QaConfigEngine', () => {
       expect(merged.risk_thresholds.yellow).toBe(0.5);
       expect(merged.risk_thresholds.orange).toBe(0.8);
       expect(merged.modules.lint_check).toBe(true);
-      expect(merged.modules.shadow).toBe(true);
+      expect(merged.modules.shadow).toEqual({ enabled: true });
     });
   });
 
@@ -216,18 +219,16 @@ describe('QaConfigEngine', () => {
     it('AC06: explicit values should override profile preset', () => {
       const config = {
         profile: 'web-frontend' as const,
-        modules: { shadow: true },
+        modules: { shadow: { enabled: true } },
       };
       const preset = PROFILE_PRESETS['web-frontend'];
       const withPreset = deepMerge(DEFAULT_QA_CONFIG, preset);
       const result = deepMerge(withPreset, config);
 
-      // explicit override takes precedence
-      expect(result.modules.shadow).toBe(true);
+      expect(result.modules.shadow).toEqual({ enabled: true });
     });
 
     it('AC06: resolveConfig should apply profile from yaml config', () => {
-      // We test the full pipeline by providing a mock yaml
       const yamlContent = 'profile: api-server\n';
       const tmpDir = fs.mkdtempSync('/tmp/qa-config-test-');
       const tmpFile = path.join(tmpDir, 'qa-rules.yaml');
@@ -235,7 +236,6 @@ describe('QaConfigEngine', () => {
 
       try {
         const config = resolveConfig({ yamlPath: tmpFile });
-        // api-server preset should be applied
         expect(config.profile).toBe('api-server');
       } finally {
         fs.rmSync(tmpDir, { recursive: true });
@@ -266,7 +266,6 @@ describe('QaConfigEngine', () => {
     it('AC07: should return L0 and warn when Zod validation fails', () => {
       const tmpDir = fs.mkdtempSync('/tmp/qa-config-test-');
       const tmpFile = path.join(tmpDir, 'qa-rules.yaml');
-      // Valid YAML but invalid schema (risk_thresholds.green should be number)
       fs.writeFileSync(tmpFile, 'risk_thresholds:\n  green: "not-a-number"\n');
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -286,7 +285,6 @@ describe('QaConfigEngine', () => {
 
   describe('auto_trigger module schema', () => {
     it('AC01: qa-config.ts에 auto_trigger 모듈이 Zod 스키마에 정의되어 있어야 한다', () => {
-      // auto_trigger가 modules 내부에 Zod 스키마로 정의되어 있어야 한다
       const configWithAutoTrigger = {
         modules: {
           auto_trigger: {
@@ -339,6 +337,169 @@ describe('QaConfigEngine', () => {
     });
   });
 
+  // --- Conditional Activation (shadow / flow_tester) ---
+
+  describe('Conditional Activation schema and resolveConfig', () => {
+    it('AC01: 기존 shadow: true 설정이 {enabled: true}로 자동 변환되어야 한다', () => {
+      const config = resolveConfig({
+        rawConfig: {
+          ...DEFAULT_QA_CONFIG,
+          modules: { ...DEFAULT_QA_CONFIG.modules, shadow: true as any },
+        },
+      });
+      const shadow = config.modules.shadow;
+      expect(shadow).toEqual({ enabled: true });
+    });
+
+    it('AC01: 기존 shadow: false 설정이 {enabled: false}로 자동 변환되어야 한다', () => {
+      const config = resolveConfig({
+        rawConfig: {
+          ...DEFAULT_QA_CONFIG,
+          modules: { ...DEFAULT_QA_CONFIG.modules, shadow: false as any },
+        },
+      });
+      const shadow = config.modules.shadow;
+      expect(shadow).toEqual({ enabled: false });
+    });
+
+    it('AC02: shadow: {enabled: true, skip_when: {task_tags: ["docs"]}} 설정이 파싱되어야 한다', () => {
+      const input = {
+        modules: {
+          shadow: {
+            enabled: true,
+            skip_when: { task_tags: ['docs'] },
+          },
+        },
+      };
+      const result = QaRulesSchema.parse(input);
+      const shadow = result.modules!.shadow as any;
+      expect(shadow.enabled).toBe(true);
+      expect(shadow.skip_when.task_tags).toEqual(['docs']);
+    });
+
+    it('AC02: shadow with activate_when should parse correctly', () => {
+      const input = {
+        modules: {
+          shadow: {
+            enabled: true,
+            activate_when: { completed_tasks_gte: 5, changed_files_pattern: '*.ts' },
+          },
+        },
+      };
+      const result = QaRulesSchema.parse(input);
+      const shadow = result.modules!.shadow as any;
+      expect(shadow.activate_when.completed_tasks_gte).toBe(5);
+      expect(shadow.activate_when.changed_files_pattern).toBe('*.ts');
+    });
+
+    it('AC02: flow_tester도 동일 패턴이 적용되어야 한다', () => {
+      const input = {
+        modules: {
+          flow_tester: {
+            enabled: true,
+            skip_when: { task_tags: ['hotfix'] },
+          },
+        },
+      };
+      const result = QaRulesSchema.parse(input);
+      const ft = result.modules!.flow_tester as any;
+      expect(ft.enabled).toBe(true);
+      expect(ft.skip_when.task_tags).toEqual(['hotfix']);
+    });
+  });
+
+  describe('evaluateCondition', () => {
+    it('AC03: evaluateCondition이 skip_when.task_tags 조건 매칭 시 false를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: true,
+        skip_when: { task_tags: ['docs', 'chore'] },
+      };
+      const context: ConditionContext = {
+        taskTags: ['docs'],
+        changedFiles: ['README.md'],
+        completedTaskCount: 3,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(false);
+    });
+
+    it('AC03: evaluateCondition이 skip_when.changed_files_only 매칭 시 false를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: true,
+        skip_when: { changed_files_only: ['*.md', '*.txt'] },
+      };
+      const context: ConditionContext = {
+        taskTags: [],
+        changedFiles: ['README.md', 'CHANGELOG.md'],
+        completedTaskCount: 3,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(false);
+    });
+
+    it('AC03: skip_when 조건이 매칭되지 않으면 true를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: true,
+        skip_when: { task_tags: ['docs'] },
+      };
+      const context: ConditionContext = {
+        taskTags: ['feature'],
+        changedFiles: ['src/app.ts'],
+        completedTaskCount: 3,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(true);
+    });
+
+    it('AC04: evaluateCondition이 activate_when.completed_tasks_gte 미충족 시 false를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: true,
+        activate_when: { completed_tasks_gte: 10 },
+      };
+      const context: ConditionContext = {
+        taskTags: [],
+        changedFiles: ['src/app.ts'],
+        completedTaskCount: 3,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(false);
+    });
+
+    it('AC04: evaluateCondition이 activate_when.changed_files_pattern 미충족 시 false를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: true,
+        activate_when: { changed_files_pattern: '*.ts' },
+      };
+      const context: ConditionContext = {
+        taskTags: [],
+        changedFiles: ['README.md', 'docs/guide.md'],
+        completedTaskCount: 5,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(false);
+    });
+
+    it('AC04: activate_when 조건이 충족되면 true를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: true,
+        activate_when: { completed_tasks_gte: 5 },
+      };
+      const context: ConditionContext = {
+        taskTags: [],
+        changedFiles: ['src/app.ts'],
+        completedTaskCount: 10,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(true);
+    });
+
+    it('AC03+AC04: enabled가 false이면 조건과 무관하게 false를 반환해야 한다', () => {
+      const moduleConfig: ModuleConditionalConfig = {
+        enabled: false,
+      };
+      const context: ConditionContext = {
+        taskTags: [],
+        changedFiles: ['src/app.ts'],
+        completedTaskCount: 100,
+      };
+      expect(evaluateCondition(moduleConfig, context)).toBe(false);
+    });
+  });
+
   // AC08: expires가 지난 ignore 규칙이 필터링되어야 한다
   describe('AC08: expired ignore rules are filtered out', () => {
     it('AC08: should filter out ignore rules with past expires date', () => {
@@ -367,9 +528,9 @@ describe('QaConfigEngine', () => {
 
       const result = resolveConfig({ rawConfig: config });
       const ignoreIds = result.ignore!.map((r: any) => r.rule_id);
-      expect(ignoreIds).not.toContain('rule-a'); // expired
-      expect(ignoreIds).toContain('rule-b'); // no expiry
-      expect(ignoreIds).toContain('rule-c'); // future
+      expect(ignoreIds).not.toContain('rule-a');
+      expect(ignoreIds).toContain('rule-b');
+      expect(ignoreIds).toContain('rule-c');
     });
   });
 });

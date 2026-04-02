@@ -176,8 +176,19 @@ invocation: user
        ```
 
    **TDD 에이전트 디스패치:**
-     → `tdd-implementer` 에이전트를 디스패치하세요
+     → `tdd-implementer` 또는 `debugger` 에이전트를 디스패치하세요
      → 전달 정보: 태스크(제목, spec, acceptance), 플랜 컨텍스트(제목, 스펙 요약), **scope**(allowed_files, forbidden_patterns — 태스크에 설정되어 있으면)
+
+     **Budget Pressure 힌트 주입** (tdd-implementer, debugger에만 적용 — vs-plan 등 비구현 에이전트 제외):
+     디스패치 프롬프트의 **말미**에 아래 조건에 해당하는 힌트를 비침습적으로 주입하세요:
+     - 조건 1 — **태스크 복잡도 L**: 태스크 title/spec에서 복잡도 힌트를 추론 (변경 파일 5개+, AC 5개+)
+       → `[BUDGET HINT] 이 태스크는 규모가 큽니다. 핵심 기능에 집중하고, 부가적인 리팩터링은 피하세요.`
+     - 조건 2 — **이전 재시도 이력**: `vs --json handoff list <task_id>` 결과에서 동일 에이전트의 attempt >= 2인 이력이 있으면
+       → `[BUDGET HINT] 이전에 이 태스크에서 {N}회 시도가 있었습니다. 이전 실패 원인을 먼저 확인하고, 핵심 문제에 집중하세요.`
+     - 조건 3 — **플랜 진행률 70%+**: `vs --json plan show <plan_id>`에서 progress_pct >= 70이면
+       → `[BUDGET HINT] 플랜이 마무리 단계입니다 ({pct}%). 구현 품질과 테스트 커버리지에 집중하세요.`
+     - 힌트 주입 실패 시 (DB 조회 에러 등): silent fail — 힌트 없이 에이전트를 디스패치하세요
+
      → 에이전트가 자율적으로 RED-GREEN-REFACTOR를 실행합니다
      → 에이전트 리포트를 사용자에게 그대로 표시하세요
 
@@ -207,8 +218,20 @@ invocation: user
 
      **QA Shadow 병렬 디스패치** (선택적):
      verifier 디스패치와 동시에, qa-shadow 에이전트도 병렬로 디스패치하세요:
-     - 조건: `resolved_config`의 `modules.shadow`가 `true`
-     - 조건 미충족 시 이 단계를 건너뛰세요
+     - 조건 1: `vs --json qa config resolve <plan_id>`의 `modules.shadow` 설정 확인
+       - `modules.shadow`가 `false`이면 → 스킵
+       - `modules.shadow`가 `true`이면 → 조건 2로 진행
+       - `modules.shadow`가 object이면 → `enabled`가 false이면 스킵, true이면 조건 2로 진행
+     - 조건 2 (**Conditional Activation 평가**):
+       - `modules.shadow`가 object이고 `skip_when`이 정의되어 있으면:
+         - `skip_when.task_tags`: 현재 태스크의 title/spec에서 추출된 태그와 매칭. 매칭되면 → 스킵 + "QA Shadow 스킵: task_tags 조건 매칭 ({매칭된 태그})" 메시지 표시
+         - `skip_when.changed_files_only`: 변경된 파일이 모두 이 패턴에 매칭되면 → 스킵 + "QA Shadow 스킵: 변경 파일이 모두 {패턴}에 해당" 메시지 표시
+       - `modules.shadow`가 object이고 `activate_when`이 정의되어 있으면:
+         - `activate_when.completed_tasks_gte`: 완료된 태스크 수가 이 값 미만이면 → 스킵
+         - `activate_when.changed_files_pattern`: 변경 파일 중 이 패턴에 매칭되는 파일이 없으면 → 스킵
+       - **우선순위**: `enabled: false`가 최우선. skip_when과 activate_when이 동시 충족 시 skip_when 우선 (보수적 접근)
+       - 조건 평가 결과를 로그로 남기세요: "QA Shadow 조건 평가: {결과} — {사유}"
+     - 위 조건을 모두 통과하면 디스패치 진행
      - **시나리오 수집**: Bash 도구로 `vs --json qa scenario list-by-plan <plan_id> --source seed --task-id <task_id>` 실행하여 이 태스크 관련 seed 시나리오를 조회하세요
      - Agent 도구로 qa-shadow 디스패치 (run_in_background: true, model: haiku):
        ```

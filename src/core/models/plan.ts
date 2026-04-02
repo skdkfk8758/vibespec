@@ -58,7 +58,19 @@ export class PlanModel extends BaseRepository<Plan> {
     return this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`).all(...params) as Plan[];
   }
 
-  update(id: string, fields: Partial<Pick<Plan, 'title' | 'summary' | 'spec'>>): Plan {
+  updateRunningSummary(id: string, summary: string): Plan | null {
+    try {
+      const plan = this.requireById(id);
+      this.db.prepare('UPDATE plans SET running_summary = ? WHERE id = ?').run(summary, id);
+      this.events?.record('plan', id, 'updated', JSON.stringify({ running_summary: plan.running_summary }), JSON.stringify({ running_summary: summary }));
+      return this.requireById(id);
+    } catch (err) {
+      console.error(`[updateRunningSummary] failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  update(id: string, fields: Partial<Pick<Plan, 'title' | 'summary' | 'spec' | 'running_summary'>>): Plan {
     const plan = this.requireById(id);
 
     const query = buildUpdateQuery('plans', id, fields);

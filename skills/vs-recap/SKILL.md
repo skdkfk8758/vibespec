@@ -38,8 +38,20 @@ argument-hint: "[--list | --regenerate | <commit-hash>]"
 
 ### 1. 기본 모드 (인자 없음): 최신 리포트
 
+**Running Summary 우선 조회** (플랜 컨텍스트):
+1. `vs --json plan list --status active`로 활성 플랜을 조회
+2. 활성 플랜이 있고 `running_summary`가 null이 아니면 → 먼저 표시:
+   ```
+   ## 플랜 진행 상태 ({플랜 제목})
+   {running_summary — Done/In Progress/Blocked/Key Decisions/Next Steps}
+   ```
+3. running_summary가 null이면 → 기존 이벤트 로그 기반 폴백
+
+**머지 리포트 조회**:
 1. Bash 도구로 `vs merge-report latest --json`을 실행하세요
 2. 결과가 `null`이면:
+   - running_summary가 이미 표시되었으면 → 간단히 언급만
+   - 둘 다 없으면:
    > "머지 리포트가 없습니다. `/vs-merge`로 머지를 완료하면 자동으로 생성됩니다."
    > "기존 머지 커밋에서 리포트를 생성하려면 `/vs-recap --regenerate`를 사용하세요."
 3. 리포트가 있으면:
