@@ -214,7 +214,7 @@ describe('Schema', () => {
 
     // Assert: version should be latest (all migrations applied)
     const version = v2Db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(15);
+    expect(version).toBe(17);
 
     v2Db.close();
   });
@@ -237,9 +237,9 @@ describe('Schema', () => {
     expect(tables.map((t) => t.name)).toContain('skill_usage');
   });
 
-  it('should set user_version to 15 after all migrations on fresh DB', () => {
+  it('should set user_version to 17 after all migrations on fresh DB', () => {
     const version = db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(15);
+    expect(version).toBe(17);
   });
 
   describe('AC01: migration 11 - enforcement columns', () => {
@@ -369,11 +369,21 @@ describe('Schema', () => {
             status TEXT NOT NULL DEFAULT 'open', fix_plan_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           );
+          CREATE TABLE IF NOT EXISTS merge_reports (
+            id TEXT PRIMARY KEY, plan_id TEXT REFERENCES plans(id),
+            commit_hash TEXT NOT NULL, source_branch TEXT,
+            target_branch TEXT NOT NULL DEFAULT 'main',
+            merge_strategy TEXT, files_changed INTEGER DEFAULT 0,
+            conflicts_count INTEGER DEFAULT 0, conflicts_resolved TEXT,
+            test_result TEXT, test_passed INTEGER, test_total INTEGER,
+            summary TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
         `);
         noVecDb.pragma('user_version = 11');
         expect(() => applyMigrations(noVecDb)).not.toThrow();
         const version = noVecDb.pragma('user_version', { simple: true }) as number;
-        expect(version).toBe(15);
+        expect(version).toBe(17);
         noVecDb.close();
       } finally {
         loadVecSpy.mockRestore();
@@ -383,7 +393,7 @@ describe('Schema', () => {
     it('AC05: migration 12 is idempotent', () => {
       expect(() => applyMigrations(db)).not.toThrow();
       const version = db.pragma('user_version', { simple: true }) as number;
-      expect(version).toBe(15);
+      expect(version).toBe(17);
     });
 
     it('AC03: error_embeddings can store and query data', () => {
