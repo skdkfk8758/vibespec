@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.36.0] - 2026-04-03
+
+### 새 기능
+- **engine**: 아티팩트 자동 정리 엔진 추가 — vs-wrap 연계 (ba2bfe4)
+- **engine**: self-improve dream() + formatDiff 추가 및 CLI 개선 (aeae4a5)
+- **ideate**: ultrathink 고강도 분석 모드 추가 (b7f385a)
+- **dashboard**: 백로그 Top 5 미리보기 + ideate 경로 추가 (39bc218)
+- **vs-browse**: browser-control 의존을 Playwright MCP 직접 연동으로 전환 (ad20698)
+- **quality**: 자동 품질 관리 — Plan Verification + Auto-Dream (764f16c)
+- **engine**: 실행 엔진 안정성 강화 — Error Recovery + Wave 병렬 실행 (f7dbcc8)
+
+### 성능 개선
+- **engine**: DB 쿼리 통합 및 자료구조 최적화 — insights 4쿼리→1, picomatch 사전 컴파일, Set 변환 (8927341)
+
+### 리팩토링
+- **core**: normalizeError 패턴 20개소 통일, deprecated 래퍼 제거, 불필요 주석 정리 (21da57c)
+- **hooks**: careful+freeze 통합 safety-guard, dead hook 삭제, 공통 헬퍼 확장 (b9d33f1)
+- **skills**: Skills 2.0 P3-P4 업그레이드, vs-merge/vs-plan 분할, vs-pr-merge 삭제 (85b56c9)
+- **agents**: 세션 분석 에이전트 3개를 session-analyst로 통합 (b4b3f3e)
+- **docs**: 골격문서 4종 docs/ 폴더로 이동 + 경로 참조 업데이트 (68b1b05)
+
+### 테스트
+- **governance**: artifact cleanup CLI 통합 테스트 추가 (9498b31)
+- **db**: schema.test.ts user_version 어서션 수정 및 fixture 보완 (2ab6edf)
+
+### 문서
+- **skeleton**: 골격 문서 3종 현행화 + vs-setup 참조 경로 수정 (23bbe8b)
+- **skeleton**: 골격 문서 4종 선택 섹션 보완 + DESIGN.md 생성 (9872028)
+
+### 기타
+- **project**: 설정 정리, docs 숫자 현행화, stale 아티팩트 제거 (78dd8d9)
+- **engine**: worktree-engine-quality 브랜치 squash merge 정리 (609ff04)
+
 ## [0.35.0] - 2026-04-03
 
 ### 새 기능
