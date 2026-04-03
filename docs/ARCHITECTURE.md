@@ -24,12 +24,12 @@ VibeSpec은 Claude Code 플러그인으로, 로컬 SQLite DB와 마크다운 기
 |------|------|------|--------|
 | CLI Commands | `src/cli/commands/` | 도메인별 명령어 (planning, quality, knowledge 등 10개) | core |
 | CLI Formatters | `src/cli/` | 출력 포맷팅, 공유 유틸 | - |
-| Core Engine | `src/core/engine/` | 비즈니스 로직 (QA, self-improve, GC, error-kb 등 20개 모듈) | models, db |
+| Core Engine | `src/core/engine/` | 비즈니스 로직 (QA, self-improve, GC, error-kb 등 22개 모듈) | models, db |
 | Core Models | `src/core/models/` | 데이터 접근 계층 (plan, task, backlog, qa 등 15개 리포지토리) | db |
 | Core DB | `src/core/db/` | 스키마 마이그레이션, 벡터 검색 확장 | better-sqlite3 |
 | Skills | `skills/` | 스킬 정의 41개 (마크다운 기반 프롬프트) | - |
-| Agents | `agents/` | 에이전트 정의 18개 (마크다운 기반 프롬프트) | - |
-| Hooks | `hooks/` | PreToolUse/PostToolUse 훅 16개 (careful-guard, freeze 등) | lib/read-config |
+| Agents | `agents/` | 에이전트 정의 19개 (마크다운 기반 프롬프트) | - |
+| Hooks | `hooks/` | PreToolUse/PostToolUse 훅 11개 (safety-guard, worktree-guard 등) | lib/read-config |
 
 ### 디렉토리 구조
 ```
@@ -46,8 +46,8 @@ src/
 │   ├── types.ts      # 공유 타입 정의
 │   └── utils.ts      # 공유 유틸리티
 skills/               # 스킬 정의 (41개)
-agents/               # 에이전트 정의 (18개)
-hooks/                # PreToolUse/PostToolUse 훅 (16개)
+agents/               # 에이전트 정의 (19개)
+hooks/                # PreToolUse/PostToolUse 훅 (13개)
 docs/                 # 골격 문서 4종
 ```
 

@@ -298,7 +298,7 @@ last_triggered: {날짜}
 
 ### 4.5 Session Rules Load (SessionStart 확장)
 
-**기존** `session-restore-check.sh` 확장 또는 별도 hook
+**`self-improve-status.sh`** (session-restore-check.sh는 제거됨)
 
 ```bash
 # 추가 로직
@@ -363,7 +363,7 @@ last_triggered: {날짜}
 ### SessionStart (2)
 | Hook | 기능 | 상태 |
 |------|------|------|
-| session-restore-check | 세션 복구 컨텍스트 | 기존 |
+| self-improve-status | pending 체크 + 규칙 수 경고 | 기존 |
 | **self-improve-status** | pending 체크 + 쿨다운 + 규칙 수 경고 | **신규** |
 
 ### PreToolUse (3)

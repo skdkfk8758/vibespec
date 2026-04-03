@@ -1,9 +1,14 @@
 node_modules/
 node-compile-cache/
+jest_dx/
 *.db
 *.db-wal
 *.db-shm
 .DS_Store
+.claire/
 .claude/worktrees/
+.claude/handoff/
+.claude/reports/
+.claude/session-reports/
 /.mcp.json
 !.claude-plugin/.mcp.json

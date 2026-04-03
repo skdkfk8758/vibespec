@@ -227,9 +227,7 @@
 
   세션 시작 (SessionStart Hooks)
   ┌──────────────────────────────────────────┐
-  │  1. session-restore-check.sh             │
-  │     └─ 이전 stash 감지 → 복원 제안       │
-  │  2. self-improve-status.sh               │
+  │  1. self-improve-status.sh               │
   │     └─ 대기 중인 개선 규칙 표시          │
   │  3. guardrail-status.sh                  │
   │     └─ 활성 안전장치 상태 표시           │
@@ -246,8 +244,7 @@
   │  ┌────────────────────────────────┐      │
   │  │  PreToolUse Hooks (매 도구마다) │      │
   │  │  • worktree-guard.sh           │      │
-  │  │  • careful-guard.sh            │      │
-  │  │  • freeze-boundary.sh          │      │
+  │  │  • safety-guard.sh (careful+freeze)│    │
   │  │  • pre-commit-rule-check.sh    │      │
   │  └────────────────────────────────┘      │
   └──────────────────────────────────────────┘
@@ -392,14 +389,12 @@ Step 7: 머지 & 릴리즈
   ├────────────────────────────────────────────────────┤
   │                                                    │
   │  SessionStart (세션 시작 시)                        │
-  │  ├─ session-restore-check.sh   stash 복원 제안     │
   │  ├─ self-improve-status.sh     대기 규칙 표시      │
   │  └─ guardrail-status.sh        안전장치 상태       │
   │                                                    │
   │  PreToolUse (도구 실행 전)                          │
   │  ├─ worktree-guard.sh          워크트리 범위 검사  │
-  │  ├─ careful-guard.sh           파괴적 명령 차단    │
-  │  ├─ freeze-boundary.sh         편집 범위 차단      │
+  │  ├─ safety-guard.sh       careful+freeze 통합 │
   │  └─ pre-commit-rule-check.sh   규칙 적용 검사      │
   │                                                    │
   │  PostToolUse (도구 실행 후)                         │

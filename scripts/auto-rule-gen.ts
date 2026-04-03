@@ -99,7 +99,15 @@ export async function processAutoRuleGen(options: ProcessOptions): Promise<Proce
 
   for (const filename of pendingFiles) {
     const pendingPath = path.join(pendingDir, filename);
-    const data: PendingData = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+
+    let data: PendingData;
+    try {
+      data = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    } catch {
+      console.error(`[auto-rule-gen] Failed to parse ${filename}, skipping`);
+      result.failed++;
+      continue;
+    }
 
     try {
       // Call Haiku API

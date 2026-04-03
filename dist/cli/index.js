@@ -1983,7 +1983,7 @@ function detectGitContext() {
       isWorktree
     };
   } catch (e) {
-    console.error("[connection] Git root detection failed:", e instanceof Error ? e.message : e);
+    console.error("[connection] Git root detection failed:", normalizeError(e).message);
     return { branch: null, worktreeName: null, isWorktree: false };
   }
 }
@@ -2058,7 +2058,7 @@ function cosineSimilarity(a, b) {
     normA += ai * ai;
     normB += bi * bi;
   }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  const denom = Math.sqrt(normA * normB);
   if (denom === 0) return 0;
   return dot / denom;
 }
@@ -2824,7 +2824,7 @@ var DashboardEngine = class {
       ).all();
       return { total: totalRow.total, open, by_priority, top_items };
     } catch (e) {
-      console.error("[dashboard] backlog query failed:", e instanceof Error ? e.message : e);
+      console.error("[dashboard] backlog query failed:", normalizeError(e).message);
       return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] };
     }
   }
@@ -2841,7 +2841,7 @@ var DashboardEngine = class {
       ).get(planId);
       return row ?? null;
     } catch (e) {
-      console.error("[dashboard] QA run query failed:", e instanceof Error ? e.message : e);
+      console.error("[dashboard] QA run query failed:", normalizeError(e).message);
       return null;
     }
   }
@@ -2862,7 +2862,7 @@ var DashboardEngine = class {
       }
       return result;
     } catch (e) {
-      console.error("[dashboard] alert counts query failed:", e instanceof Error ? e.message : e);
+      console.error("[dashboard] alert counts query failed:", normalizeError(e).message);
       return { critical: 0, high: 0, medium: 0, low: 0 };
     }
   }
@@ -3253,29 +3253,28 @@ var InsightsEngine = class {
     return { overall, by_plan };
   }
   getRecommendations() {
-    const totalRow = this.db.prepare("SELECT COUNT(*) AS total FROM task_metrics").get();
-    if (totalRow.total < 5) return [];
+    const row = this.db.prepare(`
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked,
+          ROUND(AVG(CASE WHEN duration_min IS NOT NULL THEN duration_min END), 1) AS avg_min,
+          SUM(CASE WHEN has_concerns = 1 THEN 1 ELSE 0 END) AS concerns
+        FROM task_metrics
+      `).get();
+    if (row.total < 5) return [];
     const recommendations = [];
-    const total = totalRow.total;
-    const blockedRow = this.db.prepare("SELECT COUNT(*) AS blocked FROM task_metrics WHERE final_status = 'blocked'").get();
-    const blockedPct = Math.round(blockedRow.blocked / total * 100);
+    const blockedPct = Math.round(row.blocked / row.total * 100);
     if (blockedPct >= 30) {
       recommendations.push(
         `Blocked \uD0DC\uC2A4\uD06C \uBE44\uC728\uC774 ${blockedPct}%\uB85C \uB192\uC2B5\uB2C8\uB2E4. \uD0DC\uC2A4\uD06C \uBD84\uD574\uB97C \uB354 \uC138\uBD84\uD654\uD558\uAC70\uB098 \uC758\uC874\uC131\uC744 \uC0AC\uC804\uC5D0 \uD655\uC778\uD558\uC138\uC694.`
       );
     }
-    const durationRow = this.db.prepare(
-      `SELECT ROUND(AVG(duration_min), 1) AS avg_min
-         FROM task_metrics
-         WHERE duration_min IS NOT NULL`
-    ).get();
-    if (durationRow.avg_min !== null && durationRow.avg_min > 60) {
+    if (row.avg_min !== null && row.avg_min > 60) {
       recommendations.push(
-        `\uD3C9\uADE0 \uD0DC\uC2A4\uD06C \uC18C\uC694 \uC2DC\uAC04\uC774 ${durationRow.avg_min}\uBD84\uC785\uB2C8\uB2E4. \uD0DC\uC2A4\uD06C\uB97C \uB354 \uC791\uC740 \uB2E8\uC704\uB85C \uBD84\uD574\uD558\uB294 \uAC83\uC744 \uAD8C\uC7A5\uD569\uB2C8\uB2E4.`
+        `\uD3C9\uADE0 \uD0DC\uC2A4\uD06C \uC18C\uC694 \uC2DC\uAC04\uC774 ${row.avg_min}\uBD84\uC785\uB2C8\uB2E4. \uD0DC\uC2A4\uD06C\uB97C \uB354 \uC791\uC740 \uB2E8\uC704\uB85C \uBD84\uD574\uD558\uB294 \uAC83\uC744 \uAD8C\uC7A5\uD569\uB2C8\uB2E4.`
       );
     }
-    const concernsRow = this.db.prepare("SELECT SUM(CASE WHEN has_concerns = 1 THEN 1 ELSE 0 END) AS concerns FROM task_metrics").get();
-    const concernsPct = Math.round(concernsRow.concerns / total * 100);
+    const concernsPct = Math.round(row.concerns / row.total * 100);
     if (concernsPct >= 50) {
       recommendations.push(
         `\uAD6C\uD604 \uC6B0\uB824\uC0AC\uD56D\uC774 ${concernsPct}%\uC758 \uD0DC\uC2A4\uD06C\uC5D0\uC11C \uBC1C\uACAC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC2A4\uD399 \uBA85\uD655\uD654\uAC00 \uD544\uC694\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`
@@ -3427,7 +3426,7 @@ var PlanModel = class extends BaseRepository {
       this.events?.record("plan", id, "updated", JSON.stringify({ running_summary: plan.running_summary }), JSON.stringify({ running_summary: summary }));
       return this.requireById(id);
     } catch (err) {
-      console.error(`[updateRunningSummary] failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`[updateRunningSummary] failed: ${normalizeError(err).message}`);
       return null;
     }
   }
@@ -3578,7 +3577,7 @@ var SkillUsageModel = class extends BaseRepository {
     const id = generateId();
     const planId = opts?.planId ?? null;
     const sessionId = opts?.sessionId ?? null;
-    const createdAt = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").slice(0, 19);
+    const createdAt = (/* @__PURE__ */ new Date()).toISOString();
     this.db.prepare(
       `INSERT INTO skill_usage (id, skill_name, plan_id, session_id, created_at)
          VALUES (?, ?, ?, ?, ?)`
@@ -4174,10 +4173,6 @@ var WaveGateModel = class extends BaseRepository {
     ).run(id, planId, waveNumber, JSON.stringify(taskIds), verdict, summary ?? null, findingsCount ?? 0);
     return this.getById(id);
   }
-  /** @deprecated Use getById() instead */
-  get(id) {
-    return this.getById(id);
-  }
   listByPlan(planId) {
     return this.db.prepare(
       "SELECT * FROM wave_gates WHERE plan_id = ? ORDER BY wave_number ASC"
@@ -4196,10 +4191,6 @@ var PlanRevisionModel = class extends BaseRepository {
       `INSERT INTO plan_revisions (id, plan_id, trigger_type, trigger_source, description, changes)
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(id, planId, triggerType, triggerSource, description, changes);
-    return this.getById(id);
-  }
-  /** @deprecated Use getById() instead */
-  get(id) {
     return this.getById(id);
   }
   listByPlan(planId) {
@@ -4726,7 +4717,7 @@ var RetryEngine = class {
       });
       return { escalated: true, fallbackAgent, attempts };
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = normalizeError(err);
       attempts.push({ success: false, attempt: attempts.length + 1, error });
       errorKb.add({
         title: `escalation failure: ${originalAgent} -> ${fallbackAgent}`,
@@ -4850,10 +4841,12 @@ var WaveCoordinator = class {
     const blockedTaskIds = new Set(
       results.filter((r) => r.status === "blocked" || r.status === "failed").map((r) => r.taskId)
     );
+    const processedTaskIds = new Set(results.map((r) => r.taskId));
     for (const [taskId, deps] of Object.entries(dependsOn)) {
       const isBlocked = deps.some((dep) => blockedTaskIds.has(dep));
-      if (isBlocked && !results.find((r) => r.taskId === taskId)) {
+      if (isBlocked && !processedTaskIds.has(taskId)) {
         results.push({ taskId, status: "blocked" });
+        processedTaskIds.add(taskId);
       }
     }
     for (const taskId of plan.sequentialTasks) {
@@ -4952,7 +4945,7 @@ var LifecycleEngine = class {
         console.log(`[lifecycle] AC verification score: ${verification.overallScore}/100`);
       }
     }).catch((err) => {
-      console.error(`[lifecycle] Plan ${planId} verification failed:`, err instanceof Error ? err.message : err);
+      console.error(`[lifecycle] Plan ${planId} verification failed:`, normalizeError(err).message);
     });
     const plan = this.planModel.complete(planId);
     this.events?.record(
@@ -5068,10 +5061,11 @@ function withErrorHandler(fn) {
   try {
     fn();
   } catch (e) {
-    if (verboseMode && e instanceof Error && e.stack) {
-      console.error(e.stack);
+    const error = normalizeError(e);
+    if (verboseMode && error.stack) {
+      console.error(error.stack);
     }
-    outputError(e instanceof Error ? e.message : String(e));
+    outputError(error.message);
   }
 }
 function initModels() {
@@ -5172,7 +5166,6 @@ function initDb() {
 
 // src/cli/commands/governance.ts
 import { resolve as resolve2, join as join6 } from "path";
-import { existsSync as existsSync7, readFileSync as readFileSync6, writeFileSync as writeFileSync5, chmodSync } from "fs";
 
 // src/core/config-schema.ts
 import { z as z2 } from "zod";
@@ -5241,8 +5234,12 @@ function listDeferredSkills(skillsDir) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const skillMdPath = join3(skillsDir, entry.name, "SKILL.md");
-    if (!existsSync4(skillMdPath)) continue;
-    const content = readFileSync4(skillMdPath, "utf8");
+    let content;
+    try {
+      content = readFileSync4(skillMdPath, "utf8");
+    } catch {
+      continue;
+    }
     const fm = parseFrontmatter2(content);
     if (fm["invocation"] === "deferred") {
       results.push({
@@ -5430,7 +5427,7 @@ var RuleCleanup = class {
       );
       return report;
     } catch (err) {
-      console.error("[Cleanup] \uC138\uC158 \uC815\uB9AC \uC2E4\uD328:", err instanceof Error ? err.message : err);
+      console.error("[Cleanup] \uC138\uC158 \uC815\uB9AC \uC2E4\uD328:", normalizeError(err).message);
       return { duplicates: 0, conflicts: 0, archived: 0 };
     }
   }
@@ -5726,8 +5723,9 @@ ${content}
         processed.add(i);
       }
     }
+    const keptSet = new Set(kept);
     for (let i = 0; i < ruleFiles.length; i++) {
-      if (!processed.has(i) && !kept.includes(ruleFiles[i].filename)) {
+      if (!processed.has(i) && !keptSet.has(ruleFiles[i].filename)) {
         kept.push(ruleFiles[i].filename);
       }
     }
@@ -5861,10 +5859,13 @@ var ArtifactCleanup = class {
     this.recordCleanup(generateId(), trigger, startedAt, dryRun, result);
     return result;
   }
+  cutoffMs(retentionDays) {
+    return Date.now() - retentionDays * 864e5;
+  }
   cleanHandoffs(retentionDays, dryRun, details) {
     const handoffDir = join5(this.claudeDir, "handoff");
     if (!existsSync6(handoffDir)) return 0;
-    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1e3;
+    const cutoff = this.cutoffMs(retentionDays);
     const activeTaskIds = this.getActiveHandoffTaskIds();
     let removed = 0;
     for (const entry of readdirSync5(handoffDir)) {
@@ -5886,13 +5887,13 @@ var ArtifactCleanup = class {
           removed++;
         }
       } catch (err) {
-        details.push(`error cleaning handoff ${entry}: ${err instanceof Error ? err.message : String(err)}`);
+        details.push(`error cleaning handoff ${entry}: ${normalizeError(err).message}`);
       }
     }
     return removed;
   }
   cleanReports(retentionDays, dryRun, details) {
-    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1e3;
+    const cutoff = this.cutoffMs(retentionDays);
     const reportDirs = ["session-reports", "reports"];
     let removed = 0;
     for (const dirName of reportDirs) {
@@ -5909,7 +5910,7 @@ var ArtifactCleanup = class {
             removed++;
           }
         } catch (err) {
-          details.push(`error cleaning ${dirName}/${entry}: ${err instanceof Error ? err.message : String(err)}`);
+          details.push(`error cleaning ${dirName}/${entry}: ${normalizeError(err).message}`);
         }
       }
     }
@@ -5925,7 +5926,7 @@ var ArtifactCleanup = class {
       details.push(`rule cleanup: ${report.length} duplicate groups, ${conflicts.length} conflicts, ${staleArchived.length} stale archived`);
       return { archived: staleArchived.length, conflicts: conflicts.length };
     } catch (err) {
-      details.push(`rule cleanup error: ${err instanceof Error ? err.message : String(err)}`);
+      details.push(`rule cleanup error: ${normalizeError(err).message}`);
       return { archived: 0, conflicts: 0 };
     }
   }
@@ -5948,7 +5949,7 @@ var ArtifactCleanup = class {
             removed++;
           }
         } catch (err) {
-          details.push(`error cleaning ${dirName}/${entry}: ${err instanceof Error ? err.message : String(err)}`);
+          details.push(`error cleaning ${dirName}/${entry}: ${normalizeError(err).message}`);
         }
       }
     }
@@ -5998,53 +5999,16 @@ var ArtifactCleanup = class {
 };
 
 // src/cli/commands/governance.ts
-function manageHook(action, hookId, toolName, scriptPath) {
-  const settingsDir = join6(process.cwd(), ".claude");
-  const settingsPath = join6(settingsDir, "settings.local.json");
-  let settings = {};
-  if (existsSync7(settingsPath)) {
-    try {
-      settings = JSON.parse(readFileSync6(settingsPath, "utf8"));
-    } catch {
-      settings = {};
-    }
-  }
-  if (!settings.hooks) settings.hooks = {};
-  const hooks = settings.hooks;
-  if (!hooks.PreToolUse) hooks.PreToolUse = [];
-  const preToolUse = hooks.PreToolUse;
-  if (action === "add") {
-    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
-    hooks.PreToolUse.push({
-      id: hookId,
-      type: "command",
-      matcher: toolName,
-      command: scriptPath
-    });
-    if (existsSync7(scriptPath)) {
-      try {
-        chmodSync(scriptPath, 493);
-      } catch {
-      }
-    }
-  } else {
-    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
-  }
-  writeFileSync5(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-}
 function registerGovernanceCommands(program2, _getModels) {
   const careful = program2.command("careful").description("Manage careful mode (destructive command guard)");
   careful.command("on").description("Enable careful mode").action(() => {
     const db = initDb();
     setConfig(db, "careful.enabled", "true");
-    const scriptPath = join6(process.cwd(), "bin", "check-careful.sh");
-    manageHook("add", "vs-careful", "Bash", scriptPath);
     output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
   });
   careful.command("off").description("Disable careful mode").action(() => {
     const db = initDb();
     setConfig(db, "careful.enabled", "false");
-    manageHook("remove", "vs-careful", "Bash", "");
     output({ careful: false }, "careful \uBAA8\uB4DC \uBE44\uD65C\uC131\uD654\uB428.");
   });
   careful.command("status").description("Show careful mode status").action(() => {
@@ -6057,16 +6021,11 @@ function registerGovernanceCommands(program2, _getModels) {
     const db = initDb();
     const absPath = resolve2(inputPath);
     setConfig(db, "freeze.path", absPath);
-    const scriptPath = join6(process.cwd(), "bin", "check-freeze.sh");
-    manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
-    manageHook("add", "vs-freeze-write", "Write", scriptPath);
     output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
   });
   freeze.command("off").description("Remove freeze boundary").action(() => {
     const db = initDb();
     deleteConfig(db, "freeze.path");
-    manageHook("remove", "vs-freeze-edit", "Edit", "");
-    manageHook("remove", "vs-freeze-write", "Write", "");
     output({ freeze: null }, "freeze \uBE44\uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704 \uC81C\uD55C \uD574\uC81C.");
   });
   freeze.command("status").description("Show freeze boundary status").action(() => {
@@ -6083,11 +6042,6 @@ function registerGovernanceCommands(program2, _getModels) {
     const absPath = resolve2(inputPath);
     setConfig(db, "careful.enabled", "true");
     setConfig(db, "freeze.path", absPath);
-    const carefulScript = join6(process.cwd(), "bin", "check-careful.sh");
-    const freezeScript = join6(process.cwd(), "bin", "check-freeze.sh");
-    manageHook("add", "vs-careful", "Bash", carefulScript);
-    manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
-    manageHook("add", "vs-freeze-write", "Write", freezeScript);
     output(
       { careful: true, freeze: absPath },
       `\u{1F6E1}\uFE0F guard \uD65C\uC131\uD654\uB428 \u2014 careful + freeze: ${absPath}`
@@ -6097,9 +6051,6 @@ function registerGovernanceCommands(program2, _getModels) {
     const db = initDb();
     setConfig(db, "careful.enabled", "false");
     deleteConfig(db, "freeze.path");
-    manageHook("remove", "vs-careful", "Bash", "");
-    manageHook("remove", "vs-freeze-edit", "Edit", "");
-    manageHook("remove", "vs-freeze-write", "Write", "");
     output({ careful: false, freeze: null }, "guard \uBE44\uD65C\uC131\uD654\uB428 \u2014 careful + freeze \uBAA8\uB450 \uD574\uC81C.");
   });
   guard.command("status").description("Show guard status").action(() => {
@@ -6255,14 +6206,14 @@ function registerGovernanceCommands(program2, _getModels) {
         `  rules \u2014 archived: ${result.rulesArchived}, conflicts: ${result.rulesConflicts}`
       ].join("\n"));
     } catch (err) {
-      outputError(`Artifact cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+      outputError(`Artifact cleanup failed: ${normalizeError(err).message}`);
     }
   });
 }
 
 // src/cli/importers.ts
 import { execFileSync } from "child_process";
-import { readFileSync as readFileSync7, existsSync as existsSync8 } from "fs";
+import { readFileSync as readFileSync6, existsSync as existsSync7 } from "fs";
 var REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 function validateRepoFormat(repo) {
   const trimmed = repo.trim();
@@ -6280,7 +6231,7 @@ function importFromGithub(repo, options) {
   try {
     validateRepoFormat(repo);
   } catch (e) {
-    errors.push(e instanceof Error ? e.message : String(e));
+    errors.push(normalizeError(e).message);
     return { items: [], source_prefix: `github:${repo}`, errors };
   }
   const state = options?.state ?? "open";
@@ -6303,7 +6254,7 @@ function importFromGithub(repo, options) {
   try {
     jsonStr = execFileSync("gh", args, { encoding: "utf-8", timeout: 3e4 });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = normalizeError(e).message;
     if (msg.includes("command not found") || msg.includes("not found") || msg.includes("ENOENT")) {
       errors.push("gh CLI\uAC00 \uC124\uCE58\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. https://cli.github.com \uC5D0\uC11C \uC124\uCE58\uD558\uC138\uC694.");
     } else {
@@ -6348,15 +6299,15 @@ function inferCategoryFromLabels(labels) {
 }
 function importFromFile(filepath) {
   const errors = [];
-  if (!existsSync8(filepath)) {
+  if (!existsSync7(filepath)) {
     errors.push(`\uD30C\uC77C\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${filepath}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
   let content;
   try {
-    content = readFileSync7(filepath, "utf-8");
+    content = readFileSync6(filepath, "utf-8");
   } catch (e) {
-    errors.push(`\uD30C\uC77C \uC77D\uAE30 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
+    errors.push(`\uD30C\uC77C \uC77D\uAE30 \uC2E4\uD328: ${normalizeError(e).message}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
   const lines = content.split("\n");
@@ -7435,7 +7386,7 @@ function loadYamlConfig(yamlPath) {
     return deepMerge(DEFAULT_QA_CONFIG, validated);
   } catch (err) {
     console.warn(
-      `[VibeSpec] qa-rules.yaml \uD30C\uC2F1 \uC2E4\uD328, L0 \uAE30\uBCF8\uAC12\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4: ${err instanceof Error ? err.message : String(err)}`
+      `[VibeSpec] qa-rules.yaml \uD30C\uC2F1 \uC2E4\uD328, L0 \uAE30\uBCF8\uAC12\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4: ${normalizeError(err).message}`
     );
     return { ...DEFAULT_QA_CONFIG };
   }
@@ -7729,12 +7680,13 @@ function registerQualityCommands(program2, getModels) {
       avg_risk_score: Math.round(avgRisk * 100) / 100,
       total_findings: allFindings.length,
       open_findings: openFindings.length,
-      findings_by_severity: {
-        critical: openFindings.filter((f) => f.severity === "critical").length,
-        high: openFindings.filter((f) => f.severity === "high").length,
-        medium: openFindings.filter((f) => f.severity === "medium").length,
-        low: openFindings.filter((f) => f.severity === "low").length
-      }
+      findings_by_severity: openFindings.reduce(
+        (acc, f) => {
+          acc[f.severity]++;
+          return acc;
+        },
+        { critical: 0, high: 0, medium: 0, low: 0 }
+      )
     };
     output(statsData, [
       `QA Statistics${opts.plan ? ` (plan: ${opts.plan})` : ""}`,
@@ -8434,10 +8386,10 @@ function parseRuleFile(content) {
   }
   return result;
 }
-function matchesAnyGlob(filePath, globs) {
-  if (globs.length === 0) return false;
+function matchesAnyGlob(filePath, matchers) {
+  if (matchers.length === 0) return false;
   const normalized = filePath.replace(/\\/g, "/");
-  return globs.some((glob) => (0, import_picomatch.default)(glob)(normalized));
+  return matchers.some((matcher) => matcher(normalized));
 }
 var RuleRetroScanner = class {
   name = "RuleRetroScanner";
@@ -8472,7 +8424,8 @@ var RuleRetroScanner = class {
       if (parsed.appliesWhen.length === 0 || parsed.patterns.length === 0) {
         continue;
       }
-      const matchingFiles = files.filter((f) => matchesAnyGlob(f, parsed.appliesWhen));
+      const matchers = parsed.appliesWhen.map((g) => (0, import_picomatch.default)(g));
+      const matchingFiles = files.filter((f) => matchesAnyGlob(f, matchers));
       if (matchingFiles.length > MAX_MATCHING_FILES_WARNING) {
         console.warn(
           `[RuleRetroScanner] Rule "${parsed.ruleId ?? ruleFile}" matches ${matchingFiles.length} files (>${MAX_MATCHING_FILES_WARNING}). Consider narrowing the Applies-When glob.`
@@ -9138,7 +9091,7 @@ function registerGCCommands(program2, _getModels) {
         `   Scan ID: ${result.id}`
       ].join("\n"));
     } catch (e) {
-      outputError(e instanceof Error ? e.message : String(e));
+      outputError(normalizeError(e).message);
     }
   });
   gc.command("report").option("--severity <level>", "Minimum severity (critical, high, medium, low)", "high").option("--format <fmt>", "Output format (json, md)", "md").option("--scan-id <id>", "Specific scan ID (default: latest)").description("Show GC scan results").action((opts) => {
@@ -9199,7 +9152,7 @@ function registerGCCommands(program2, _getModels) {
         ...changes.map((c) => `  - ${c.file_path}`)
       ].join("\n"));
     } catch (e) {
-      outputError(e instanceof Error ? e.message : String(e));
+      outputError(normalizeError(e).message);
     }
   });
   gc.command("history").description("Show GC scan history").action(() => {
@@ -9221,7 +9174,7 @@ function registerGCCommands(program2, _getModels) {
       await engine.revertScan(scanId);
       output({ reverted: scanId }, `\u2705 Reverted scan ${scanId}`);
     } catch (e) {
-      outputError(e instanceof Error ? e.message : String(e));
+      outputError(normalizeError(e).message);
     }
   });
 }
