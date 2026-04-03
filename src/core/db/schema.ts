@@ -461,7 +461,13 @@ export function applyMigrations(db: Database.Database): void {
         verification    TEXT NOT NULL,
         task_ids        TEXT,
         report_path     TEXT NOT NULL,
-        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        pr_number       INTEGER,
+        pr_url          TEXT,
+        merge_method    TEXT,
+        closed_issues   TEXT,
+        auto_resolved_files TEXT,
+        conflict_levels TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_merge_reports_plan ON merge_reports(plan_id);

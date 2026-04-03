@@ -17,6 +17,12 @@ interface MergeReportRow {
   task_ids: string | null;
   report_path: string;
   created_at: string;
+  pr_number: number | null;
+  pr_url: string | null;
+  merge_method: string | null;
+  closed_issues: string | null;
+  auto_resolved_files: string | null;
+  conflict_levels: string | null;
 }
 
 function rowToReport(row: MergeReportRow): MergeReport {
@@ -34,6 +40,12 @@ function rowToReport(row: MergeReportRow): MergeReport {
     task_ids: row.task_ids ? JSON.parse(row.task_ids) : null,
     report_path: row.report_path,
     created_at: row.created_at,
+    pr_number: row.pr_number ?? null,
+    pr_url: row.pr_url ?? null,
+    merge_method: (row.merge_method as MergeReport['merge_method']) ?? null,
+    closed_issues: row.closed_issues ? JSON.parse(row.closed_issues) : null,
+    auto_resolved_files: row.auto_resolved_files ? JSON.parse(row.auto_resolved_files) : null,
+    conflict_levels: row.conflict_levels ? JSON.parse(row.conflict_levels) : null,
   };
 }
 
@@ -46,8 +58,9 @@ export class MergeReportModel extends BaseRepository<MergeReportRow> {
     const id = generateId();
     this.db.prepare(
       `INSERT INTO merge_reports (id, plan_id, commit_hash, source_branch, target_branch,
-        changes_summary, review_checklist, conflict_log, ai_judgments, verification, task_ids, report_path)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        changes_summary, review_checklist, conflict_log, ai_judgments, verification, task_ids, report_path,
+        pr_number, pr_url, merge_method, closed_issues, auto_resolved_files, conflict_levels)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       data.plan_id ?? null,
@@ -61,6 +74,12 @@ export class MergeReportModel extends BaseRepository<MergeReportRow> {
       JSON.stringify(data.verification),
       data.task_ids ? JSON.stringify(data.task_ids) : null,
       data.report_path,
+      data.pr_number ?? null,
+      data.pr_url ?? null,
+      data.merge_method ?? null,
+      data.closed_issues ? JSON.stringify(data.closed_issues) : null,
+      data.auto_resolved_files ? JSON.stringify(data.auto_resolved_files) : null,
+      data.conflict_levels ? JSON.stringify(data.conflict_levels) : null,
     );
     return this.get(id)!;
   }

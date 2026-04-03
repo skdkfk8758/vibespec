@@ -488,6 +488,12 @@ export interface MergeReport {
   task_ids: string[] | null;
   report_path: string;
   created_at: string;
+  pr_number: number | null;
+  pr_url: string | null;
+  merge_method: 'squash' | 'rebase' | 'merge' | null;
+  closed_issues: string[] | null;
+  auto_resolved_files: string[] | null;
+  conflict_levels: Record<string, unknown> | null;
 }
 
 export interface NewMergeReport {
@@ -502,6 +508,12 @@ export interface NewMergeReport {
   verification: MergeVerificationResult;
   task_ids?: string[];
   report_path: string;
+  pr_number?: number | null;
+  pr_url?: string | null;
+  merge_method?: 'squash' | 'rebase' | 'merge' | null;
+  closed_issues?: string[] | null;
+  auto_resolved_files?: string[] | null;
+  conflict_levels?: Record<string, unknown> | null;
 }
 
 // Agent Handoff types

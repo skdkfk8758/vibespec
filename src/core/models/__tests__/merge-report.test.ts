@@ -216,4 +216,84 @@ describe('MergeReportModel', () => {
       expect(model.list()).toEqual([]);
     });
   });
+
+  describe('AC09: PR fields', () => {
+    it('AC09: 새 필드 없이 생성 시 모두 null로 초기화된다', () => {
+      const report = model.create(makeReport());
+      const fetched = model.get(report.id)!;
+
+      expect(fetched.pr_number).toBeNull();
+      expect(fetched.pr_url).toBeNull();
+      expect(fetched.merge_method).toBeNull();
+      expect(fetched.closed_issues).toBeNull();
+      expect(fetched.auto_resolved_files).toBeNull();
+      expect(fetched.conflict_levels).toBeNull();
+    });
+
+    it('AC09: pr_number와 pr_url을 생성 후 조회할 수 있다', () => {
+      const report = model.create(makeReport({
+        pr_number: 42,
+        pr_url: 'https://github.com/owner/repo/pull/42',
+      }));
+      const fetched = model.get(report.id)!;
+
+      expect(fetched.pr_number).toBe(42);
+      expect(fetched.pr_url).toBe('https://github.com/owner/repo/pull/42');
+    });
+
+    it('AC09: merge_method를 squash/rebase/merge 각각 저장할 수 있다', () => {
+      const r1 = model.create(makeReport({ merge_method: 'squash', commit_hash: 'c1' }));
+      const r2 = model.create(makeReport({ merge_method: 'rebase', commit_hash: 'c2' }));
+      const r3 = model.create(makeReport({ merge_method: 'merge', commit_hash: 'c3' }));
+
+      expect(model.get(r1.id)!.merge_method).toBe('squash');
+      expect(model.get(r2.id)!.merge_method).toBe('rebase');
+      expect(model.get(r3.id)!.merge_method).toBe('merge');
+    });
+
+    it('AC09: closed_issues 배열을 JSON 직렬화하여 저장/조회할 수 있다', () => {
+      const report = model.create(makeReport({
+        closed_issues: ['#10', '#11', '#12'],
+      }));
+      const fetched = model.get(report.id)!;
+
+      expect(fetched.closed_issues).toEqual(['#10', '#11', '#12']);
+    });
+
+    it('AC09: auto_resolved_files 배열을 JSON 직렬화하여 저장/조회할 수 있다', () => {
+      const report = model.create(makeReport({
+        auto_resolved_files: ['src/api/auth.ts', 'src/models/user.ts'],
+      }));
+      const fetched = model.get(report.id)!;
+
+      expect(fetched.auto_resolved_files).toEqual(['src/api/auth.ts', 'src/models/user.ts']);
+    });
+
+    it('AC09: conflict_levels JSON 객체를 저장/조회할 수 있다', () => {
+      const levels = { 'src/api/auth.ts': 'high', 'src/models/user.ts': 'low' };
+      const report = model.create(makeReport({ conflict_levels: levels }));
+      const fetched = model.get(report.id)!;
+
+      expect(fetched.conflict_levels).toEqual(levels);
+    });
+
+    it('AC09: 모든 PR 필드를 함께 저장하고 조회할 수 있다', () => {
+      const report = model.create(makeReport({
+        pr_number: 99,
+        pr_url: 'https://github.com/owner/repo/pull/99',
+        merge_method: 'squash',
+        closed_issues: ['#5'],
+        auto_resolved_files: ['src/index.ts'],
+        conflict_levels: { 'src/index.ts': 'medium' },
+      }));
+      const fetched = model.get(report.id)!;
+
+      expect(fetched.pr_number).toBe(99);
+      expect(fetched.pr_url).toBe('https://github.com/owner/repo/pull/99');
+      expect(fetched.merge_method).toBe('squash');
+      expect(fetched.closed_issues).toEqual(['#5']);
+      expect(fetched.auto_resolved_files).toEqual(['src/index.ts']);
+      expect(fetched.conflict_levels).toEqual({ 'src/index.ts': 'medium' });
+    });
+  });
 });
