@@ -22,28 +22,41 @@ SDD(Spec-Driven Development) 기반의 바이브코딩 플러그인으로, Claud
 - **US-01**: 개발자로서, 요구사항을 스펙으로 변환하여, 일관된 구현을 할 수 있다.
 - **US-02**: 개발자로서, 태스크를 자동으로 분해하여, 15-30분 단위로 작업할 수 있다.
 - **US-03**: 팀 리더로서, 대시보드를 통해, 전체 진행 현황을 파악할 수 있다.
+- **US-04**: 개발자로서, 반복되는 에러 패턴을 자동 학습하여, 같은 실수를 반복하지 않을 수 있다.
+- **US-05**: 개발자로서, 세션 종료 시 자동 리포트를 생성하여, 다음 세션에서 이어서 작업할 수 있다.
+- **US-06**: 개발자로서, 워크트리 격리 환경에서 안전하게 작업하고, squash merge할 수 있다.
 
 <!-- [REQUIRED] Feature Priority -->
 ## Feature Priority (MoSCoW)
 
 ### Must Have
 - 스펙 기반 플랜 생성 (vs-plan)
-- 태스크 자동 분해 및 실행 (vs-next)
-- QA 자동화 (vs-qa)
-- 골격 문서 관리 (vs-skeleton-init/status/guard/evolve)
+- 태스크 자동 분해 및 실행 (vs-next, vs-exec, vs-pick)
+- QA 자동화 (vs-qa, vs-acceptance, vs-browse, vs-plan-verify)
+- 골격 문서 관리 (vs-skeleton-init/status + skeleton-guard/evolve 에이전트)
+- 대시보드 및 현황 (vs-dashboard)
+- 세션 관리 (vs-wrap, vs-recap)
 
 ### Should Have
-- 워크트리 격리 환경 (vs-worktree)
+- 워크트리 격리 환경 (vs-worktree, vs-merge, vs-freeze)
 - 백로그 관리 (vs-backlog)
+- 자기 개선 (self-improve, self-improve-review, dream)
+- 에러 학습 (error-kb)
+- 코드 리뷰 및 보안 (vs-code-review, vs-security)
+- 안전 모드 (vs-careful, vs-guard)
 
 ### Could Have
+- GC (vs-gc) — 데드코드, 규칙 위반 자동 탐지/수정
+- 아이디에이션 (vs-ideate) — 아이디어 구조화
+- Codex 연동 (codex 플러그인)
 - Pencil 디자인 연동
-- 외부 이슈 트래커 연동
+- 디자인 리뷰 (vs-design-review, vs-plan-design-review)
 
 ### Won't Have (this release)
 - 다국어 지원
 - 실시간 협업 기능
 - 클라우드 동기화
+- GUI 기반 대시보드
 
 <!-- [REQUIRED] Out of Scope -->
 ## Out of Scope

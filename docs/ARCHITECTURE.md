@@ -22,23 +22,33 @@ VibeSpec은 Claude Code 플러그인으로, 로컬 SQLite DB와 마크다운 기
 
 | 모듈 | 경로 | 책임 | 의존성 |
 |------|------|------|--------|
-| CLI | `src/cli/` | 명령어 파싱, 출력 포맷팅 | core |
-| Core Engine | `src/core/engine/` | QA 설정, 검증 로직 | - |
-| Skills | `skills/` | 스킬 정의 (마크다운) | - |
-| Agents | `agents/` | 에이전트 정의 (마크다운) | - |
-| Templates | `skills/*/templates/` | 문서 템플릿 | - |
+| CLI Commands | `src/cli/commands/` | 도메인별 명령어 (planning, quality, knowledge 등 10개) | core |
+| CLI Formatters | `src/cli/` | 출력 포맷팅, 공유 유틸 | - |
+| Core Engine | `src/core/engine/` | 비즈니스 로직 (QA, self-improve, GC, error-kb 등 20개 모듈) | models, db |
+| Core Models | `src/core/models/` | 데이터 접근 계층 (plan, task, backlog, qa 등 15개 리포지토리) | db |
+| Core DB | `src/core/db/` | 스키마 마이그레이션, 벡터 검색 확장 | better-sqlite3 |
+| Skills | `skills/` | 스킬 정의 41개 (마크다운 기반 프롬프트) | - |
+| Agents | `agents/` | 에이전트 정의 18개 (마크다운 기반 프롬프트) | - |
+| Hooks | `hooks/` | PreToolUse/PostToolUse 훅 16개 (careful-guard, freeze 등) | lib/read-config |
 
 ### 디렉토리 구조
 ```
 src/
-├── cli/           # CLI 명령어 및 출력
-│   ├── commands/  # 도메인별 명령어
-│   └── __tests__/ # CLI 테스트
-├── core/          # 코어 비즈니스 로직
-│   └── engine/    # QA 엔진, 설정
-skills/            # 스킬 정의
-agents/            # 에이전트 정의
-docs/              # 프로젝트 문서
+├── cli/              # CLI 레이어
+│   ├── commands/     # 도메인별 명령어 (10개 모듈)
+│   ├── formatters.ts # 출력 포맷팅
+│   ├── shared.ts     # 공유 유틸
+│   └── __tests__/    # CLI 테스트
+├── core/             # 코어 비즈니스 로직
+│   ├── engine/       # 엔진 모듈 (20개)
+│   ├── models/       # 데이터 모델 (15개 리포지토리)
+│   ├── db/           # DB 스키마 (16 버전 마이그레이션)
+│   ├── types.ts      # 공유 타입 정의
+│   └── utils.ts      # 공유 유틸리티
+skills/               # 스킬 정의 (41개)
+agents/               # 에이전트 정의 (18개)
+hooks/                # PreToolUse/PostToolUse 훅 (16개)
+docs/                 # 골격 문서 4종
 ```
 
 <!-- [REQUIRED] Data Flow -->
@@ -48,11 +58,18 @@ docs/              # 프로젝트 문서
 1. **플래닝**: 사용자 입력 → vs-plan 스킬 → SQLite(plans/tasks 테이블) → 태스크 트리
 2. **실행**: vs-next → 태스크 조회 → 에이전트 디스패치 → 구현 → verifier → done/blocked
 3. **QA**: vs-qa → qa-config resolve → QA Run 생성 → 에이전트 팀 디스패치 → findings
+4. **자기 개선**: self-improve-trigger 훅 → 에러 패턴 감지 → rule-cleanup → 규칙 자동 생성/관리
+5. **에러 학습**: error-kb-suggest 훅 → 에러 분류 → 벡터 임베딩 → 유사 에러 검색
+6. **GC**: vs-gc → 코드베이스 스캔 → gc_findings → 안전성 평가(gc-safety) → 자동/수동 수정
+7. **머지**: vs-merge → squash merge → merge_reports → PR 생성 (선택)
 
 ### 상태 관리
-- **플랜/태스크**: SQLite DB (plans, tasks, backlog 테이블)
-- **QA 설정**: YAML 파일 (.claude/qa-rules.yaml) + DB 오버라이드
-- **골격 문서**: docs/ 디렉토리 마크다운 파일 (docs/PRD.md, docs/POLICY.md 등)
+- **플랜/태스크**: SQLite DB (plans, tasks, backlog_items, task_metrics 테이블)
+- **QA**: qa_runs, qa_scenarios, qa_findings, wave_gates 테이블
+- **학습**: self_improve_rules, error_embeddings, vec_errors 테이블
+- **거버넌스**: merge_reports, plan_revisions, agent_handoffs 테이블
+- **골격 문서**: docs/ 디렉토리 마크다운 파일 (PRD.md, POLICY.md, ARCHITECTURE.md, DESIGN.md)
+- **설정**: vs_config 테이블 (careful mode, freeze boundary 등)
 
 <!-- [REQUIRED] ADR -->
 ## Architecture Decision Records
