@@ -88,3 +88,10 @@ export function buildUpdateQuery(
     params: values,
   };
 }
+
+/**
+ * unknown 에러를 Error 인스턴스로 정규화한다.
+ */
+export function normalizeError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
+}

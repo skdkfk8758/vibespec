@@ -2,7 +2,7 @@ export type PlanStatus = 'draft' | 'active' | 'approved' | 'completed' | 'archiv
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked' | 'skipped';
 export type AlertType = 'stale' | 'blocked' | 'completable' | 'forgotten' | 'qa_risk_high' | 'qa_findings_open' | 'qa_stale' | 'qa_fix_blocked' | 'backlog_stale' | 'backlog_critical';
 export type EntityType = 'plan' | 'task' | 'backlog';
-export type EventType = 'created' | 'updated' | 'status_changed' | 'activated' | 'completed' | 'approved' | 'archived' | 'deleted' | 'blocked_reason';
+export type EventType = 'created' | 'updated' | 'status_changed' | 'activated' | 'completed' | 'approved' | 'archived' | 'deleted' | 'blocked_reason' | 'lifecycle_completed' | 'wave_completed';
 
 export const VALID_PLAN_STATUSES: readonly PlanStatus[] = ['draft', 'active', 'approved', 'completed', 'archived'] as const;
 
@@ -45,6 +45,26 @@ export interface TaskTreeNode extends Task {
 export interface Wave {
   index: number;
   task_ids: string[];
+}
+
+export interface WaveExecutionPlan {
+  waveIndex: number;
+  parallelGroups: string[][];
+  sequentialTasks: string[];
+}
+
+export interface FileConflictMap {
+  [taskId: string]: string[];
+}
+
+export interface ConflictEntry {
+  taskA: string;
+  taskB: string;
+  sharedFiles: string[];
+}
+
+export interface TaskConflictMap {
+  conflicts: ConflictEntry[];
 }
 
 export interface Event {
