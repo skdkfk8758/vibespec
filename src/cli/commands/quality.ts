@@ -467,6 +467,25 @@ export function registerQualityCommands(program: Command, getModels: () => Model
       output(config, formatConfigHuman(config));
     }));
 
+  // qa verify <plan_id>
+  qa
+    .command('verify')
+    .argument('<plan_id>', 'Plan ID to verify')
+    .description('Verify plan AC matching against code changes')
+    .action(async (planId: string) => withErrorHandler(async () => {
+      const { PlanVerifier } = await import('../../core/engine/plan-verifier.js');
+      const db = initDb();
+      const verifier = new PlanVerifier(db);
+      const result = await verifier.verify(planId);
+      output(result, [
+        `AC Verification: ${result.overallScore >= 0 ? `${result.overallScore}/100` : 'N/A'}`,
+        `Tasks verified: ${result.taskResults.length}`,
+        `Unmatched ACs: ${result.unmatchedACs.length}`,
+        result.warnings.length > 0 ? `Warnings:` : '',
+        ...result.warnings.map(w => `  - ${w}`),
+      ].filter(Boolean).join('\n'));
+    }));
+
   // wave-gate
   const waveGate = program.command('wave-gate').description('Manage wave gates for integration verification');
 

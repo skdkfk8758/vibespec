@@ -5,6 +5,7 @@ import { EventModel } from '../models/event.js';
 import type { Plan, Task } from '../types.js';
 import { RetryEngine, type RetryConfig, DEFAULT_RETRY_CONFIG, type ExecuteFn } from './retry.js';
 import { WaveCoordinator } from './wave-coordinator.js';
+import { PlanVerifier } from './plan-verifier.js';
 
 export class LifecycleEngine {
   private db: Database.Database;
@@ -44,6 +45,22 @@ export class LifecycleEngine {
         `Plan cannot be completed. Blockers: ${blockers.join(', ')}`,
       );
     }
+
+    // AC 매칭 검증을 비동기로 실행 — 결과를 기다리지 않고 플랜 완료를 진행
+    const verifier = new PlanVerifier(this.db);
+    verifier.verify(planId).then(verification => {
+      if (verification.warnings.length > 0) {
+        console.log(`[lifecycle] Plan ${planId} verification warnings:`);
+        for (const w of verification.warnings) {
+          console.log(`  - ${w}`);
+        }
+      }
+      if (verification.overallScore >= 0) {
+        console.log(`[lifecycle] AC verification score: ${verification.overallScore}/100`);
+      }
+    }).catch((err: unknown) => {
+      console.error(`[lifecycle] Plan ${planId} verification failed:`, err instanceof Error ? err.message : err);
+    });
 
     const plan = this.planModel.complete(planId);
     this.events?.record(
