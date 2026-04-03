@@ -1,6 +1,7 @@
 ---
 name: verification
-description: [QA] Internal gate for task completion verification.
+description: [QA] Use when verifying task completion as an internal quality gate.
+invocation: reference
 ---
 
 # Task Verification (Internal Gate)

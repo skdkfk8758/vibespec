@@ -1,6 +1,6 @@
 ---
 name: vs-gc
-description: Garbage Collection — 코드베이스를 능동적으로 스캔하여 데드코드, 규칙 위반, 정책 위반, 리팩토링 후보를 탐지하고 안전한 항목을 자동 수정합니다.
+description: Use when scanning the codebase for dead code, rule violations, and refactoring candidates with auto-fix.
 invocation: user
 argument-hint: "[scan|report|apply|revert] [options]"
 ---

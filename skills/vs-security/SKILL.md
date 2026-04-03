@@ -1,6 +1,6 @@
 ---
 name: vs-security
-description: "[QA] OWASP Top 10 security audit for codebase."
+description: "[QA] Use when running an OWASP Top 10 security audit for the codebase."
 invocation: deferred
 type: workflow
 ---

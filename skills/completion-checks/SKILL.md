@@ -1,6 +1,6 @@
 ---
 name: completion-checks
-description: "[Ref] 태스크 완료 시 공통 후처리 — QA Shadow, Adaptive Planner, 백로그 매칭. vs-next, vs-exec가 참조합니다."
+description: "[Ref] Use when 태스크 완료 후처리가 필요할 때 — QA Shadow, Adaptive Planner, 백로그 매칭. vs-next, vs-exec가 참조합니다."
 invocation: auto
 type: domain
 ---

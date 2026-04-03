@@ -1,6 +1,6 @@
 ---
 name: vs-skeleton-init
-description: "[Lifecycle] 프로젝트 골격 문서 4종 인터뷰 기반 생성"
+description: "[Lifecycle] Use when generating 프로젝트 골격 문서 4종 via interview."
 invocation: deferred
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: vs-browse
-description: [QA] Exploratory browser QA without structured AC.
+description: [QA] Use when running exploratory browser QA without structured AC.
 invocation: deferred
 argument-hint: "[--url <dev-server-url>] [--focus <area>]"
 ---

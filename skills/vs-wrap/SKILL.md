@@ -1,6 +1,6 @@
 ---
 name: vs-wrap
-description: "[Lifecycle] Session wrap-up with multi-agent learning pipeline. (세션 마무리)"
+description: "[Lifecycle] Use when wrapping up a session with multi-agent learning pipeline. (세션 마무리)"
 invocation: deferred
 argument-hint: "[commit message] [--quick]"
 ---
@@ -98,35 +98,16 @@ DIFF_LINES=$(git diff HEAD~5 2>/dev/null | wc -l)
 **일반 모드** (Step 4b):
 Step 5로 진행하세요.
 
-### Step 5: 에이전트 병렬 디스패치
+### Step 5: 세션 분석 에이전트 디스패치
 
-3개 에이전트를 Agent 도구로 **동시에** 디스패치하세요 (model: haiku, run_in_background: true):
+session-analyst 에이전트를 Agent 도구로 디스패치하세요 (model: haiku, run_in_background: true):
 
 ```
-# 1. learning-extractor
-당신은 learning-extractor 에이전트입니다.
-agents/learning-extractor.md의 Execution Process를 따라 실행하세요.
+당신은 session-analyst 에이전트입니다.
+agents/session-analyst.md의 Execution Process를 따라 실행하세요.
 
 git_diff_stat: {session_diff_stat}
 git_log: {session_log}
-plan_status: {plan_status}
-```
-
-```
-# 2. automation-scout
-당신은 automation-scout 에이전트입니다.
-agents/automation-scout.md의 Execution Process를 따라 실행하세요.
-
-git_diff_stat: {session_diff_stat}
-git_log: {session_log}
-```
-
-```
-# 3. followup-suggester
-당신은 followup-suggester 에이전트입니다.
-agents/followup-suggester.md의 Execution Process를 따라 실행하세요.
-
-git_diff: {session_diff_stat}
 plan_status: {plan_status}
 todo_list: {todo_list}
 ```
@@ -152,16 +133,16 @@ todo_list: {todo_list}
 ## Session Report — {date}
 
 ### Learnings ({N}개)
-{learning-extractor 결과를 포맷}
+{session-analyst 결과의 learnings를 포맷}
 - [{type}] {summary} (commit: {hash})
   {detail}
 
 ### Automation Opportunities ({N}개)
-{automation-scout 결과를 포맷}
+{session-analyst 결과의 opportunities를 포맷}
 - [{effort}] {pattern} → {suggestion}
 
 ### Follow-ups ({N}개, priority 순)
-{followup-suggester 결과를 포맷}
+{session-analyst 결과의 followups를 포맷}
 - [{priority}] {title} — {context}
 
 ### Session Stats
@@ -176,7 +157,7 @@ Bash 도구로 `mkdir -p .claude/session-reports` 후 Write 도구로 파일을 
 
 ### Step 7a: Self-Improve 통합 (학습 규칙 변환)
 
-learning-extractor의 출력에서 규칙으로 변환할 항목을 처리하세요.
+session-analyst의 learnings에서 규칙으로 변환할 항목을 처리하세요.
 
 **변환 대상**: `type`이 `"success"` 또는 `"mistake"`인 항목
 
@@ -263,7 +244,7 @@ vs --json artifact cleanup 2>/dev/null
 
 ### Step 9: 백로그 연결 (선택적)
 
-followup-suggester 결과에서 `priority`가 `"high"`인 항목을 백로그 추가 대상으로 처리하세요.
+session-analyst의 followups에서 `priority`가 `"high"`인 항목을 백로그 추가 대상으로 처리하세요.
 
 **adhoc 세션 스킵**: plan_status가 "adhoc"이면 이 단계를 건너뛰세요.
 → "백로그 연결 스킵 — adhoc 세션" 메시지 표시
@@ -290,12 +271,12 @@ vs --json backlog add --title "{title}" --description "{context}" --tags "vs-wra
 
 ## Integration
 
-- **self-improve**: learning-extractor의 성공/실수 패턴은 Step 7a에서 `.claude/rules/SESSION_LEARNING-*.md`로 자동 변환
-- **backlog**: followup-suggester의 high 항목은 Step 9에서 백로그 추가 제안
+- **self-improve**: session-analyst의 learnings 중 성공/실수 패턴은 Step 7a에서 `.claude/rules/SESSION_LEARNING-*.md`로 자동 변환
+- **backlog**: session-analyst의 followups 중 high 항목은 Step 9에서 백로그 추가 제안
 - **vs-recap**: merge 후 리뷰는 vs-recap, 세션 마무리는 vs-wrap으로 역할 분리
 
 ## 다음 단계
 
 - → `/vs-next`로 다음 태스크 재개
 - → `/vs-dashboard`로 전체 진행률 확인
-- → `/self-improve`로 학습 규칙 생성 (learning-extractor 결과 기반)
+- → `/self-improve`로 학습 규칙 생성 (session-analyst 결과 기반)
