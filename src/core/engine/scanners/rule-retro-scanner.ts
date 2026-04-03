@@ -69,10 +69,10 @@ function parseRuleFile(content: string): ParsedRule {
 /**
  * Check if a file path matches any of the given glob patterns.
  */
-function matchesAnyGlob(filePath: string, globs: string[]): boolean {
-  if (globs.length === 0) return false;
+function matchesAnyGlob(filePath: string, matchers: ((input: string) => boolean)[]): boolean {
+  if (matchers.length === 0) return false;
   const normalized = filePath.replace(/\\/g, '/');
-  return globs.some((glob) => picomatch(glob)(normalized));
+  return matchers.some((matcher) => matcher(normalized));
 }
 
 export class RuleRetroScanner implements GCScanner {
@@ -126,8 +126,8 @@ export class RuleRetroScanner implements GCScanner {
         continue;
       }
 
-      // Filter files matching this rule's globs
-      const matchingFiles = files.filter((f) => matchesAnyGlob(f, parsed.appliesWhen));
+      const matchers = parsed.appliesWhen.map((g) => picomatch(g));
+      const matchingFiles = files.filter((f) => matchesAnyGlob(f, matchers));
 
       // AC03: Warn if too many matching files
       if (matchingFiles.length > MAX_MATCHING_FILES_WARNING) {

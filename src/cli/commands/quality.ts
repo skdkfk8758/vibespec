@@ -293,12 +293,10 @@ export function registerQualityCommands(program: Command, getModels: () => Model
         avg_risk_score: Math.round(avgRisk * 100) / 100,
         total_findings: allFindings.length,
         open_findings: openFindings.length,
-        findings_by_severity: {
-          critical: openFindings.filter(f => f.severity === 'critical').length,
-          high: openFindings.filter(f => f.severity === 'high').length,
-          medium: openFindings.filter(f => f.severity === 'medium').length,
-          low: openFindings.filter(f => f.severity === 'low').length,
-        },
+        findings_by_severity: openFindings.reduce(
+          (acc, f) => { acc[f.severity as keyof typeof acc]++; return acc; },
+          { critical: 0, high: 0, medium: 0, low: 0 },
+        ),
       };
 
       output(statsData, [

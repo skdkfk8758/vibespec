@@ -36,9 +36,12 @@ export function listDeferredSkills(skillsDir: string): SkillInfo[] {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const skillMdPath = join(skillsDir, entry.name, 'SKILL.md');
-    if (!existsSync(skillMdPath)) continue;
-
-    const content = readFileSync(skillMdPath, 'utf8');
+    let content: string;
+    try {
+      content = readFileSync(skillMdPath, 'utf8');
+    } catch {
+      continue;
+    }
     const fm = parseFrontmatter(content);
 
     if (fm['invocation'] === 'deferred') {

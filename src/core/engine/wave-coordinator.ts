@@ -164,11 +164,12 @@ export class WaveCoordinator {
       results.filter(r => r.status === 'blocked' || r.status === 'failed').map(r => r.taskId),
     );
 
-    // Add blocked entries for dependent tasks whose deps failed/blocked
+    const processedTaskIds = new Set(results.map(r => r.taskId));
     for (const [taskId, deps] of Object.entries(dependsOn)) {
       const isBlocked = deps.some(dep => blockedTaskIds.has(dep));
-      if (isBlocked && !results.find(r => r.taskId === taskId)) {
+      if (isBlocked && !processedTaskIds.has(taskId)) {
         results.push({ taskId, status: 'blocked' });
+        processedTaskIds.add(taskId);
       }
     }
 

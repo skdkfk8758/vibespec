@@ -71,7 +71,7 @@ export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | n
     normB += bi * bi;
   }
 
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  const denom = Math.sqrt(normA * normB);
   if (denom === 0) return 0;
   return dot / denom;
 }

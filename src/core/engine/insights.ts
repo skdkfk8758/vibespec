@@ -118,45 +118,35 @@ export class InsightsEngine {
   }
 
   getRecommendations(): string[] {
-    const totalRow = this.db
-      .prepare('SELECT COUNT(*) AS total FROM task_metrics')
-      .get() as { total: number };
+    const row = this.db
+      .prepare(`
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN final_status = 'blocked' THEN 1 ELSE 0 END) AS blocked,
+          ROUND(AVG(CASE WHEN duration_min IS NOT NULL THEN duration_min END), 1) AS avg_min,
+          SUM(CASE WHEN has_concerns = 1 THEN 1 ELSE 0 END) AS concerns
+        FROM task_metrics
+      `)
+      .get() as { total: number; blocked: number; avg_min: number | null; concerns: number };
 
-    if (totalRow.total < 5) return [];
+    if (row.total < 5) return [];
 
     const recommendations: string[] = [];
-    const total = totalRow.total;
 
-    // Blocked ratio check
-    const blockedRow = this.db
-      .prepare("SELECT COUNT(*) AS blocked FROM task_metrics WHERE final_status = 'blocked'")
-      .get() as { blocked: number };
-    const blockedPct = Math.round((blockedRow.blocked / total) * 100);
+    const blockedPct = Math.round((row.blocked / row.total) * 100);
     if (blockedPct >= 30) {
       recommendations.push(
         `Blocked 태스크 비율이 ${blockedPct}%로 높습니다. 태스크 분해를 더 세분화하거나 의존성을 사전에 확인하세요.`,
       );
     }
 
-    // Average duration check
-    const durationRow = this.db
-      .prepare(
-        `SELECT ROUND(AVG(duration_min), 1) AS avg_min
-         FROM task_metrics
-         WHERE duration_min IS NOT NULL`,
-      )
-      .get() as { avg_min: number | null };
-    if (durationRow.avg_min !== null && durationRow.avg_min > 60) {
+    if (row.avg_min !== null && row.avg_min > 60) {
       recommendations.push(
-        `평균 태스크 소요 시간이 ${durationRow.avg_min}분입니다. 태스크를 더 작은 단위로 분해하는 것을 권장합니다.`,
+        `평균 태스크 소요 시간이 ${row.avg_min}분입니다. 태스크를 더 작은 단위로 분해하는 것을 권장합니다.`,
       );
     }
 
-    // Concerns ratio check
-    const concernsRow = this.db
-      .prepare('SELECT SUM(CASE WHEN has_concerns = 1 THEN 1 ELSE 0 END) AS concerns FROM task_metrics')
-      .get() as { concerns: number };
-    const concernsPct = Math.round((concernsRow.concerns / total) * 100);
+    const concernsPct = Math.round((row.concerns / row.total) * 100);
     if (concernsPct >= 50) {
       recommendations.push(
         `구현 우려사항이 ${concernsPct}%의 태스크에서 발견되었습니다. 스펙 명확화가 필요할 수 있습니다.`,
