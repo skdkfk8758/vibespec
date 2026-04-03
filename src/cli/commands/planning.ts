@@ -84,8 +84,8 @@ export function registerPlanningCommands(program: Command, getModels: () => Mode
     .action((id: string) => {
       withErrorHandler(() => {
         const { lifecycle } = getModels();
-        const completed = lifecycle.completePlan(id);
-        output(completed, `Plan completed: ${completed.id} "${completed.title}"`);
+        const { plan: completed, verification } = lifecycle.completePlan(id);
+        output({ ...completed, verification }, `Plan completed: ${completed.id} "${completed.title}"`);
       });
     });
 

@@ -111,6 +111,21 @@ vs self-improve rules archive <id>
 - 활성 규칙: {N}개 / 상한: 30개
 ```
 
+## Auto-Dream (SessionStart 연동)
+
+세션 시작 시 자동으로 규칙 정리를 수행합니다. 아래 로직은 `vs self-improve dream --json` CLI에 의해 실행됩니다.
+
+### Dream 트리거 조건
+- SessionStart 훅 또는 수동 `/self-improve-review` 호출 시
+- `.claude/rules/` 에 활성 규칙 파일이 2개 이상일 때
+
+### Dream 동작
+1. `SelfImproveEngine.dream()` 호출하여 중복/충돌 규칙 스캔
+2. 결과가 비어있으면 아무 출력 없이 조용히 스킵
+3. 결과가 있으면 `DreamResult.formatDiff()` 로 diff를 출력
+4. 사용자 확인 후 `DreamResult.apply()` 로 실행
+5. **주의**: git stash 자동화는 포함하지 않습니다 (CLAUDE.md 정책)
+
 ## 다음 단계
 
 - → `/self-improve`로 새 pending 처리

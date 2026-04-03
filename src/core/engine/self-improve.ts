@@ -284,4 +284,177 @@ export class SelfImproveEngine {
   getProcessedDir(): string {
     return this.processedDir;
   }
+
+  // --- Dream: auto-cleanup of duplicate/conflicting rules ---
+
+  dream(): DreamResult {
+    const ruleFiles = this.listRuleFiles();
+    if (ruleFiles.length === 0) {
+      return new DreamResult([], [], ruleFiles.map(r => r.filename), this);
+    }
+
+    const merged: RulePair[] = [];
+    const archived: string[] = [];
+    const kept: string[] = [];
+    const processed = new Set<number>();
+
+    for (let i = 0; i < ruleFiles.length; i++) {
+      if (processed.has(i)) continue;
+      let foundDuplicate = false;
+
+      for (let j = i + 1; j < ruleFiles.length; j++) {
+        if (processed.has(j)) continue;
+
+        const overlap = this.keywordOverlap(ruleFiles[i].keywords, ruleFiles[j].keywords);
+        if (overlap >= 0.5) {
+          merged.push({
+            source: [ruleFiles[i].filename, ruleFiles[j].filename],
+            mergedContent: this.mergeContents(ruleFiles[i], ruleFiles[j]),
+            mergedFilename: ruleFiles[i].filename,
+          });
+          archived.push(ruleFiles[j].filename);
+          processed.add(j);
+          foundDuplicate = true;
+          break; // Only merge first found duplicate pair
+        }
+      }
+
+      if (!foundDuplicate) {
+        kept.push(ruleFiles[i].filename);
+      } else {
+        processed.add(i);
+      }
+    }
+
+    // Add remaining unprocessed as kept
+    for (let i = 0; i < ruleFiles.length; i++) {
+      if (!processed.has(i) && !kept.includes(ruleFiles[i].filename)) {
+        kept.push(ruleFiles[i].filename);
+      }
+    }
+
+    return new DreamResult(merged, archived, kept, this);
+  }
+
+  private listRuleFiles(): RuleFileInfo[] {
+    if (!fs.existsSync(this.rulesDir)) return [];
+    const files = fs.readdirSync(this.rulesDir).filter(f => f.endsWith('.md'));
+    const results: RuleFileInfo[] = [];
+
+    for (const file of files) {
+      const fullPath = path.join(this.rulesDir, file);
+      try {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const keywords = this.extractKeywords(content);
+        results.push({ filename: file, content, keywords, fullPath });
+      } catch {
+        // Skip unreadable files with warning
+        console.warn(`[dream] Skipping unreadable rule file: ${file}`);
+      }
+    }
+
+    return results;
+  }
+
+  private extractKeywords(content: string): Set<string> {
+    const words = content
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣\s-]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2);
+    return new Set(words);
+  }
+
+  private keywordOverlap(a: Set<string>, b: Set<string>): number {
+    if (a.size === 0 || b.size === 0) return 0;
+    let overlap = 0;
+    for (const word of a) {
+      if (b.has(word)) overlap++;
+    }
+    const minSize = Math.min(a.size, b.size);
+    return overlap / minSize;
+  }
+
+  private mergeContents(a: RuleFileInfo, b: RuleFileInfo): string {
+    return `${a.content}\n\n---\n## Merged from: ${b.filename}\n${b.content}`;
+  }
+
+  /** Move a file to archive directory (used by DreamResult.apply) */
+  moveToArchive(filename: string): void {
+    const srcPath = path.join(this.rulesDir, filename);
+    const destPath = path.join(this.archiveDir, filename);
+    if (fs.existsSync(srcPath)) {
+      fs.renameSync(srcPath, destPath);
+    }
+  }
+
+  /** Overwrite a rule file's content (used by DreamResult.apply) */
+  writeRuleFile(filename: string, content: string): void {
+    const fullPath = path.join(this.rulesDir, filename);
+    fs.writeFileSync(fullPath, content, 'utf-8');
+  }
+}
+
+interface RuleFileInfo {
+  filename: string;
+  content: string;
+  keywords: Set<string>;
+  fullPath: string;
+}
+
+export interface RulePair {
+  source: [string, string];
+  mergedContent: string;
+  mergedFilename: string;
+}
+
+export class DreamResult {
+  readonly merged: RulePair[];
+  readonly archived: string[];
+  readonly kept: string[];
+  private engine: SelfImproveEngine;
+
+  constructor(merged: RulePair[], archived: string[], kept: string[], engine: SelfImproveEngine) {
+    this.merged = merged;
+    this.archived = archived;
+    this.kept = kept;
+    this.engine = engine;
+  }
+
+  get isEmpty(): boolean {
+    return this.merged.length === 0 && this.archived.length === 0;
+  }
+
+  apply(): void {
+    // Archive duplicate files
+    for (const filename of this.archived) {
+      this.engine.moveToArchive(filename);
+    }
+
+    // Write merged content to primary file
+    for (const pair of this.merged) {
+      this.engine.writeRuleFile(pair.mergedFilename, pair.mergedContent);
+    }
+  }
+
+  /** Generate a human-readable diff summary for display */
+  formatDiff(): string {
+    if (this.isEmpty) return '';
+
+    const lines: string[] = [];
+    lines.push(`## Dream 결과: ${this.merged.length}건 병합, ${this.archived.length}건 아카이브\n`);
+
+    for (const pair of this.merged) {
+      lines.push(`### 병합: ${pair.source[0]} + ${pair.source[1]}`);
+      lines.push(`→ ${pair.mergedFilename} (통합본)`);
+      lines.push(`  - ${pair.source[1]} → archive/ 이동`);
+      lines.push('');
+    }
+
+    if (this.kept.length > 0) {
+      lines.push(`### 유지: ${this.kept.length}개 규칙 변경 없음`);
+    }
+
+    return lines.join('\n');
+  }
 }

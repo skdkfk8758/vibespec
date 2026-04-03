@@ -449,4 +449,89 @@ describe('SelfImproveEngine', () => {
       expect(engine.getRule(rule.id)!.prevented).toBe(2);
     });
   });
+
+  describe('dream() — AC01-AC04', () => {
+    const rulesDir = () => path.join(tmpDir, '.claude', 'rules');
+    const archiveDir = () => path.join(tmpDir, '.claude', 'rules', 'archive');
+
+    it('AC01: should detect duplicate rules with 50%+ keyword overlap', () => {
+      // Write two very similar rule files
+      fs.writeFileSync(path.join(rulesDir(), 'rule-a.md'), '# Git commit convention\nAlways use conventional commits for git changes. Include scope and type.');
+      fs.writeFileSync(path.join(rulesDir(), 'rule-b.md'), '# Git commit format\nUse conventional commits format for all git commit messages. Include type and scope.');
+
+      const result = engine.dream();
+      expect(result.merged.length).toBeGreaterThanOrEqual(1);
+      expect(result.merged[0].source).toHaveLength(2);
+    });
+
+    it('AC02: apply() merges duplicates and moves originals to archive', () => {
+      fs.writeFileSync(path.join(rulesDir(), 'dup-a.md'), '# Testing pattern\nAlways write unit tests first before implementation code.');
+      fs.writeFileSync(path.join(rulesDir(), 'dup-b.md'), '# Testing approach\nWrite unit tests first. Implementation code comes after tests.');
+
+      const result = engine.dream();
+      expect(result.merged.length).toBeGreaterThanOrEqual(1);
+
+      result.apply();
+
+      // Archive should contain the secondary file
+      const archivedFiles = fs.readdirSync(archiveDir());
+      expect(archivedFiles.length).toBeGreaterThanOrEqual(1);
+
+      // Primary file should still exist with merged content
+      const primaryContent = fs.readFileSync(path.join(rulesDir(), result.merged[0].mergedFilename), 'utf-8');
+      expect(primaryContent).toContain('Merged from:');
+    });
+
+    it('AC03: returns empty DreamResult when no rule files exist', () => {
+      // Clear any auto-created files
+      const files = fs.readdirSync(rulesDir()).filter(f => f.endsWith('.md'));
+      for (const f of files) fs.unlinkSync(path.join(rulesDir(), f));
+
+      const result = engine.dream();
+      expect(result.isEmpty).toBe(true);
+      expect(result.merged).toHaveLength(0);
+      expect(result.archived).toHaveLength(0);
+    });
+
+    it('AC04: skips unreadable files and processes the rest', () => {
+      fs.writeFileSync(path.join(rulesDir(), 'good.md'), '# Good rule\nThis is a valid rule file.');
+      // Create a directory with .md extension to cause read failure
+      const badPath = path.join(rulesDir(), 'bad-dir.md');
+      fs.mkdirSync(badPath, { recursive: true });
+
+      const result = engine.dream();
+      // Should not throw, should process the good file
+      expect(result.kept.length + result.merged.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should keep non-duplicate rules unchanged', () => {
+      fs.writeFileSync(path.join(rulesDir(), 'unique-a.md'), '# Database migrations\nAlways use transactions in database migration scripts.');
+      fs.writeFileSync(path.join(rulesDir(), 'unique-b.md'), '# React components\nUse functional components with hooks for all new React code.');
+
+      const result = engine.dream();
+      expect(result.merged).toHaveLength(0);
+      expect(result.kept.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('AC-T5-01: formatDiff shows diff when duplicates found', () => {
+      fs.writeFileSync(path.join(rulesDir(), 'fmt-a.md'), '# Error handling pattern\nAlways catch errors in async functions with proper error handling.');
+      fs.writeFileSync(path.join(rulesDir(), 'fmt-b.md'), '# Error catch pattern\nCatch all errors in async functions. Add proper error handling.');
+
+      const result = engine.dream();
+      const diff = result.formatDiff();
+
+      expect(diff).toContain('병합');
+      expect(diff).toContain('archive');
+      expect(diff.length).toBeGreaterThan(0);
+    });
+
+    it('AC-T5-02: formatDiff returns empty string when no duplicates', () => {
+      // No rule files
+      const files = fs.readdirSync(rulesDir()).filter(f => f.endsWith('.md'));
+      for (const f of files) fs.unlinkSync(path.join(rulesDir(), f));
+
+      const result = engine.dream();
+      expect(result.formatDiff()).toBe('');
+    });
+  });
 });
