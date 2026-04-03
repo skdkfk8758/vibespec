@@ -55,6 +55,16 @@ export function formatDashboard(overview: DashboardOverview, alerts: Alert[]): s
     if (bp.medium > 0) priParts.push(`medium: ${bp.medium}`);
     if (bp.low > 0) priParts.push(`low: ${bp.low}`);
     lines.push(`Backlog: ${overview.backlog.open} open / ${overview.backlog.total} total  (${priParts.join(' · ')})`);
+    if (overview.backlog.top_items.length > 0) {
+      for (const item of overview.backlog.top_items) {
+        const cat = item.category ? ` (${item.category})` : '';
+        lines.push(`  [${item.priority}] ${item.title}${cat} — → /vs-plan 승격 | /vs-ideate`);
+      }
+      if (overview.backlog.open > overview.backlog.top_items.length) {
+        const remaining = overview.backlog.open - overview.backlog.top_items.length;
+        lines.push(`  ... 외 ${remaining}개 → /vs-backlog에서 전체 확인`);
+      }
+    }
   }
 
   if (alerts.length > 0) {

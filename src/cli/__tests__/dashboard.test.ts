@@ -54,6 +54,7 @@ describe('formatDashboard', () => {
       active_count: 2,
       total_tasks: 7,
       done_tasks: 3,
+      backlog: { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] },
     };
     const alerts: Alert[] = [];
 
@@ -79,6 +80,7 @@ describe('formatDashboard', () => {
       active_count: 0,
       total_tasks: 0,
       done_tasks: 0,
+      backlog: { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] },
     };
     const alerts: Alert[] = [];
 
@@ -93,6 +95,7 @@ describe('formatDashboard', () => {
       active_count: 0,
       total_tasks: 0,
       done_tasks: 0,
+      backlog: { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] },
     };
     const alerts: Alert[] = [
       {
@@ -114,5 +117,57 @@ describe('formatDashboard', () => {
     expect(result).toContain('⚠ Alerts:');
     expect(result).toContain('[stale] Task "Setup" has been in progress for 4 days');
     expect(result).toContain('[blocked] Plan "Deploy" has blocked tasks');
+  });
+
+  it('should render top_items with priority, title, category and action hints', () => {
+    const overview: DashboardOverview = {
+      plans: [],
+      active_count: 0,
+      total_tasks: 0,
+      done_tasks: 0,
+      backlog: {
+        total: 8,
+        open: 6,
+        by_priority: { critical: 1, high: 2, medium: 2, low: 1 },
+        top_items: [
+          { id: 'b1', title: 'Fix auth bug', description: null, priority: 'critical', category: 'bugfix', tags: null, complexity_hint: null, source: null, status: 'open', plan_id: null, created_at: '2026-04-01', updated_at: '2026-04-01' },
+          { id: 'b2', title: 'Add dark mode', description: null, priority: 'high', category: 'feature', tags: null, complexity_hint: null, source: null, status: 'open', plan_id: null, created_at: '2026-04-01', updated_at: '2026-04-01' },
+          { id: 'b3', title: 'Refactor utils', description: null, priority: 'medium', category: null, tags: null, complexity_hint: null, source: null, status: 'open', plan_id: null, created_at: '2026-04-01', updated_at: '2026-04-01' },
+        ],
+      },
+    };
+    const alerts: Alert[] = [];
+
+    const result = formatDashboard(overview, alerts);
+
+    expect(result).toContain('Backlog: 6 open / 8 total');
+    expect(result).toContain('[critical] Fix auth bug (bugfix)');
+    expect(result).toContain('[high] Add dark mode (feature)');
+    expect(result).toContain('[medium] Refactor utils');
+    expect(result).not.toContain('(null)');
+    expect(result).toContain('/vs-plan 승격 | /vs-ideate');
+    expect(result).toContain('외 3개 → /vs-backlog에서 전체 확인');
+  });
+
+  it('should not render top_items section when top_items is empty', () => {
+    const overview: DashboardOverview = {
+      plans: [],
+      active_count: 0,
+      total_tasks: 0,
+      done_tasks: 0,
+      backlog: {
+        total: 3,
+        open: 2,
+        by_priority: { critical: 0, high: 0, medium: 1, low: 1 },
+        top_items: [],
+      },
+    };
+    const alerts: Alert[] = [];
+
+    const result = formatDashboard(overview, alerts);
+
+    expect(result).toContain('Backlog: 2 open / 3 total');
+    expect(result).not.toContain('/vs-plan 승격');
+    expect(result).not.toContain('/vs-ideate');
   });
 });

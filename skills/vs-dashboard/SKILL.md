@@ -52,6 +52,21 @@ invocation: user
    - critical 항목이 있으면 알림 섹션의 `backlog_critical`과 함께 강조하세요
    - 백로그가 10개 이상이면 "정리를 권장합니다" 메시지를 추가하세요
 
+   **Top 항목 미리보기**: `backlog.top_items`가 비어있지 않으면 아래 형식으로 렌더링하세요:
+
+   ```
+   📋 주요 백로그 항목:
+     [{priority}] {title} ({category}) — → /vs-plan 승격 | /vs-ideate 구체화
+     [{priority}] {title} ({category}) — → /vs-plan 승격 | /vs-ideate 구체화
+     ... 외 {N}개 → /vs-backlog에서 전체 확인
+   ```
+
+   - 최대 5개까지 표시 (critical/high 우선)
+   - category가 null이면 괄호 부분을 생략하세요
+   - 각 항목에 인라인 액션 힌트를 표시하여 사용자가 바로 /vs-plan 또는 /vs-ideate로 전환할 수 있도록 안내하세요
+   - open 항목이 top_items 수보다 많으면 "외 N개 → /vs-backlog에서 전체 확인" 안내를 추가하세요
+   - top_items가 비어있으면 이 하위 섹션을 생략하세요
+
    **관련 백로그 추천**: 활성 플랜이 있고 open 백로그가 있으면, 플랜과 관련된 백로그를 추천하세요:
    - 활성 플랜의 태스크 `allowed_files`와 `spec`에서 키워드(파일명, 모듈명, 기능명)를 추출
    - open 백로그의 title/description/tags와 키워드를 비교하여 매칭
@@ -193,6 +208,7 @@ invocation: user
    | in_progress 태스크 있음 | "진행 중 태스크 이어서 작업" | 현재 작업 중인 태스크를 계속합니다 → `/vs-next` |
    | backlog open 항목 있음 | "백로그에서 플래닝" | 백로그 항목을 플랜으로 승격합니다 → `/vs-backlog` |
    | 활성 플랜 없음 | "새 플랜 생성" | `/vs-plan`으로 새 작업을 시작합니다 |
+   | 활성 플랜 없음 + backlog open 있음 | "아이디어 구체화" | `/vs-ideate`로 백로그 항목을 구조화합니다 |
    | 그 외 | "다음 태스크 시작" | `/vs-next`로 다음 태스크를 가져옵니다 |
 
    해당 조건이 여러 개면 모두 선택지로 포함하되, 위 표의 순서(우선순위)대로 나열하세요.

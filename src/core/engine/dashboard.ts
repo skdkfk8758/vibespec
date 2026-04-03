@@ -1,11 +1,12 @@
 import type Database from 'better-sqlite3';
-import type { PlanProgress, QARunSummary, SkillStats } from '../types.js';
+import type { BacklogItem, PlanProgress, QARunSummary, SkillStats } from '../types.js';
 import type { SkillUsageModel } from '../models/skill-usage.js';
 
 export interface BacklogOverview {
   total: number;
   open: number;
   by_priority: { critical: number; high: number; medium: number; low: number };
+  top_items: BacklogItem[];
 }
 
 export interface DashboardOverview {
@@ -68,10 +69,24 @@ export class DashboardEngine {
         .prepare('SELECT COUNT(*) AS total FROM backlog_items')
         .get() as { total: number };
 
-      return { total: totalRow.total, open, by_priority };
+      const top_items = this.db
+        .prepare(
+          `SELECT * FROM backlog_items
+           WHERE status = 'open'
+           ORDER BY CASE priority
+             WHEN 'critical' THEN 0
+             WHEN 'high' THEN 1
+             WHEN 'medium' THEN 2
+             WHEN 'low' THEN 3
+           END, created_at DESC
+           LIMIT 5`
+        )
+        .all() as BacklogItem[];
+
+      return { total: totalRow.total, open, by_priority, top_items };
     } catch (e) {
       console.error('[dashboard] backlog query failed:', e instanceof Error ? e.message : e);
-      return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 } };
+      return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] };
     }
   }
 
