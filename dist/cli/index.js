@@ -1,29 +1,17 @@
 #!/usr/bin/env node
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
+import {
+  BaseRepository,
+  PlanVerifier,
+  TaskModel,
+  __commonJS,
+  __toESM,
+  buildUpdateQuery,
+  generateId,
+  hasColumn,
+  normalizeError,
+  validateTransition,
+  withTransaction
+} from "../chunk-VPBWN2NJ.js";
 
 // node_modules/picomatch/lib/constants.js
 var require_constants = __commonJS({
@@ -1588,6 +1576,16 @@ function formatDashboard(overview, alerts) {
     if (bp.medium > 0) priParts.push(`medium: ${bp.medium}`);
     if (bp.low > 0) priParts.push(`low: ${bp.low}`);
     lines.push(`Backlog: ${overview.backlog.open} open / ${overview.backlog.total} total  (${priParts.join(" \xB7 ")})`);
+    if (overview.backlog.top_items.length > 0) {
+      for (const item of overview.backlog.top_items) {
+        const cat = item.category ? ` (${item.category})` : "";
+        lines.push(`  [${item.priority}] ${item.title}${cat} \u2014 \u2192 /vs-plan \uC2B9\uACA9 | /vs-ideate`);
+      }
+      if (overview.backlog.open > overview.backlog.top_items.length) {
+        const remaining = overview.backlog.open - overview.backlog.top_items.length;
+        lines.push(`  ... \uC678 ${remaining}\uAC1C \u2192 /vs-backlog\uC5D0\uC11C \uC804\uCCB4 \uD655\uC778`);
+      }
+    }
   }
   if (alerts.length > 0) {
     lines.push("\u26A0 Alerts:");
@@ -2023,79 +2021,6 @@ function handleShutdown() {
 }
 process.on("SIGTERM", handleShutdown);
 process.on("SIGINT", handleShutdown);
-
-// node_modules/nanoid/index.js
-import { webcrypto as crypto } from "crypto";
-
-// node_modules/nanoid/url-alphabet/index.js
-var urlAlphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
-
-// node_modules/nanoid/index.js
-var POOL_SIZE_MULTIPLIER = 128;
-var pool;
-var poolOffset;
-function fillPool(bytes) {
-  if (!pool || pool.length < bytes) {
-    pool = Buffer.allocUnsafe(bytes * POOL_SIZE_MULTIPLIER);
-    crypto.getRandomValues(pool);
-    poolOffset = 0;
-  } else if (poolOffset + bytes > pool.length) {
-    crypto.getRandomValues(pool);
-    poolOffset = 0;
-  }
-  poolOffset += bytes;
-}
-function nanoid(size = 21) {
-  fillPool(size |= 0);
-  let id = "";
-  for (let i = poolOffset - size; i < poolOffset; i++) {
-    id += urlAlphabet[pool[i] & 63];
-  }
-  return id;
-}
-
-// src/core/utils.ts
-var InvalidTransitionError = class extends Error {
-  constructor(current, target) {
-    super(`Invalid transition: ${current} \u2192 ${target}`);
-    this.name = "InvalidTransitionError";
-  }
-};
-function validateTransition(allowed, current, target, opts) {
-  if (current === target) return;
-  if (opts?.force) return;
-  const validTargets = allowed[current];
-  if (!validTargets || !validTargets.includes(target)) {
-    throw new InvalidTransitionError(current, target);
-  }
-}
-function generateId() {
-  return nanoid(12);
-}
-function hasColumn(db, table, column) {
-  const columns = db.pragma(`table_info(${table})`);
-  return columns.some((c) => c.name === column);
-}
-function withTransaction(db, fn) {
-  const tx = db.transaction(fn);
-  return tx();
-}
-function buildUpdateQuery(table, id, fields) {
-  const sets = [];
-  const values = [];
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== void 0) {
-      sets.push(`${key} = ?`);
-      values.push(value);
-    }
-  }
-  if (sets.length === 0) return null;
-  values.push(id);
-  return {
-    sql: `UPDATE ${table} SET ${sets.join(", ")} WHERE id = ?`,
-    params: values
-  };
-}
 
 // src/core/engine/embeddings.ts
 import { createRequire } from "module";
@@ -2566,7 +2491,13 @@ function applyMigrations(db) {
         verification    TEXT NOT NULL,
         task_ids        TEXT,
         report_path     TEXT NOT NULL,
-        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        pr_number       INTEGER,
+        pr_url          TEXT,
+        merge_method    TEXT,
+        closed_issues   TEXT,
+        auto_resolved_files TEXT,
+        conflict_levels TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_merge_reports_plan ON merge_reports(plan_id);
@@ -2841,10 +2772,21 @@ var DashboardEngine = class {
         open += row.count;
       }
       const totalRow = this.db.prepare("SELECT COUNT(*) AS total FROM backlog_items").get();
-      return { total: totalRow.total, open, by_priority };
+      const top_items = this.db.prepare(
+        `SELECT * FROM backlog_items
+           WHERE status = 'open'
+           ORDER BY CASE priority
+             WHEN 'critical' THEN 0
+             WHEN 'high' THEN 1
+             WHEN 'medium' THEN 2
+             WHEN 'low' THEN 3
+           END, created_at DESC
+           LIMIT 5`
+      ).all();
+      return { total: totalRow.total, open, by_priority, top_items };
     } catch (e) {
       console.error("[dashboard] backlog query failed:", e instanceof Error ? e.message : e);
-      return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 } };
+      return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] };
     }
   }
   getPlanSummary(planId) {
@@ -3307,396 +3249,6 @@ var InsightsEngine = class {
     if (row.total < 5) return "low";
     if (row.total < 20) return "medium";
     return "high";
-  }
-};
-
-// src/core/models/base-repository.ts
-var BaseRepository = class {
-  db;
-  tableName;
-  constructor(db, tableName) {
-    this.db = db;
-    this.tableName = tableName;
-  }
-  getById(id) {
-    const row = this.db.prepare(`SELECT * FROM ${this.tableName} WHERE id = ?`).get(id);
-    return row ?? null;
-  }
-  requireById(id) {
-    const entity = this.getById(id);
-    if (!entity) throw new Error(`${this.tableName} not found: ${id}`);
-    return entity;
-  }
-  list() {
-    return this.db.prepare(`SELECT * FROM ${this.tableName}`).all();
-  }
-  delete(id) {
-    this.requireById(id);
-    this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`).run(id);
-  }
-  update(id, fields) {
-    this.requireById(id);
-    const query = buildUpdateQuery(this.tableName, id, fields);
-    if (query) {
-      this.db.prepare(query.sql).run(...query.params);
-    }
-    return this.requireById(id);
-  }
-};
-
-// src/core/models/task.ts
-var TASK_TRANSITIONS = {
-  todo: ["in_progress", "blocked", "skipped"],
-  in_progress: ["done", "blocked", "todo"],
-  blocked: ["todo", "in_progress", "skipped"],
-  done: [],
-  skipped: []
-};
-var ACTION_VERBS_KO = /(?:반환|표시|생성|포함|존재|동작|출력|실행|저장|삭제|변경|확인|처리|전달|호출|설정|검증|수행|발생|제공|응답|보여|보고|판정|매핑|이동)(?:한다|된다|하다|된다|합니다|됩니다|해야)/;
-var ACTION_VERBS_EN = /\b(?:return|display|create|contain|exist|output|run|save|delete|change|verify|should|must|shall|throw|fail|pass|handle|accept|reject|render|show|send|receive|include|produce|emit|dispatch|call|update|remove|add|store|load|fetch|respond|report|generate|trigger|prevent|allow|deny|block|skip)s?\b/i;
-var GIVEN_WHEN_THEN = /\b(?:given|when|then)\b/i;
-function validateAcceptance(acceptance) {
-  if (acceptance === null || acceptance === void 0) {
-    return { valid: true, warnings: [] };
-  }
-  const trimmed = acceptance.trim();
-  if (trimmed.length === 0) {
-    return { valid: false, warnings: ["AC\uAC00 \uBE44\uC5B4\uC788\uC2B5\uB2C8\uB2E4. acceptance criteria\uB97C \uC791\uC131\uD574\uC8FC\uC138\uC694."] };
-  }
-  const lines = trimmed.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  const items = [];
-  let currentItem = "";
-  for (const line of lines) {
-    if (/^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line)) {
-      if (currentItem) items.push(currentItem);
-      currentItem = line.replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "");
-    } else if (items.length === 0 && !currentItem) {
-      currentItem = line;
-    } else {
-      currentItem += " " + line;
-    }
-  }
-  if (currentItem) items.push(currentItem);
-  if (items.length === 0) {
-    items.push(trimmed);
-  }
-  const warnings = [];
-  if (items.length === 1) {
-    warnings.push("AC \uD56D\uBAA9\uC774 1\uAC1C\uBFD0\uC785\uB2C8\uB2E4. \uB2E4\uC591\uD55C \uC2DC\uB098\uB9AC\uC624\uB97C \uCEE4\uBC84\uD558\uB294 \uC5EC\uB7EC \uD56D\uBAA9\uC744 \uC791\uC131\uD558\uC138\uC694.");
-  }
-  const unverifiable = [];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const hasKoVerb = ACTION_VERBS_KO.test(item);
-    const hasEnVerb = ACTION_VERBS_EN.test(item);
-    const hasGWT = GIVEN_WHEN_THEN.test(item);
-    if (!hasKoVerb && !hasEnVerb && !hasGWT) {
-      unverifiable.push(i + 1);
-    }
-  }
-  if (unverifiable.length > 0) {
-    const itemNums = unverifiable.join(", ");
-    warnings.push(
-      `AC #${itemNums}\uBC88 \uD56D\uBAA9\uC5D0 \uAC80\uC99D \uAC00\uB2A5\uD55C \uB3D9\uC0AC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. "~\uD55C\uB2E4/~\uB41C\uB2E4" \uB610\uB294 "should/must" \uD615\uD0DC\uB85C \uAE30\uB300 \uB3D9\uC791\uC744 \uBA85\uC2DC\uD558\uC138\uC694.`
-    );
-  }
-  return {
-    valid: warnings.length === 0,
-    warnings
-  };
-}
-var TaskModel = class extends BaseRepository {
-  events;
-  constructor(db, events) {
-    super(db, "tasks");
-    this.events = events;
-  }
-  create(planId, title, opts) {
-    const { warnings } = validateAcceptance(opts?.acceptance);
-    const id = generateId();
-    let depth = 0;
-    if (opts?.parentId) {
-      const parent = this.getById(opts.parentId);
-      if (!parent) {
-        throw new Error(`Parent task not found: ${opts.parentId}`);
-      }
-      depth = parent.depth + 1;
-    }
-    const sortOrder = opts?.sortOrder ?? 0;
-    const dependsOn = opts?.dependsOn && opts.dependsOn.length > 0 ? JSON.stringify(opts.dependsOn) : null;
-    const allowedFiles = opts?.allowedFiles && opts.allowedFiles.length > 0 ? JSON.stringify(opts.allowedFiles) : null;
-    const forbiddenPatterns = opts?.forbiddenPatterns && opts.forbiddenPatterns.length > 0 ? JSON.stringify(opts.forbiddenPatterns) : null;
-    if (opts?.dependsOn && opts.dependsOn.length > 0) {
-      this.validateDependencies(planId, id, opts.dependsOn);
-    }
-    this.db.prepare(
-      `INSERT INTO tasks (id, plan_id, parent_id, title, status, depth, sort_order, spec, acceptance, depends_on, allowed_files, forbidden_patterns)
-         VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      planId,
-      opts?.parentId ?? null,
-      title,
-      depth,
-      sortOrder,
-      opts?.spec ?? null,
-      opts?.acceptance ?? null,
-      dependsOn,
-      allowedFiles,
-      forbiddenPatterns
-    );
-    const task = this.getById(id);
-    this.events?.record("task", task.id, "created", null, JSON.stringify({ title, status: "todo" }));
-    return Object.assign(task, { warnings });
-  }
-  getTree(planId) {
-    const rows = this.db.prepare(
-      `WITH RECURSIVE task_tree AS (
-           SELECT * FROM tasks WHERE plan_id = ? AND parent_id IS NULL
-           UNION ALL
-           SELECT t.* FROM tasks t
-           INNER JOIN task_tree tt ON t.parent_id = tt.id
-         )
-         SELECT * FROM task_tree ORDER BY depth, sort_order`
-    ).all(planId);
-    return this.buildTree(rows);
-  }
-  buildTaskMap(tasks) {
-    const map = /* @__PURE__ */ new Map();
-    for (const t of tasks) {
-      map.set(t.id, t);
-    }
-    return map;
-  }
-  parseDeps(task) {
-    if (!task.depends_on) return [];
-    return JSON.parse(task.depends_on);
-  }
-  buildTree(tasks) {
-    const map = /* @__PURE__ */ new Map();
-    const roots = [];
-    for (const task of tasks) {
-      map.set(task.id, { ...task, children: [] });
-    }
-    for (const task of tasks) {
-      const node = map.get(task.id);
-      if (task.parent_id === null) {
-        roots.push(node);
-      } else {
-        const parent = map.get(task.parent_id);
-        if (parent) {
-          parent.children.push(node);
-        }
-      }
-    }
-    return roots;
-  }
-  getChildren(parentId) {
-    return this.db.prepare("SELECT * FROM tasks WHERE parent_id = ? ORDER BY sort_order").all(parentId);
-  }
-  update(id, fields) {
-    const { warnings } = fields.acceptance !== void 0 ? validateAcceptance(fields.acceptance) : { warnings: [] };
-    const setClauses = [];
-    const values = [];
-    if (fields.title !== void 0) {
-      setClauses.push("title = ?");
-      values.push(fields.title);
-    }
-    if (fields.spec !== void 0) {
-      setClauses.push("spec = ?");
-      values.push(fields.spec);
-    }
-    if (fields.acceptance !== void 0) {
-      setClauses.push("acceptance = ?");
-      values.push(fields.acceptance);
-    }
-    if (fields.sort_order !== void 0) {
-      setClauses.push("sort_order = ?");
-      values.push(fields.sort_order);
-    }
-    if (fields.depends_on !== void 0) {
-      if (fields.depends_on !== null) {
-        const depIds = JSON.parse(fields.depends_on);
-        if (depIds.length > 0) {
-          const task = this.getById(id);
-          if (task) {
-            this.validateDependencies(task.plan_id, id, depIds);
-          }
-        }
-      }
-      setClauses.push("depends_on = ?");
-      values.push(fields.depends_on);
-    }
-    if (fields.allowed_files !== void 0) {
-      setClauses.push("allowed_files = ?");
-      values.push(fields.allowed_files);
-    }
-    if (fields.forbidden_patterns !== void 0) {
-      setClauses.push("forbidden_patterns = ?");
-      values.push(fields.forbidden_patterns);
-    }
-    if (setClauses.length === 0) {
-      return Object.assign(this.getById(id), { warnings });
-    }
-    values.push(id);
-    return withTransaction(this.db, () => {
-      this.db.prepare(`UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?`).run(...values);
-      const oldTask = this.getById(id);
-      this.events?.record("task", id, "updated", null, JSON.stringify(fields));
-      return Object.assign(oldTask, { warnings });
-    });
-  }
-  updateStatus(id, status, opts) {
-    const oldTask = this.getById(id);
-    if (!oldTask) throw new Error(`Task not found: ${id}`);
-    if (oldTask.status === status) return oldTask;
-    validateTransition(TASK_TRANSITIONS, oldTask.status, status, opts);
-    const oldStatus = oldTask.status;
-    const completedAt = status === "done" ? (/* @__PURE__ */ new Date()).toISOString() : null;
-    return withTransaction(this.db, () => {
-      this.db.prepare("UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?").run(status, completedAt, id);
-      this.events?.record("task", id, "status_changed", JSON.stringify({ status: oldStatus }), JSON.stringify({ status }));
-      return this.getById(id);
-    });
-  }
-  delete(id) {
-    const task = this.getById(id);
-    if (!task) throw new Error(`Task not found: ${id}`);
-    withTransaction(this.db, () => {
-      this.db.prepare("DELETE FROM events WHERE entity_id IN (SELECT id FROM tasks WHERE parent_id = ?)").run(id);
-      this.db.prepare("DELETE FROM tasks WHERE parent_id = ?").run(id);
-      this.db.prepare("DELETE FROM events WHERE entity_id = ?").run(id);
-      this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
-      this.events?.record("task", id, "deleted", JSON.stringify({ title: task.title }), null);
-    });
-  }
-  validateDependencies(planId, taskId, dependsOn) {
-    if (!dependsOn || dependsOn.length === 0) {
-      return;
-    }
-    const allTasks = this.getByPlan(planId);
-    const taskMap = this.buildTaskMap(allTasks);
-    for (const depId of dependsOn) {
-      if (depId === taskId) {
-        throw new Error(`Task cannot depend on itself: ${depId}`);
-      }
-      const depTask = taskMap.get(depId);
-      if (!depTask) {
-        const crossPlanTask = this.getById(depId);
-        if (crossPlanTask && crossPlanTask.plan_id !== planId) {
-          throw new Error(
-            `Dependency task ${depId} belongs to different plan: ${crossPlanTask.plan_id}`
-          );
-        }
-        throw new Error(`Dependency task not found: ${depId}`);
-      }
-    }
-    const visited = /* @__PURE__ */ new Set();
-    const hasCycle = (currentId) => {
-      if (currentId === taskId) return true;
-      if (visited.has(currentId)) return false;
-      visited.add(currentId);
-      const current = taskMap.get(currentId);
-      if (!current) return false;
-      const deps = this.parseDeps(current);
-      return deps.some((dep) => hasCycle(dep));
-    };
-    for (const depId of dependsOn) {
-      visited.clear();
-      if (hasCycle(depId)) {
-        throw new Error("Circular dependency detected");
-      }
-    }
-  }
-  getWaves(planId) {
-    const tasks = this.getByPlan(planId);
-    if (tasks.length === 0) return [];
-    const taskMap = this.buildTaskMap(tasks);
-    const poisoned = this.findPoisonedTasks(tasks, taskMap);
-    const includedTasks = tasks.filter(
-      (t) => !poisoned.has(t.id) || t.status === "blocked" || t.status === "skipped"
-    );
-    const waveIndex = /* @__PURE__ */ new Map();
-    const includedSet = new Set(includedTasks.map((t) => t.id));
-    const computeWave = (id, visited) => {
-      if (waveIndex.has(id)) return waveIndex.get(id);
-      if (visited.has(id)) return 0;
-      visited.add(id);
-      const task = taskMap.get(id);
-      const deps = this.parseDeps(task).filter((d) => includedSet.has(d));
-      if (deps.length === 0) {
-        waveIndex.set(id, 0);
-        return 0;
-      }
-      const wave = Math.max(...deps.map((d) => computeWave(d, visited))) + 1;
-      waveIndex.set(id, wave);
-      return wave;
-    };
-    for (const t of includedTasks) {
-      computeWave(t.id, /* @__PURE__ */ new Set());
-    }
-    const waveMap = /* @__PURE__ */ new Map();
-    for (const t of includedTasks) {
-      const idx = waveIndex.get(t.id) ?? 0;
-      if (!waveMap.has(idx)) waveMap.set(idx, []);
-      waveMap.get(idx).push(t);
-    }
-    return Array.from(waveMap.keys()).sort((a, b) => a - b).map((idx) => ({
-      index: idx,
-      task_ids: waveMap.get(idx).sort((a, b) => a.sort_order - b.sort_order).map((t) => t.id)
-    }));
-  }
-  getNextAvailable(planId) {
-    const tasks = this.getByPlan(planId);
-    if (tasks.length === 0) return null;
-    const taskMap = this.buildTaskMap(tasks);
-    const todoTasks = tasks.filter((t) => t.status === "todo").sort((a, b) => a.sort_order - b.sort_order);
-    for (const task of todoTasks) {
-      const deps = this.parseDeps(task);
-      if (deps.length === 0) return task;
-      const allDone = deps.every((id) => taskMap.get(id)?.status === "done");
-      const anyPoisoned = deps.some((id) => {
-        const s = taskMap.get(id)?.status;
-        return s === "blocked" || s === "skipped";
-      });
-      if (allDone && !anyPoisoned) return task;
-    }
-    return null;
-  }
-  findPoisonedTasks(tasks, taskMap) {
-    const poisoned = /* @__PURE__ */ new Set();
-    const check = (id, visited) => {
-      if (poisoned.has(id)) return true;
-      if (visited.has(id)) return false;
-      visited.add(id);
-      const task = taskMap.get(id);
-      if (!task) return false;
-      if (task.status === "blocked" || task.status === "skipped") {
-        poisoned.add(id);
-        return true;
-      }
-      for (const dep of this.parseDeps(task)) {
-        if (check(dep, visited)) {
-          poisoned.add(id);
-          return true;
-        }
-      }
-      return false;
-    };
-    for (const t of tasks) {
-      if (t.depends_on) check(t.id, /* @__PURE__ */ new Set());
-    }
-    return poisoned;
-  }
-  getByPlan(planId, filter) {
-    if (filter?.status) {
-      return this.db.prepare(
-        "SELECT * FROM tasks WHERE plan_id = ? AND status = ? ORDER BY depth, sort_order"
-      ).all(planId, filter.status);
-    }
-    return this.db.prepare(
-      "SELECT * FROM tasks WHERE plan_id = ? ORDER BY depth, sort_order"
-    ).all(planId);
   }
 };
 
@@ -4391,7 +3943,13 @@ function rowToReport(row) {
     verification: JSON.parse(row.verification),
     task_ids: row.task_ids ? JSON.parse(row.task_ids) : null,
     report_path: row.report_path,
-    created_at: row.created_at
+    created_at: row.created_at,
+    pr_number: row.pr_number ?? null,
+    pr_url: row.pr_url ?? null,
+    merge_method: row.merge_method ?? null,
+    closed_issues: row.closed_issues ? JSON.parse(row.closed_issues) : null,
+    auto_resolved_files: row.auto_resolved_files ? JSON.parse(row.auto_resolved_files) : null,
+    conflict_levels: row.conflict_levels ? JSON.parse(row.conflict_levels) : null
   };
 }
 var MergeReportModel = class extends BaseRepository {
@@ -4402,8 +3960,9 @@ var MergeReportModel = class extends BaseRepository {
     const id = generateId();
     this.db.prepare(
       `INSERT INTO merge_reports (id, plan_id, commit_hash, source_branch, target_branch,
-        changes_summary, review_checklist, conflict_log, ai_judgments, verification, task_ids, report_path)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        changes_summary, review_checklist, conflict_log, ai_judgments, verification, task_ids, report_path,
+        pr_number, pr_url, merge_method, closed_issues, auto_resolved_files, conflict_levels)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       data.plan_id ?? null,
@@ -4416,7 +3975,13 @@ var MergeReportModel = class extends BaseRepository {
       data.ai_judgments ? JSON.stringify(data.ai_judgments) : null,
       JSON.stringify(data.verification),
       data.task_ids ? JSON.stringify(data.task_ids) : null,
-      data.report_path
+      data.report_path,
+      data.pr_number ?? null,
+      data.pr_url ?? null,
+      data.merge_method ?? null,
+      data.closed_issues ? JSON.stringify(data.closed_issues) : null,
+      data.auto_resolved_files ? JSON.stringify(data.auto_resolved_files) : null,
+      data.conflict_levels ? JSON.stringify(data.conflict_levels) : null
     );
     return this.get(id);
   }
@@ -4639,6 +4204,675 @@ var ContextLogModel = class {
   }
 };
 
+// src/core/engine/retry.ts
+import { z } from "zod";
+
+// src/core/engine/error-kb.ts
+import * as fs from "fs";
+import * as path from "path";
+var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
+var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
+var VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+function parseFrontmatter(raw) {
+  const defaultMeta = {
+    title: "",
+    severity: "medium",
+    tags: [],
+    status: "open",
+    occurrences: 0,
+    first_seen: "",
+    last_seen: ""
+  };
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    return { meta: defaultMeta, body: raw };
+  }
+  const yamlBlock = match[1];
+  const body = match[2];
+  const meta = { ...defaultMeta };
+  for (const line of yamlBlock.split("\n")) {
+    const colonIdx = line.indexOf(":");
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    if (key === "title") {
+      meta.title = value;
+    } else if (key === "severity") {
+      if (VALID_SEVERITIES.has(value)) meta.severity = value;
+    } else if (key === "status") {
+      if (VALID_STATUSES.has(value)) meta.status = value;
+    } else if (key === "occurrences") {
+      meta.occurrences = parseInt(value, 10) || 0;
+    } else if (key === "first_seen") {
+      meta.first_seen = value;
+    } else if (key === "last_seen") {
+      meta.last_seen = value;
+    } else if (key === "tags") {
+      const bracketMatch = value.match(/^\[(.*)\]$/);
+      if (bracketMatch) {
+        meta.tags = bracketMatch[1].split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+      } else if (value === "" || value === "[]") {
+        meta.tags = [];
+      }
+    }
+  }
+  return { meta, body };
+}
+function serializeFrontmatter(meta) {
+  const tagsStr = meta.tags.length > 0 ? `[${meta.tags.join(", ")}]` : "[]";
+  const lines = [
+    "---",
+    `title: ${meta.title}`,
+    `severity: ${meta.severity}`,
+    `tags: ${tagsStr}`,
+    `status: ${meta.status}`,
+    `occurrences: ${meta.occurrences}`,
+    `first_seen: ${meta.first_seen}`,
+    `last_seen: ${meta.last_seen}`,
+    "---"
+  ];
+  return lines.join("\n");
+}
+var ErrorKBEngine = class {
+  kbRoot;
+  errorsDir;
+  /** In-memory embedding cache: errorId -> Float32Array */
+  embeddingCache = /* @__PURE__ */ new Map();
+  constructor(projectRoot) {
+    this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
+    this.errorsDir = path.join(this.kbRoot, "errors");
+    fs.mkdirSync(this.errorsDir, { recursive: true });
+  }
+  resolveFilePath(id) {
+    if (!VALID_ID_PATTERN.test(id)) return null;
+    return path.join(this.errorsDir, `${id}.md`);
+  }
+  add(newEntry) {
+    const id = generateId();
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const meta = {
+      title: newEntry.title,
+      severity: newEntry.severity,
+      tags: newEntry.tags,
+      status: "open",
+      occurrences: 1,
+      first_seen: now,
+      last_seen: now
+    };
+    let body = "\n";
+    if (newEntry.cause) {
+      body += `## Cause
+
+${newEntry.cause}
+
+`;
+    }
+    if (newEntry.solution) {
+      body += `## Solution
+
+${newEntry.solution}
+
+`;
+    }
+    const content = serializeFrontmatter(meta) + "\n" + body;
+    const filePath = path.join(this.errorsDir, `${id}.md`);
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+    return this.toErrorEntry(id, meta, body);
+  }
+  show(id) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null;
+    }
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    return this.toErrorEntry(id, meta, body);
+  }
+  search(query, opts) {
+    const files = this.listErrorFiles();
+    const results = [];
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      const entry = this.show(id);
+      if (!entry) continue;
+      if (opts?.tags && opts.tags.length > 0) {
+        const hasMatchingTag = opts.tags.some((t) => entry.tags.includes(t));
+        if (!hasMatchingTag) continue;
+      }
+      if (opts?.severity && entry.severity !== opts.severity) {
+        continue;
+      }
+      if (query && query.length > 0) {
+        const searchable = `${entry.title} ${entry.content}`.toLowerCase();
+        if (!searchable.includes(query.toLowerCase())) {
+          continue;
+        }
+      }
+      results.push(entry);
+    }
+    return results;
+  }
+  delete(id) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return false;
+    fs.unlinkSync(filePath);
+    this.updateIndex();
+    return true;
+  }
+  update(id, patch) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    if (patch.severity !== void 0) meta.severity = patch.severity;
+    if (patch.status !== void 0) meta.status = patch.status;
+    if (patch.occurrences !== void 0) meta.occurrences = patch.occurrences;
+    if (patch.last_seen !== void 0) meta.last_seen = patch.last_seen;
+    if (patch.tags !== void 0) meta.tags = patch.tags;
+    const content = serializeFrontmatter(meta) + "\n" + body;
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+  }
+  recordOccurrence(id, context) {
+    const filePath = this.resolveFilePath(id);
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const { meta, body } = parseFrontmatter(raw);
+    meta.occurrences += 1;
+    meta.last_seen = (/* @__PURE__ */ new Date()).toISOString();
+    let updatedBody = body;
+    const historyEntry = `- ${meta.last_seen}: ${context}`;
+    const historyIdx = updatedBody.lastIndexOf("## History");
+    if (historyIdx !== -1) {
+      const headerEnd = updatedBody.indexOf("\n", historyIdx);
+      if (headerEnd !== -1) {
+        updatedBody = updatedBody.slice(0, headerEnd + 1) + historyEntry + "\n" + updatedBody.slice(headerEnd + 1);
+      }
+    } else {
+      updatedBody = updatedBody.trimEnd() + "\n\n## History\n" + historyEntry + "\n";
+    }
+    const content = serializeFrontmatter(meta) + "\n" + updatedBody;
+    fs.writeFileSync(filePath, content, "utf-8");
+    this.updateIndex();
+  }
+  getStats() {
+    const files = this.listErrorFiles();
+    const stats = {
+      total: 0,
+      by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
+      by_status: { open: 0, resolved: 0, recurring: 0, wontfix: 0 },
+      top_recurring: []
+    };
+    const entries = [];
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      const raw = fs.readFileSync(file, "utf-8");
+      const { meta } = parseFrontmatter(raw);
+      stats.total++;
+      stats.by_severity[meta.severity]++;
+      stats.by_status[meta.status]++;
+      entries.push({ id, title: meta.title, occurrences: meta.occurrences });
+    }
+    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10);
+    return stats;
+  }
+  /**
+   * Generate embedding text from an error entry's key fields.
+   */
+  entryToText(entry) {
+    return `${entry.title} ${entry.content || ""}`.trim();
+  }
+  /**
+   * Semantic search: generate embedding for query and compare against cached embeddings.
+   * Returns results sorted by similarity (descending).
+   */
+  async searchSemantic(query, limit = 10) {
+    if (this.embeddingCache.size === 0) return [];
+    const queryEmbedding = await generateEmbedding(query);
+    const results = [];
+    for (const [id, embedding] of this.embeddingCache) {
+      const entry = this.show(id);
+      if (!entry) continue;
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      results.push({ entry, similarity });
+    }
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, limit);
+  }
+  /**
+   * Hybrid search: run text search + semantic search in parallel,
+   * merge results using Reciprocal Rank Fusion (RRF).
+   */
+  async searchHybrid(query, opts) {
+    const [textResults, semanticResults] = await Promise.all([
+      Promise.resolve(this.search(query, opts)),
+      this.searchSemantic(query)
+    ]);
+    const k = 60;
+    const scoreMap = /* @__PURE__ */ new Map();
+    for (let i = 0; i < textResults.length; i++) {
+      const entry = textResults[i];
+      const rrfScore = 1 / (k + i + 1);
+      scoreMap.set(entry.id, { entry, score: rrfScore });
+    }
+    for (let i = 0; i < semanticResults.length; i++) {
+      const { entry } = semanticResults[i];
+      const rrfScore = 1 / (k + i + 1);
+      const existing = scoreMap.get(entry.id);
+      if (existing) {
+        existing.score += rrfScore;
+      } else {
+        scoreMap.set(entry.id, { entry, score: rrfScore });
+      }
+    }
+    const merged = Array.from(scoreMap.values());
+    merged.sort((a, b) => b.score - a.score);
+    return merged.map(({ entry, score }) => ({ entry, similarity: score }));
+  }
+  /**
+   * Initialize embeddings for all existing error entries.
+   * Skips entries that already have embeddings in cache.
+   */
+  async initEmbeddings() {
+    const files = this.listErrorFiles();
+    let indexed = 0;
+    let skipped = 0;
+    for (const file of files) {
+      const id = path.basename(file, ".md");
+      if (this.embeddingCache.has(id)) {
+        skipped++;
+        continue;
+      }
+      const entry = this.show(id);
+      if (!entry) continue;
+      const text = this.entryToText(entry);
+      const embedding = await generateEmbedding(text);
+      this.embeddingCache.set(id, embedding);
+      indexed++;
+    }
+    return { indexed, skipped };
+  }
+  /**
+   * Find potential duplicate entries based on embedding similarity.
+   * Returns entries with similarity >= 0.85.
+   */
+  async findDuplicates(newEntry) {
+    if (this.embeddingCache.size === 0) return [];
+    const text = `${newEntry.title} ${newEntry.cause || ""} ${newEntry.solution || ""}`.trim();
+    const queryEmbedding = await generateEmbedding(text);
+    const results = [];
+    for (const [id, embedding] of this.embeddingCache) {
+      const entry = this.show(id);
+      if (!entry) continue;
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      if (similarity >= 0.85) {
+        results.push({ entry, similarity });
+      }
+    }
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results;
+  }
+  /**
+   * Add a new error entry with duplicate detection.
+   * Returns the entry plus an optional duplicate warning.
+   */
+  async addWithDuplicateCheck(newEntry) {
+    const duplicates = await this.findDuplicates(newEntry);
+    const entry = this.add(newEntry);
+    const text = this.entryToText(entry);
+    const embedding = await generateEmbedding(text);
+    this.embeddingCache.set(entry.id, embedding);
+    const result = { entry };
+    if (duplicates.length > 0) {
+      const titles = duplicates.map((d) => `"${d.entry.title}" (similarity: ${d.similarity.toFixed(2)})`).join(", ");
+      result.duplicateWarning = `Similar entries found: ${titles}`;
+    }
+    return result;
+  }
+  toErrorEntry(id, meta, body) {
+    return {
+      id,
+      title: meta.title,
+      severity: meta.severity,
+      tags: meta.tags,
+      status: meta.status,
+      occurrences: meta.occurrences,
+      first_seen: meta.first_seen,
+      last_seen: meta.last_seen,
+      content: body
+    };
+  }
+  listErrorFiles() {
+    if (!fs.existsSync(this.errorsDir)) return [];
+    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && f !== "_index.md").map((f) => path.join(this.errorsDir, f));
+  }
+  updateIndex() {
+    const stats = this.getStats();
+    const lines = [
+      "# Error Knowledge Base Index",
+      "",
+      `Total: ${stats.total}`,
+      "",
+      "## By Severity",
+      `- Critical: ${stats.by_severity.critical}`,
+      `- High: ${stats.by_severity.high}`,
+      `- Medium: ${stats.by_severity.medium}`,
+      `- Low: ${stats.by_severity.low}`,
+      "",
+      "## By Status",
+      `- Open: ${stats.by_status.open}`,
+      `- Resolved: ${stats.by_status.resolved}`,
+      `- Recurring: ${stats.by_status.recurring}`,
+      `- Won't Fix: ${stats.by_status.wontfix}`,
+      ""
+    ];
+    if (stats.top_recurring.length > 0) {
+      lines.push("## Top Recurring");
+      for (const entry of stats.top_recurring.slice(0, 10)) {
+        lines.push(`- ${entry.title} (${entry.occurrences}x)`);
+      }
+      lines.push("");
+    }
+    const indexPath = path.join(this.kbRoot, "_index.md");
+    fs.writeFileSync(indexPath, lines.join("\n"), "utf-8");
+  }
+};
+
+// src/core/engine/retry.ts
+var RetryConfigSchema = z.object({
+  maxRetries: z.number().int().min(1),
+  backoffMs: z.array(z.number().int().positive()).min(1),
+  fallbackAgentMap: z.record(z.string(), z.string())
+});
+var DEFAULT_RETRY_CONFIG = {
+  maxRetries: 3,
+  backoffMs: [1e3, 2e3, 4e3],
+  fallbackAgentMap: {}
+};
+var RetryEngine = class {
+  db;
+  config;
+  sleep;
+  projectRoot;
+  constructor(db, config = DEFAULT_RETRY_CONFIG, sleep, projectRoot = process.cwd()) {
+    this.db = db;
+    this.config = config;
+    this.sleep = sleep ?? ((ms) => new Promise((resolve5) => setTimeout(resolve5, ms)));
+    this.projectRoot = projectRoot;
+  }
+  /**
+   * 태스크 실행을 최대 maxRetries회 재시도한다.
+   *
+   * - done/skipped 상태이면 즉시 에러를 던지고 중단한다
+   * - 각 시도마다 AgentHandoffModel에 attempt를 기록한다
+   * - 재시도 전 backoffMs에 맞는 대기 시간을 적용한다
+   * - 이전 실패 에러를 다음 시도의 executeFn에 전달한다
+   */
+  async executeWithRetry(taskId, agentType, planId, executeFn) {
+    const taskModel = new TaskModel(this.db);
+    const handoffModel = new AgentHandoffModel(this.db);
+    const { maxRetries, backoffMs } = this.config;
+    const previousErrors = [];
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const task = taskModel.getById(taskId);
+      if (!task) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+      if (task.status === "done" || task.status === "skipped") {
+        throw new Error(
+          `\uD0DC\uC2A4\uD06C\uAC00 ${task.status} \uC0C1\uD0DC\uC774\uBBC0\uB85C \uC7AC\uC2DC\uB3C4\uB97C \uC911\uB2E8\uD569\uB2C8\uB2E4: ${taskId}`
+        );
+      }
+      if (attempt > 1) {
+        const backoffIndex = Math.min(attempt - 2, backoffMs.length - 1);
+        await this.sleep(backoffMs[backoffIndex]);
+      }
+      try {
+        const result = await executeFn(attempt, previousErrors);
+        handoffModel.create(
+          taskId,
+          planId,
+          agentType,
+          attempt,
+          "success",
+          `Attempt ${attempt} succeeded`
+        );
+        return result;
+      } catch (err) {
+        const error = normalizeError(err);
+        previousErrors.push(error);
+        handoffModel.create(
+          taskId,
+          planId,
+          agentType,
+          attempt,
+          "failure",
+          `Attempt ${attempt} failed: ${error.message}`
+        );
+      }
+    }
+    throw previousErrors[previousErrors.length - 1] ?? new Error("\uBAA8\uB4E0 \uC7AC\uC2DC\uB3C4\uAC00 \uC18C\uC9C4\uB418\uC5C8\uC2B5\uB2C8\uB2E4");
+  }
+  /**
+   * 에스컬레이션 — fallbackAgentMap에서 대체 에이전트를 찾아 executeWithRetry 재실행.
+   * 대체 에이전트도 실패하거나 매핑이 없으면 error-kb에 기록하고 결과를 반환한다.
+   *
+   * @param taskId 태스크 ID
+   * @param planId 플랜 ID
+   * @param originalAgent 원래 에이전트 타입
+   * @param executeFn 원래 실행 함수 (fallback 실행에도 재사용)
+   * @param fallbackExecuteFn 대체 에이전트용 실행 함수 (선택적, 없으면 executeFn 사용)
+   */
+  async escalate(taskId, planId, originalAgent, executeFn, fallbackExecuteFn) {
+    const fallbackAgent = this.config.fallbackAgentMap[originalAgent];
+    const errorKb = new ErrorKBEngine(this.projectRoot);
+    if (!fallbackAgent) {
+      errorKb.add({
+        title: `escalation failure: ${originalAgent} \u2014 no fallback`,
+        severity: "high",
+        tags: ["escalation", originalAgent, taskId],
+        cause: `Task ${taskId} failed and no fallback agent is configured for ${originalAgent}`,
+        solution: `Add a fallback agent mapping for ${originalAgent} in RetryConfig.fallbackAgentMap`
+      });
+      return { escalated: false, attempts: [] };
+    }
+    const attempts = [];
+    const fn = fallbackExecuteFn ?? executeFn;
+    try {
+      await this.executeWithRetry(taskId, fallbackAgent, planId, async (attempt, previousErrors) => {
+        const result = await fn(attempt, previousErrors);
+        attempts.push({ success: true, attempt });
+        return result;
+      });
+      return { escalated: true, fallbackAgent, attempts };
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      attempts.push({ success: false, attempt: attempts.length + 1, error });
+      errorKb.add({
+        title: `escalation failure: ${originalAgent} -> ${fallbackAgent}`,
+        severity: "high",
+        tags: ["escalation", originalAgent, fallbackAgent, taskId],
+        cause: `Task ${taskId} failed with both ${originalAgent} and fallback ${fallbackAgent}: ${error.message}`,
+        solution: `Investigate the root cause of failure in task ${taskId}`
+      });
+      console.error(`[retry] Task ${taskId}: \uBAA8\uB4E0 \uC7AC\uC2DC\uB3C4 \uC2E4\uD328. error-kb\uC5D0 \uAE30\uB85D\uB428 (${error.message})`);
+      return { escalated: true, fallbackAgent, attempts };
+    }
+  }
+};
+
+// src/core/engine/wave-coordinator.ts
+var WaveCoordinator = class {
+  taskModel;
+  constructor(db) {
+    this.taskModel = new TaskModel(db);
+  }
+  /**
+   * 주어진 태스크 ID 목록에서 allowed_files 교집합(충돌) 맵을 반환한다.
+   * allowed_files가 null/undefined인 태스크는 충돌 계산에서 제외한다.
+   */
+  detectFileConflicts(taskIds) {
+    const conflicts = [];
+    const taskFiles = /* @__PURE__ */ new Map();
+    for (const id of taskIds) {
+      const task = this.taskModel.getById(id);
+      if (!task || task.allowed_files === null || task.allowed_files === void 0) {
+        continue;
+      }
+      try {
+        const files = JSON.parse(task.allowed_files);
+        taskFiles.set(task.id, files);
+      } catch {
+      }
+    }
+    const fileToTasks = /* @__PURE__ */ new Map();
+    for (const [taskId, files] of taskFiles) {
+      for (const file of files) {
+        const list = fileToTasks.get(file);
+        if (list) list.push(taskId);
+        else fileToTasks.set(file, [taskId]);
+      }
+    }
+    const pairKey = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`;
+    const pairFiles = /* @__PURE__ */ new Map();
+    for (const [file, tasks] of fileToTasks) {
+      if (tasks.length < 2) continue;
+      for (let i = 0; i < tasks.length; i++) {
+        for (let j = i + 1; j < tasks.length; j++) {
+          const key = pairKey(tasks[i], tasks[j]);
+          const shared = pairFiles.get(key);
+          if (shared) shared.push(file);
+          else pairFiles.set(key, [file]);
+        }
+      }
+    }
+    for (const [key, sharedFiles] of pairFiles) {
+      const [taskA, taskB] = key.split("|");
+      conflicts.push({ taskA, taskB, sharedFiles });
+    }
+    return { conflicts };
+  }
+  /**
+   * planId에 대해 WaveExecutionPlan[]을 반환한다.
+   * 각 wave 내 태스크를 충돌 분석하여 parallelGroups와 sequentialTasks로 분류한다.
+   * - allowed_files가 null인 태스크 → sequentialTasks
+   * - 충돌하는 태스크 → sequentialTasks
+   * - 충돌 없는 태스크 → parallelGroups (하나의 그룹으로 묶음)
+   */
+  buildExecutionPlan(planId) {
+    const waves = this.taskModel.getWaves(planId);
+    if (waves.length === 0) return [];
+    const result = [];
+    for (const wave of waves) {
+      const taskIds = wave.task_ids;
+      const nullFileTasks = [];
+      const definedFileTasks = [];
+      const tasksInWave = taskIds.map((id) => this.taskModel.getById(id)).filter(Boolean);
+      const taskMap = new Map(tasksInWave.map((t) => [t.id, t]));
+      for (const id of taskIds) {
+        const task = taskMap.get(id);
+        if (!task || task.allowed_files === null || task.allowed_files === void 0) {
+          nullFileTasks.push(id);
+        } else {
+          definedFileTasks.push(id);
+        }
+      }
+      const conflictMap = this.detectFileConflicts(definedFileTasks);
+      const conflictingIds = /* @__PURE__ */ new Set();
+      for (const conflict of conflictMap.conflicts) {
+        conflictingIds.add(conflict.taskA);
+        conflictingIds.add(conflict.taskB);
+      }
+      const parallelTaskIds = definedFileTasks.filter((id) => !conflictingIds.has(id));
+      const sequentialFromDefined = definedFileTasks.filter((id) => conflictingIds.has(id));
+      const sequentialTasks = [...nullFileTasks, ...sequentialFromDefined];
+      const parallelGroups = parallelTaskIds.length > 0 ? [parallelTaskIds] : [];
+      result.push({
+        waveIndex: wave.index,
+        parallelGroups,
+        sequentialTasks
+      });
+    }
+    return result;
+  }
+  /**
+   * Executes a WaveExecutionPlan: parallel groups run concurrently (with semaphore),
+   * sequential tasks run one at a time. Returns a WaveResult with per-task outcomes.
+   */
+  async executeWaveParallel(plan, executeFn, options = {}) {
+    const maxConcurrent = options.maxConcurrent ?? 3;
+    const dependsOn = options.dependsOn ?? {};
+    const results = [];
+    for (const group of plan.parallelGroups) {
+      const groupResults = await this.runParallelGroup(group, executeFn, maxConcurrent);
+      results.push(...groupResults);
+    }
+    const blockedTaskIds = new Set(
+      results.filter((r) => r.status === "blocked" || r.status === "failed").map((r) => r.taskId)
+    );
+    for (const [taskId, deps] of Object.entries(dependsOn)) {
+      const isBlocked = deps.some((dep) => blockedTaskIds.has(dep));
+      if (isBlocked && !results.find((r) => r.taskId === taskId)) {
+        results.push({ taskId, status: "blocked" });
+      }
+    }
+    for (const taskId of plan.sequentialTasks) {
+      try {
+        await executeFn(taskId);
+        results.push({ taskId, status: "success" });
+      } catch (err) {
+        results.push({ taskId, status: "failed", error: normalizeError(err) });
+      }
+    }
+    return { waveIndex: plan.waveIndex, results };
+  }
+  async runParallelGroup(taskIds, executeFn, maxConcurrent) {
+    const results = [];
+    let activeCount = 0;
+    let taskIndex = 0;
+    const queue = [...taskIds];
+    let resolved = false;
+    return new Promise((resolve5) => {
+      const tryResolve = () => {
+        if (!resolved && activeCount === 0 && taskIndex >= queue.length) {
+          resolved = true;
+          resolve5(results);
+        }
+      };
+      const tryNext = () => {
+        if (queue.length === 0) {
+          tryResolve();
+          return;
+        }
+        while (activeCount < maxConcurrent && taskIndex < queue.length) {
+          const taskId = queue[taskIndex++];
+          activeCount++;
+          executeFn(taskId).then(
+            () => {
+              results.push({ taskId, status: "success" });
+              activeCount--;
+              tryNext();
+              tryResolve();
+            },
+            (err) => {
+              results.push({
+                taskId,
+                status: "failed",
+                error: normalizeError(err)
+              });
+              activeCount--;
+              tryNext();
+              tryResolve();
+            }
+          );
+        }
+      };
+      tryNext();
+    });
+  }
+};
+
 // src/core/engine/lifecycle.ts
 var LifecycleEngine = class {
   db;
@@ -4667,6 +4901,20 @@ var LifecycleEngine = class {
         `Plan cannot be completed. Blockers: ${blockers.join(", ")}`
       );
     }
+    const verifier = new PlanVerifier(this.db);
+    verifier.verify(planId).then((verification) => {
+      if (verification.warnings.length > 0) {
+        console.log(`[lifecycle] Plan ${planId} verification warnings:`);
+        for (const w of verification.warnings) {
+          console.log(`  - ${w}`);
+        }
+      }
+      if (verification.overallScore >= 0) {
+        console.log(`[lifecycle] AC verification score: ${verification.overallScore}/100`);
+      }
+    }).catch((err) => {
+      console.error(`[lifecycle] Plan ${planId} verification failed:`, err instanceof Error ? err.message : err);
+    });
     const plan = this.planModel.complete(planId);
     this.events?.record(
       "plan",
@@ -4689,6 +4937,58 @@ var LifecycleEngine = class {
       all_done: total > 0 && done === total,
       progress: { total, done, pct }
     };
+  }
+  /**
+   * 단일 태스크를 RetryEngine으로 실행한다 (재시도 + 에스컬레이션).
+   * vs-next에서 호출하는 진입점.
+   */
+  async executeTaskWithRetry(taskId, planId, agentType, executeFn, retryConfig) {
+    const engine = new RetryEngine(this.db, retryConfig ?? DEFAULT_RETRY_CONFIG);
+    try {
+      await engine.executeWithRetry(taskId, agentType, planId, executeFn);
+      return { success: true, escalated: false };
+    } catch (retryError) {
+      const result = await engine.escalate(taskId, planId, agentType, executeFn);
+      const lastAttempt = result.attempts[result.attempts.length - 1];
+      const success = result.escalated && lastAttempt?.success === true;
+      return { success, escalated: result.escalated };
+    }
+  }
+  /**
+   * 플랜의 wave를 WaveCoordinator로 병렬 실행한다.
+   * vs-exec 배치 모드에서 호출하는 진입점.
+   */
+  async executeWavesParallel(planId, executeFn, options) {
+    const coordinator = new WaveCoordinator(this.db);
+    const plans = coordinator.buildExecutionPlan(planId);
+    let completed = 0;
+    let failed = 0;
+    let blocked = 0;
+    for (const wavePlan of plans) {
+      const result = await coordinator.executeWaveParallel(
+        wavePlan,
+        executeFn,
+        { maxConcurrent: options?.maxConcurrent ?? 3 }
+      );
+      for (const taskResult of result.results) {
+        if (taskResult.status === "success") completed++;
+        else if (taskResult.status === "failed") failed++;
+        else if (taskResult.status === "blocked") blocked++;
+      }
+      this.events?.record(
+        "plan",
+        planId,
+        "wave_completed",
+        null,
+        JSON.stringify({
+          waveIndex: wavePlan.waveIndex,
+          completed,
+          failed,
+          blocked
+        })
+      );
+    }
+    return { completed, failed, blocked };
   }
   getLeafTasks(tasks) {
     const parentIds = new Set(
@@ -4832,19 +5132,19 @@ function initDb() {
 }
 
 // src/cli/commands/governance.ts
-import { resolve as resolve2, join as join3 } from "path";
-import { existsSync as existsSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3, chmodSync } from "fs";
+import { resolve as resolve2, join as join4 } from "path";
+import { existsSync as existsSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync4, chmodSync } from "fs";
 
 // src/core/config-schema.ts
-import { z } from "zod";
+import { z as z2 } from "zod";
 var ConfigValidationError = class extends Error {
   constructor(key, value, reason) {
     super(`Invalid config value for "${key}": "${value}" \u2014 ${reason}`);
     this.name = "ConfigValidationError";
   }
 };
-var BooleanStringSchema = z.enum(["true", "false"]);
-var PathStringSchema = z.string().min(1, "Path must not be empty");
+var BooleanStringSchema = z2.enum(["true", "false"]);
+var PathStringSchema = z2.string().min(1, "Path must not be empty");
 var CONFIG_SCHEMAS = {
   "careful.enabled": BooleanStringSchema,
   "freeze.enabled": BooleanStringSchema,
@@ -4880,9 +5180,9 @@ function listConfig(db) {
 }
 
 // src/cli/commands/skill-deferred-helpers.ts
-import { readdirSync as readdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync2, existsSync as existsSync3 } from "fs";
-import { join as join2 } from "path";
-function parseFrontmatter(content) {
+import { readdirSync as readdirSync3, readFileSync as readFileSync4, writeFileSync as writeFileSync3, existsSync as existsSync4 } from "fs";
+import { join as join3 } from "path";
+function parseFrontmatter2(content) {
   const result = {};
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return result;
@@ -4896,15 +5196,15 @@ function parseFrontmatter(content) {
   return result;
 }
 function listDeferredSkills(skillsDir) {
-  if (!existsSync3(skillsDir)) return [];
-  const entries = readdirSync2(skillsDir, { withFileTypes: true });
+  if (!existsSync4(skillsDir)) return [];
+  const entries = readdirSync3(skillsDir, { withFileTypes: true });
   const results = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const skillMdPath = join2(skillsDir, entry.name, "SKILL.md");
-    if (!existsSync3(skillMdPath)) continue;
-    const content = readFileSync3(skillMdPath, "utf8");
-    const fm = parseFrontmatter(content);
+    const skillMdPath = join3(skillsDir, entry.name, "SKILL.md");
+    if (!existsSync4(skillMdPath)) continue;
+    const content = readFileSync4(skillMdPath, "utf8");
+    const fm = parseFrontmatter2(content);
     if (fm["invocation"] === "deferred") {
       results.push({
         name: fm["name"] ?? entry.name,
@@ -4916,17 +5216,17 @@ function listDeferredSkills(skillsDir) {
   return results;
 }
 function promoteSkill(skillsDir, skillName) {
-  const skillMdPath = join2(skillsDir, skillName, "SKILL.md");
-  if (!existsSync3(skillMdPath)) {
+  const skillMdPath = join3(skillsDir, skillName, "SKILL.md");
+  if (!existsSync4(skillMdPath)) {
     throw new Error(`Skill not found: ${skillName}`);
   }
-  const content = readFileSync3(skillMdPath, "utf8");
-  const fm = parseFrontmatter(content);
+  const content = readFileSync4(skillMdPath, "utf8");
+  const fm = parseFrontmatter2(content);
   if (fm["invocation"] !== "deferred") {
     throw new Error(`Skill '${skillName}' is not deferred (current: ${fm["invocation"] ?? "unknown"})`);
   }
   const updated = content.replace(/^invocation: deferred$/m, "invocation: user");
-  writeFileSync2(skillMdPath, updated, "utf8");
+  writeFileSync3(skillMdPath, updated, "utf8");
   return {
     name: skillName,
     invocation: "user",
@@ -4934,12 +5234,12 @@ function promoteSkill(skillsDir, skillName) {
   };
 }
 function demoteSkill(skillsDir, skillName) {
-  const skillMdPath = join2(skillsDir, skillName, "SKILL.md");
-  if (!existsSync3(skillMdPath)) {
+  const skillMdPath = join3(skillsDir, skillName, "SKILL.md");
+  if (!existsSync4(skillMdPath)) {
     throw new Error(`Skill not found: ${skillName}`);
   }
-  const content = readFileSync3(skillMdPath, "utf8");
-  const fm = parseFrontmatter(content);
+  const content = readFileSync4(skillMdPath, "utf8");
+  const fm = parseFrontmatter2(content);
   if (fm["invocation"] === "deferred") {
     throw new Error(`Skill '${skillName}' is already deferred`);
   }
@@ -4948,7 +5248,7 @@ function demoteSkill(skillsDir, skillName) {
     new RegExp(`^invocation: ${currentInvocation}$`, "m"),
     "invocation: deferred"
   );
-  writeFileSync2(skillMdPath, updated, "utf8");
+  writeFileSync3(skillMdPath, updated, "utf8");
   return {
     name: skillName,
     invocation: "deferred",
@@ -4958,12 +5258,12 @@ function demoteSkill(skillsDir, skillName) {
 
 // src/cli/commands/governance.ts
 function manageHook(action, hookId, toolName, scriptPath) {
-  const settingsDir = join3(process.cwd(), ".claude");
-  const settingsPath = join3(settingsDir, "settings.local.json");
+  const settingsDir = join4(process.cwd(), ".claude");
+  const settingsPath = join4(settingsDir, "settings.local.json");
   let settings = {};
-  if (existsSync4(settingsPath)) {
+  if (existsSync5(settingsPath)) {
     try {
-      settings = JSON.parse(readFileSync4(settingsPath, "utf8"));
+      settings = JSON.parse(readFileSync5(settingsPath, "utf8"));
     } catch {
       settings = {};
     }
@@ -4980,7 +5280,7 @@ function manageHook(action, hookId, toolName, scriptPath) {
       matcher: toolName,
       command: scriptPath
     });
-    if (existsSync4(scriptPath)) {
+    if (existsSync5(scriptPath)) {
       try {
         chmodSync(scriptPath, 493);
       } catch {
@@ -4989,14 +5289,14 @@ function manageHook(action, hookId, toolName, scriptPath) {
   } else {
     hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
   }
-  writeFileSync3(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  writeFileSync4(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
 function registerGovernanceCommands(program2, _getModels) {
   const careful = program2.command("careful").description("Manage careful mode (destructive command guard)");
   careful.command("on").description("Enable careful mode").action(() => {
     const db = initDb();
     setConfig(db, "careful.enabled", "true");
-    const scriptPath = join3(process.cwd(), "bin", "check-careful.sh");
+    const scriptPath = join4(process.cwd(), "bin", "check-careful.sh");
     manageHook("add", "vs-careful", "Bash", scriptPath);
     output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
   });
@@ -5016,7 +5316,7 @@ function registerGovernanceCommands(program2, _getModels) {
     const db = initDb();
     const absPath = resolve2(inputPath);
     setConfig(db, "freeze.path", absPath);
-    const scriptPath = join3(process.cwd(), "bin", "check-freeze.sh");
+    const scriptPath = join4(process.cwd(), "bin", "check-freeze.sh");
     manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
     manageHook("add", "vs-freeze-write", "Write", scriptPath);
     output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
@@ -5042,8 +5342,8 @@ function registerGovernanceCommands(program2, _getModels) {
     const absPath = resolve2(inputPath);
     setConfig(db, "careful.enabled", "true");
     setConfig(db, "freeze.path", absPath);
-    const carefulScript = join3(process.cwd(), "bin", "check-careful.sh");
-    const freezeScript = join3(process.cwd(), "bin", "check-freeze.sh");
+    const carefulScript = join4(process.cwd(), "bin", "check-careful.sh");
+    const freezeScript = join4(process.cwd(), "bin", "check-freeze.sh");
     manageHook("add", "vs-careful", "Bash", carefulScript);
     manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
     manageHook("add", "vs-freeze-write", "Write", freezeScript);
@@ -5136,7 +5436,7 @@ function registerGovernanceCommands(program2, _getModels) {
   });
   const skillDeferred = program2.command("skill-deferred").description("Manage deferred skill loading (promote/demote)");
   skillDeferred.command("list").description("List skills with invocation: deferred").action(() => {
-    const skillsDir = join3(process.cwd(), "skills");
+    const skillsDir = join4(process.cwd(), "skills");
     const skills = listDeferredSkills(skillsDir);
     output(
       skills,
@@ -5145,14 +5445,14 @@ function registerGovernanceCommands(program2, _getModels) {
   });
   skillDeferred.command("promote").argument("<skill>", "Skill name to promote (deferred \u2192 user)").description("Promote a deferred skill to user invocation").action((skillName) => {
     withErrorHandler(() => {
-      const skillsDir = join3(process.cwd(), "skills");
+      const skillsDir = join4(process.cwd(), "skills");
       const result = promoteSkill(skillsDir, skillName);
       output(result, `${result.name}: deferred \u2192 user \uC804\uD658 \uC644\uB8CC`);
     });
   });
   skillDeferred.command("demote").argument("<skill>", "Skill name to demote (user \u2192 deferred)").description("Demote a user skill to deferred invocation").action((skillName) => {
     withErrorHandler(() => {
-      const skillsDir = join3(process.cwd(), "skills");
+      const skillsDir = join4(process.cwd(), "skills");
       const result = demoteSkill(skillsDir, skillName);
       output(result, `${result.name}: ${result.previous} \u2192 deferred \uC804\uD658 \uC644\uB8CC`);
     });
@@ -5200,7 +5500,7 @@ function registerGovernanceCommands(program2, _getModels) {
 
 // src/cli/importers.ts
 import { execFileSync } from "child_process";
-import { readFileSync as readFileSync5, existsSync as existsSync5 } from "fs";
+import { readFileSync as readFileSync6, existsSync as existsSync6 } from "fs";
 var REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 function validateRepoFormat(repo) {
   const trimmed = repo.trim();
@@ -5286,13 +5586,13 @@ function inferCategoryFromLabels(labels) {
 }
 function importFromFile(filepath) {
   const errors = [];
-  if (!existsSync5(filepath)) {
+  if (!existsSync6(filepath)) {
     errors.push(`\uD30C\uC77C\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${filepath}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
   let content;
   try {
-    content = readFileSync5(filepath, "utf-8");
+    content = readFileSync6(filepath, "utf-8");
   } catch (e) {
     errors.push(`\uD30C\uC77C \uC77D\uAE30 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
@@ -5892,378 +6192,6 @@ function formatMergeReportList(reports) {
   return [header, sep2, ...rows].join("\n");
 }
 
-// src/core/engine/error-kb.ts
-import * as fs from "fs";
-import * as path from "path";
-var VALID_SEVERITIES = /* @__PURE__ */ new Set(["critical", "high", "medium", "low"]);
-var VALID_STATUSES = /* @__PURE__ */ new Set(["open", "resolved", "recurring", "wontfix"]);
-var VALID_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
-function parseFrontmatter2(raw) {
-  const defaultMeta = {
-    title: "",
-    severity: "medium",
-    tags: [],
-    status: "open",
-    occurrences: 0,
-    first_seen: "",
-    last_seen: ""
-  };
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) {
-    return { meta: defaultMeta, body: raw };
-  }
-  const yamlBlock = match[1];
-  const body = match[2];
-  const meta = { ...defaultMeta };
-  for (const line of yamlBlock.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx + 1).trim();
-    if (key === "title") {
-      meta.title = value;
-    } else if (key === "severity") {
-      if (VALID_SEVERITIES.has(value)) meta.severity = value;
-    } else if (key === "status") {
-      if (VALID_STATUSES.has(value)) meta.status = value;
-    } else if (key === "occurrences") {
-      meta.occurrences = parseInt(value, 10) || 0;
-    } else if (key === "first_seen") {
-      meta.first_seen = value;
-    } else if (key === "last_seen") {
-      meta.last_seen = value;
-    } else if (key === "tags") {
-      const bracketMatch = value.match(/^\[(.*)\]$/);
-      if (bracketMatch) {
-        meta.tags = bracketMatch[1].split(",").map((t) => t.trim()).filter((t) => t.length > 0);
-      } else if (value === "" || value === "[]") {
-        meta.tags = [];
-      }
-    }
-  }
-  return { meta, body };
-}
-function serializeFrontmatter(meta) {
-  const tagsStr = meta.tags.length > 0 ? `[${meta.tags.join(", ")}]` : "[]";
-  const lines = [
-    "---",
-    `title: ${meta.title}`,
-    `severity: ${meta.severity}`,
-    `tags: ${tagsStr}`,
-    `status: ${meta.status}`,
-    `occurrences: ${meta.occurrences}`,
-    `first_seen: ${meta.first_seen}`,
-    `last_seen: ${meta.last_seen}`,
-    "---"
-  ];
-  return lines.join("\n");
-}
-var ErrorKBEngine = class {
-  kbRoot;
-  errorsDir;
-  /** In-memory embedding cache: errorId -> Float32Array */
-  embeddingCache = /* @__PURE__ */ new Map();
-  constructor(projectRoot) {
-    this.kbRoot = path.join(projectRoot, ".claude", "error-kb");
-    this.errorsDir = path.join(this.kbRoot, "errors");
-    fs.mkdirSync(this.errorsDir, { recursive: true });
-  }
-  resolveFilePath(id) {
-    if (!VALID_ID_PATTERN.test(id)) return null;
-    return path.join(this.errorsDir, `${id}.md`);
-  }
-  add(newEntry) {
-    const id = generateId();
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const meta = {
-      title: newEntry.title,
-      severity: newEntry.severity,
-      tags: newEntry.tags,
-      status: "open",
-      occurrences: 1,
-      first_seen: now,
-      last_seen: now
-    };
-    let body = "\n";
-    if (newEntry.cause) {
-      body += `## Cause
-
-${newEntry.cause}
-
-`;
-    }
-    if (newEntry.solution) {
-      body += `## Solution
-
-${newEntry.solution}
-
-`;
-    }
-    const content = serializeFrontmatter(meta) + "\n" + body;
-    const filePath = path.join(this.errorsDir, `${id}.md`);
-    fs.writeFileSync(filePath, content, "utf-8");
-    this.updateIndex();
-    return this.toErrorEntry(id, meta, body);
-  }
-  show(id) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) {
-      return null;
-    }
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter2(raw);
-    return this.toErrorEntry(id, meta, body);
-  }
-  search(query, opts) {
-    const files = this.listErrorFiles();
-    const results = [];
-    for (const file of files) {
-      const id = path.basename(file, ".md");
-      const entry = this.show(id);
-      if (!entry) continue;
-      if (opts?.tags && opts.tags.length > 0) {
-        const hasMatchingTag = opts.tags.some((t) => entry.tags.includes(t));
-        if (!hasMatchingTag) continue;
-      }
-      if (opts?.severity && entry.severity !== opts.severity) {
-        continue;
-      }
-      if (query && query.length > 0) {
-        const searchable = `${entry.title} ${entry.content}`.toLowerCase();
-        if (!searchable.includes(query.toLowerCase())) {
-          continue;
-        }
-      }
-      results.push(entry);
-    }
-    return results;
-  }
-  delete(id) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) return false;
-    fs.unlinkSync(filePath);
-    this.updateIndex();
-    return true;
-  }
-  update(id, patch) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter2(raw);
-    if (patch.severity !== void 0) meta.severity = patch.severity;
-    if (patch.status !== void 0) meta.status = patch.status;
-    if (patch.occurrences !== void 0) meta.occurrences = patch.occurrences;
-    if (patch.last_seen !== void 0) meta.last_seen = patch.last_seen;
-    if (patch.tags !== void 0) meta.tags = patch.tags;
-    const content = serializeFrontmatter(meta) + "\n" + body;
-    fs.writeFileSync(filePath, content, "utf-8");
-    this.updateIndex();
-  }
-  recordOccurrence(id, context) {
-    const filePath = this.resolveFilePath(id);
-    if (!filePath || !fs.existsSync(filePath)) return;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const { meta, body } = parseFrontmatter2(raw);
-    meta.occurrences += 1;
-    meta.last_seen = (/* @__PURE__ */ new Date()).toISOString();
-    let updatedBody = body;
-    const historyEntry = `- ${meta.last_seen}: ${context}`;
-    const historyIdx = updatedBody.lastIndexOf("## History");
-    if (historyIdx !== -1) {
-      const headerEnd = updatedBody.indexOf("\n", historyIdx);
-      if (headerEnd !== -1) {
-        updatedBody = updatedBody.slice(0, headerEnd + 1) + historyEntry + "\n" + updatedBody.slice(headerEnd + 1);
-      }
-    } else {
-      updatedBody = updatedBody.trimEnd() + "\n\n## History\n" + historyEntry + "\n";
-    }
-    const content = serializeFrontmatter(meta) + "\n" + updatedBody;
-    fs.writeFileSync(filePath, content, "utf-8");
-    this.updateIndex();
-  }
-  getStats() {
-    const files = this.listErrorFiles();
-    const stats = {
-      total: 0,
-      by_severity: { critical: 0, high: 0, medium: 0, low: 0 },
-      by_status: { open: 0, resolved: 0, recurring: 0, wontfix: 0 },
-      top_recurring: []
-    };
-    const entries = [];
-    for (const file of files) {
-      const id = path.basename(file, ".md");
-      const raw = fs.readFileSync(file, "utf-8");
-      const { meta } = parseFrontmatter2(raw);
-      stats.total++;
-      stats.by_severity[meta.severity]++;
-      stats.by_status[meta.status]++;
-      entries.push({ id, title: meta.title, occurrences: meta.occurrences });
-    }
-    stats.top_recurring = entries.sort((a, b) => b.occurrences - a.occurrences).slice(0, 10);
-    return stats;
-  }
-  /**
-   * Generate embedding text from an error entry's key fields.
-   */
-  entryToText(entry) {
-    return `${entry.title} ${entry.content || ""}`.trim();
-  }
-  /**
-   * Semantic search: generate embedding for query and compare against cached embeddings.
-   * Returns results sorted by similarity (descending).
-   */
-  async searchSemantic(query, limit = 10) {
-    if (this.embeddingCache.size === 0) return [];
-    const queryEmbedding = await generateEmbedding(query);
-    const results = [];
-    for (const [id, embedding] of this.embeddingCache) {
-      const entry = this.show(id);
-      if (!entry) continue;
-      const similarity = cosineSimilarity(queryEmbedding, embedding);
-      results.push({ entry, similarity });
-    }
-    results.sort((a, b) => b.similarity - a.similarity);
-    return results.slice(0, limit);
-  }
-  /**
-   * Hybrid search: run text search + semantic search in parallel,
-   * merge results using Reciprocal Rank Fusion (RRF).
-   */
-  async searchHybrid(query, opts) {
-    const [textResults, semanticResults] = await Promise.all([
-      Promise.resolve(this.search(query, opts)),
-      this.searchSemantic(query)
-    ]);
-    const k = 60;
-    const scoreMap = /* @__PURE__ */ new Map();
-    for (let i = 0; i < textResults.length; i++) {
-      const entry = textResults[i];
-      const rrfScore = 1 / (k + i + 1);
-      scoreMap.set(entry.id, { entry, score: rrfScore });
-    }
-    for (let i = 0; i < semanticResults.length; i++) {
-      const { entry } = semanticResults[i];
-      const rrfScore = 1 / (k + i + 1);
-      const existing = scoreMap.get(entry.id);
-      if (existing) {
-        existing.score += rrfScore;
-      } else {
-        scoreMap.set(entry.id, { entry, score: rrfScore });
-      }
-    }
-    const merged = Array.from(scoreMap.values());
-    merged.sort((a, b) => b.score - a.score);
-    return merged.map(({ entry, score }) => ({ entry, similarity: score }));
-  }
-  /**
-   * Initialize embeddings for all existing error entries.
-   * Skips entries that already have embeddings in cache.
-   */
-  async initEmbeddings() {
-    const files = this.listErrorFiles();
-    let indexed = 0;
-    let skipped = 0;
-    for (const file of files) {
-      const id = path.basename(file, ".md");
-      if (this.embeddingCache.has(id)) {
-        skipped++;
-        continue;
-      }
-      const entry = this.show(id);
-      if (!entry) continue;
-      const text = this.entryToText(entry);
-      const embedding = await generateEmbedding(text);
-      this.embeddingCache.set(id, embedding);
-      indexed++;
-    }
-    return { indexed, skipped };
-  }
-  /**
-   * Find potential duplicate entries based on embedding similarity.
-   * Returns entries with similarity >= 0.85.
-   */
-  async findDuplicates(newEntry) {
-    if (this.embeddingCache.size === 0) return [];
-    const text = `${newEntry.title} ${newEntry.cause || ""} ${newEntry.solution || ""}`.trim();
-    const queryEmbedding = await generateEmbedding(text);
-    const results = [];
-    for (const [id, embedding] of this.embeddingCache) {
-      const entry = this.show(id);
-      if (!entry) continue;
-      const similarity = cosineSimilarity(queryEmbedding, embedding);
-      if (similarity >= 0.85) {
-        results.push({ entry, similarity });
-      }
-    }
-    results.sort((a, b) => b.similarity - a.similarity);
-    return results;
-  }
-  /**
-   * Add a new error entry with duplicate detection.
-   * Returns the entry plus an optional duplicate warning.
-   */
-  async addWithDuplicateCheck(newEntry) {
-    const duplicates = await this.findDuplicates(newEntry);
-    const entry = this.add(newEntry);
-    const text = this.entryToText(entry);
-    const embedding = await generateEmbedding(text);
-    this.embeddingCache.set(entry.id, embedding);
-    const result = { entry };
-    if (duplicates.length > 0) {
-      const titles = duplicates.map((d) => `"${d.entry.title}" (similarity: ${d.similarity.toFixed(2)})`).join(", ");
-      result.duplicateWarning = `Similar entries found: ${titles}`;
-    }
-    return result;
-  }
-  toErrorEntry(id, meta, body) {
-    return {
-      id,
-      title: meta.title,
-      severity: meta.severity,
-      tags: meta.tags,
-      status: meta.status,
-      occurrences: meta.occurrences,
-      first_seen: meta.first_seen,
-      last_seen: meta.last_seen,
-      content: body
-    };
-  }
-  listErrorFiles() {
-    if (!fs.existsSync(this.errorsDir)) return [];
-    return fs.readdirSync(this.errorsDir).filter((f) => f.endsWith(".md") && f !== "_index.md").map((f) => path.join(this.errorsDir, f));
-  }
-  updateIndex() {
-    const stats = this.getStats();
-    const lines = [
-      "# Error Knowledge Base Index",
-      "",
-      `Total: ${stats.total}`,
-      "",
-      "## By Severity",
-      `- Critical: ${stats.by_severity.critical}`,
-      `- High: ${stats.by_severity.high}`,
-      `- Medium: ${stats.by_severity.medium}`,
-      `- Low: ${stats.by_severity.low}`,
-      "",
-      "## By Status",
-      `- Open: ${stats.by_status.open}`,
-      `- Resolved: ${stats.by_status.resolved}`,
-      `- Recurring: ${stats.by_status.recurring}`,
-      `- Won't Fix: ${stats.by_status.wontfix}`,
-      ""
-    ];
-    if (stats.top_recurring.length > 0) {
-      lines.push("## Top Recurring");
-      for (const entry of stats.top_recurring.slice(0, 10)) {
-        lines.push(`- ${entry.title} (${entry.occurrences}x)`);
-      }
-      lines.push("");
-    }
-    const indexPath = path.join(this.kbRoot, "_index.md");
-    fs.writeFileSync(indexPath, lines.join("\n"), "utf-8");
-  }
-};
-
 // src/core/engine/self-improve.ts
 import * as fs2 from "fs";
 import * as path2 from "path";
@@ -6498,6 +6426,136 @@ ${content}
   }
   getProcessedDir() {
     return this.processedDir;
+  }
+  // --- Dream: auto-cleanup of duplicate/conflicting rules ---
+  dream() {
+    const ruleFiles = this.listRuleFiles();
+    if (ruleFiles.length === 0) {
+      return new DreamResult([], [], ruleFiles.map((r) => r.filename), this);
+    }
+    const merged = [];
+    const archived = [];
+    const kept = [];
+    const processed = /* @__PURE__ */ new Set();
+    for (let i = 0; i < ruleFiles.length; i++) {
+      if (processed.has(i)) continue;
+      let foundDuplicate = false;
+      for (let j = i + 1; j < ruleFiles.length; j++) {
+        if (processed.has(j)) continue;
+        const overlap = this.keywordOverlap(ruleFiles[i].keywords, ruleFiles[j].keywords);
+        if (overlap >= 0.5) {
+          merged.push({
+            source: [ruleFiles[i].filename, ruleFiles[j].filename],
+            mergedContent: this.mergeContents(ruleFiles[i], ruleFiles[j]),
+            mergedFilename: ruleFiles[i].filename
+          });
+          archived.push(ruleFiles[j].filename);
+          processed.add(j);
+          foundDuplicate = true;
+          break;
+        }
+      }
+      if (!foundDuplicate) {
+        kept.push(ruleFiles[i].filename);
+      } else {
+        processed.add(i);
+      }
+    }
+    for (let i = 0; i < ruleFiles.length; i++) {
+      if (!processed.has(i) && !kept.includes(ruleFiles[i].filename)) {
+        kept.push(ruleFiles[i].filename);
+      }
+    }
+    return new DreamResult(merged, archived, kept, this);
+  }
+  listRuleFiles() {
+    if (!fs2.existsSync(this.rulesDir)) return [];
+    const files = fs2.readdirSync(this.rulesDir).filter((f) => f.endsWith(".md"));
+    const results = [];
+    for (const file of files) {
+      const fullPath = path2.join(this.rulesDir, file);
+      try {
+        const content = fs2.readFileSync(fullPath, "utf-8");
+        const keywords = this.extractKeywords(content);
+        results.push({ filename: file, content, keywords, fullPath });
+      } catch {
+        console.warn(`[dream] Skipping unreadable rule file: ${file}`);
+      }
+    }
+    return results;
+  }
+  extractKeywords(content) {
+    const words = content.toLowerCase().replace(/[^a-z0-9가-힣\s-]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+    return new Set(words);
+  }
+  keywordOverlap(a, b) {
+    if (a.size === 0 || b.size === 0) return 0;
+    let overlap = 0;
+    for (const word of a) {
+      if (b.has(word)) overlap++;
+    }
+    const minSize = Math.min(a.size, b.size);
+    return overlap / minSize;
+  }
+  mergeContents(a, b) {
+    return `${a.content}
+
+---
+## Merged from: ${b.filename}
+${b.content}`;
+  }
+  /** Move a file to archive directory (used by DreamResult.apply) */
+  moveToArchive(filename) {
+    const srcPath = path2.join(this.rulesDir, filename);
+    const destPath = path2.join(this.archiveDir, filename);
+    if (fs2.existsSync(srcPath)) {
+      fs2.renameSync(srcPath, destPath);
+    }
+  }
+  /** Overwrite a rule file's content (used by DreamResult.apply) */
+  writeRuleFile(filename, content) {
+    const fullPath = path2.join(this.rulesDir, filename);
+    fs2.writeFileSync(fullPath, content, "utf-8");
+  }
+};
+var DreamResult = class {
+  merged;
+  archived;
+  kept;
+  engine;
+  constructor(merged, archived, kept, engine) {
+    this.merged = merged;
+    this.archived = archived;
+    this.kept = kept;
+    this.engine = engine;
+  }
+  get isEmpty() {
+    return this.merged.length === 0 && this.archived.length === 0;
+  }
+  apply() {
+    for (const filename of this.archived) {
+      this.engine.moveToArchive(filename);
+    }
+    for (const pair of this.merged) {
+      this.engine.writeRuleFile(pair.mergedFilename, pair.mergedContent);
+    }
+  }
+  /** Generate a human-readable diff summary for display */
+  formatDiff() {
+    if (this.isEmpty) return "";
+    const lines = [];
+    lines.push(`## Dream \uACB0\uACFC: ${this.merged.length}\uAC74 \uBCD1\uD569, ${this.archived.length}\uAC74 \uC544\uCE74\uC774\uBE0C
+`);
+    for (const pair of this.merged) {
+      lines.push(`### \uBCD1\uD569: ${pair.source[0]} + ${pair.source[1]}`);
+      lines.push(`\u2192 ${pair.mergedFilename} (\uD1B5\uD569\uBCF8)`);
+      lines.push(`  - ${pair.source[1]} \u2192 archive/ \uC774\uB3D9`);
+      lines.push("");
+    }
+    if (this.kept.length > 0) {
+      lines.push(`### \uC720\uC9C0: ${this.kept.length}\uAC1C \uADDC\uCE59 \uBCC0\uACBD \uC5C6\uC74C`);
+    }
+    return lines.join("\n");
   }
 };
 
@@ -6762,12 +6820,12 @@ File: .claude/error-kb/errors/${entry.id}.md`);
 import * as fs5 from "fs";
 
 // src/core/engine/qa-config.ts
-import { z as z2 } from "zod";
+import { z as z3 } from "zod";
 import * as YAML from "yaml";
 import * as fs4 from "fs";
-var CustomRuleSchema = z2.object({
-  id: z2.string(),
-  pattern: z2.string().refine(
+var CustomRuleSchema = z3.object({
+  id: z3.string(),
+  pattern: z3.string().refine(
     (val) => {
       try {
         new RegExp(val);
@@ -6778,69 +6836,69 @@ var CustomRuleSchema = z2.object({
     },
     { message: "Invalid regular expression pattern" }
   ),
-  severity: z2.enum(["critical", "high", "medium", "low"]),
-  message: z2.string()
+  severity: z3.enum(["critical", "high", "medium", "low"]),
+  message: z3.string()
 });
-var IgnoreRuleSchema = z2.object({
-  rule_id: z2.string(),
-  paths: z2.array(z2.string()),
-  reason: z2.string(),
-  expires: z2.string().optional()
+var IgnoreRuleSchema = z3.object({
+  rule_id: z3.string(),
+  paths: z3.array(z3.string()),
+  reason: z3.string(),
+  expires: z3.string().optional()
 });
-var SeverityAdjustmentSchema = z2.object({
-  rule_id: z2.string(),
-  new_severity: z2.enum(["critical", "high", "medium", "low"]),
-  condition: z2.string()
+var SeverityAdjustmentSchema = z3.object({
+  rule_id: z3.string(),
+  new_severity: z3.enum(["critical", "high", "medium", "low"]),
+  condition: z3.string()
 });
-var SkipWhenSchema = z2.object({
-  task_tags: z2.array(z2.string()).optional(),
-  changed_files_only: z2.array(z2.string()).optional()
+var SkipWhenSchema = z3.object({
+  task_tags: z3.array(z3.string()).optional(),
+  changed_files_only: z3.array(z3.string()).optional()
 });
-var ActivateWhenSchema = z2.object({
-  completed_tasks_gte: z2.number().optional(),
-  changed_files_pattern: z2.string().optional()
+var ActivateWhenSchema = z3.object({
+  completed_tasks_gte: z3.number().optional(),
+  changed_files_pattern: z3.string().optional()
 });
-var ModuleConditionalConfigSchema = z2.object({
-  enabled: z2.boolean(),
+var ModuleConditionalConfigSchema = z3.object({
+  enabled: z3.boolean(),
   skip_when: SkipWhenSchema.optional(),
   activate_when: ActivateWhenSchema.optional()
 });
-var ConditionalModuleSchema = z2.union([z2.boolean(), ModuleConditionalConfigSchema]).optional();
-var QaRulesSchema = z2.object({
-  profile: z2.enum(["web-frontend", "api-server", "fullstack", "library", "cli-tool"]).optional(),
-  risk_thresholds: z2.object({
-    green: z2.number(),
-    yellow: z2.number(),
-    orange: z2.number()
+var ConditionalModuleSchema = z3.union([z3.boolean(), ModuleConditionalConfigSchema]).optional();
+var QaRulesSchema = z3.object({
+  profile: z3.enum(["web-frontend", "api-server", "fullstack", "library", "cli-tool"]).optional(),
+  risk_thresholds: z3.object({
+    green: z3.number(),
+    yellow: z3.number(),
+    orange: z3.number()
   }).optional(),
-  severity_weights: z2.object({
-    critical: z2.number(),
-    high: z2.number(),
-    medium: z2.number(),
-    low: z2.number()
+  severity_weights: z3.object({
+    critical: z3.number(),
+    high: z3.number(),
+    medium: z3.number(),
+    low: z3.number()
   }).optional(),
-  modules: z2.object({
-    lint_check: z2.boolean().optional(),
-    type_check: z2.boolean().optional(),
-    test_coverage: z2.boolean().optional(),
-    dead_code: z2.boolean().optional(),
-    dependency_audit: z2.boolean().optional(),
-    complexity_analysis: z2.boolean().optional(),
+  modules: z3.object({
+    lint_check: z3.boolean().optional(),
+    type_check: z3.boolean().optional(),
+    test_coverage: z3.boolean().optional(),
+    dead_code: z3.boolean().optional(),
+    dependency_audit: z3.boolean().optional(),
+    complexity_analysis: z3.boolean().optional(),
     shadow: ConditionalModuleSchema,
     flow_tester: ConditionalModuleSchema,
-    wave_gate: z2.boolean().optional(),
-    adaptive_planner: z2.boolean().optional(),
-    design_review: z2.boolean().optional(),
-    skeleton_guard: z2.boolean().optional(),
-    auto_trigger: z2.object({
-      enabled: z2.boolean().default(true),
-      milestones: z2.array(z2.number()).default([50, 100])
+    wave_gate: z3.boolean().optional(),
+    adaptive_planner: z3.boolean().optional(),
+    design_review: z3.boolean().optional(),
+    skeleton_guard: z3.boolean().optional(),
+    auto_trigger: z3.object({
+      enabled: z3.boolean().default(true),
+      milestones: z3.array(z3.number()).default([50, 100])
     }).optional()
   }).optional(),
-  regression_bonus: z2.number().optional(),
-  custom_rules: z2.array(CustomRuleSchema).optional(),
-  ignore: z2.array(IgnoreRuleSchema).optional(),
-  severity_adjustments: z2.array(SeverityAdjustmentSchema).optional()
+  regression_bonus: z3.number().optional(),
+  custom_rules: z3.array(CustomRuleSchema).optional(),
+  ignore: z3.array(IgnoreRuleSchema).optional(),
+  severity_adjustments: z3.array(SeverityAdjustmentSchema).optional()
 });
 var DEFAULT_QA_CONFIG = {
   risk_thresholds: { green: 0.2, yellow: 0.5, orange: 0.8 },
@@ -7394,6 +7452,19 @@ function registerQualityCommands(program2, getModels) {
     }
     const config = resolveConfig(resolveOpts);
     output(config, formatConfigHuman(config));
+  }));
+  qa.command("verify").argument("<plan_id>", "Plan ID to verify").description("Verify plan AC matching against code changes").action(async (planId) => withErrorHandler(async () => {
+    const { PlanVerifier: PlanVerifier2 } = await import("../plan-verifier-BVECMKZK.js");
+    const db = initDb();
+    const verifier = new PlanVerifier2(db);
+    const result = await verifier.verify(planId);
+    output(result, [
+      `AC Verification: ${result.overallScore >= 0 ? `${result.overallScore}/100` : "N/A"}`,
+      `Tasks verified: ${result.taskResults.length}`,
+      `Unmatched ACs: ${result.unmatchedACs.length}`,
+      result.warnings.length > 0 ? `Warnings:` : "",
+      ...result.warnings.map((w) => `  - ${w}`)
+    ].filter(Boolean).join("\n"));
   }));
   const waveGate = program2.command("wave-gate").description("Manage wave gates for integration verification");
   waveGate.command("create").argument("<plan_id>", "Plan ID").requiredOption("--wave <number>", "Wave number").requiredOption("--verdict <verdict>", "Verdict (GREEN, YELLOW, RED)").requiredOption("--task-ids <ids>", "Comma-separated task IDs").option("--summary <text>", "Summary of wave gate results").option("--findings-count <n>", "Number of findings", "0").description("Create a wave gate record").action((planId, opts) => withErrorHandler(() => {
@@ -8042,7 +8113,7 @@ var RuleRetroScanner = class {
 // src/core/engine/scanners/policy-scanner.ts
 import * as fs11 from "fs";
 import * as path8 from "path";
-var POLICY_FILE = "POLICY.md";
+var POLICY_FILE = "docs/POLICY.md";
 function extractPolicyRules(content) {
   const rules = [];
   let ruleCounter = 0;

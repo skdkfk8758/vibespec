@@ -136,10 +136,10 @@ describe('LifecycleEngine', () => {
       engine.completePlan(plan.id);
 
       const events = eventModel.getByEntity('plan', plan.id);
-      const lifecycleEvent = events.find(
+      const completedEvent = events.find(
         (e) => e.event_type === 'lifecycle_completed',
       );
-      expect(lifecycleEvent).toBeDefined();
+      expect(completedEvent).toBeDefined();
     });
   });
 
@@ -195,4 +195,5 @@ describe('LifecycleEngine', () => {
       expect(result.progress.pct).toBe(100);
     });
   });
+
 });
