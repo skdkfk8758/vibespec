@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0] - 2026-04-03
+
+### 새 기능
+- **context**: Context/토큰 최적화 — running_summary 자동 갱신으로 컨텍스트 압축, 16개 저빈도 스킬 deferred 전환으로 system-reminder 50% 절감 (dc982b1)
+- **gc**: Garbage Collection 시스템 — 코드베이스 기술 부채 능동 관리 (7c9a4b5)
+- **ideate**: ideate save 커맨드 및 ContextLogModel 추가 (128f3e4)
+
 ## [0.34.0] - 2026-04-03
 
 ### 새 기능
