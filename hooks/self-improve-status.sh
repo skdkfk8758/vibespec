@@ -16,13 +16,13 @@ MESSAGES=""
 
 # 1) Pending 파일 수 체크
 if [ -d "$PENDING_DIR" ]; then
-  PENDING_COUNT=$(ls -1 "$PENDING_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
+  PENDING_COUNT=$(find "$PENDING_DIR" -maxdepth 1 -name "*.json" 2>/dev/null | wc -l | tr -d ' ')
   if [ "$PENDING_COUNT" -gt 0 ] 2>/dev/null; then
     MESSAGES="${MESSAGES}self-improve pending ${PENDING_COUNT}건이 대기 중입니다. \`/self-improve\`로 처리하세요.\n"
   fi
 
   # Check for failed auto-rule-gen files
-  FAILED_COUNT=$(ls -1 "$PENDING_DIR"/*.json.failed 2>/dev/null | wc -l | tr -d ' ')
+  FAILED_COUNT=$(find "$PENDING_DIR" -maxdepth 1 -name "*.json.failed" 2>/dev/null | wc -l | tr -d ' ')
   if [ "$FAILED_COUNT" -gt 0 ] 2>/dev/null; then
     MESSAGES="${MESSAGES}자동 규칙 생성 실패 ${FAILED_COUNT}건. pending 파일을 확인하세요.\n"
   fi
@@ -30,7 +30,7 @@ fi
 
 # 2) Rules 파일 수 체크 (archive 제외)
 if [ -d "$RULES_DIR" ]; then
-  RULES_COUNT=$(ls -1 "$RULES_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  RULES_COUNT=$(find "$RULES_DIR" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
   if [ "$RULES_COUNT" -gt "$MAX_RULES" ] 2>/dev/null; then
     MESSAGES="${MESSAGES}활성 규칙이 ${RULES_COUNT}개로 상한(${MAX_RULES})을 초과했습니다. \`/self-improve-review\`로 정리하세요.\n"
   fi

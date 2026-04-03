@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eo pipefail
+set -euo pipefail
 
 # PreToolUse(Bash) hook: 워크트리 내에서 메인 브랜치 변경 명령을 차단
 # 차단: checkout, switch, merge, push 등 메인 브랜치를 변경하는 명령

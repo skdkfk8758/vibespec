@@ -21,22 +21,25 @@ if [ ! -d "$RULES_DIR" ]; then
   exit 0
 fi
 
-RULE_FILES=$(ls -1 "$RULES_DIR"/*.md 2>/dev/null)
-if [ -z "$RULE_FILES" ]; then
+mapfile -t RULE_FILES_ARR < <(ls -1 "$RULES_DIR"/*.md 2>/dev/null)
+if [ ${#RULE_FILES_ARR[@]} -eq 0 ]; then
   exit 0
 fi
 
 # 변경 파일 목록 (staged)
-CHANGED_FILES=$(git diff --cached --name-only 2>/dev/null || git diff --name-only HEAD 2>/dev/null || echo "")
-if [ -z "$CHANGED_FILES" ]; then
+mapfile -t CHANGED_FILES_ARR < <(git diff --cached --name-only 2>/dev/null || git diff --name-only HEAD 2>/dev/null)
+if [ ${#CHANGED_FILES_ARR[@]} -eq 0 ]; then
   exit 0
 fi
+
+# DB 경로 사전 조회 (중복 find 방지)
+_VS_DB=$(find "$PROJECT_ROOT" -maxdepth 1 -name "vibespec.db" 2>/dev/null | head -1)
 
 # 각 규칙의 Applies When과 변경 파일 매칭
 SOFT_RULES=""
 HARD_RULES_JSON="[]"
 
-for rule_file in $RULE_FILES; do
+for rule_file in "${RULE_FILES_ARR[@]}"; do
   # title 추출 (frontmatter에서)
   RULE_TITLE=$(grep -m1 '^title:' "$rule_file" 2>/dev/null | sed 's/^title: *//')
   if [ -z "$RULE_TITLE" ]; then
@@ -51,7 +54,7 @@ for rule_file in $RULE_FILES; do
 
   # 변경 파일과 Applies When 텍스트 매칭 (간단한 키워드 매칭)
   MATCHED=false
-  for changed_file in $CHANGED_FILES; do
+  for changed_file in "${CHANGED_FILES_ARR[@]}"; do
     DIR_NAME=$(dirname "$changed_file" | sed 's|/|-|g')
     BASE_NAME=$(basename "$changed_file" | sed 's/\.[^.]*$//')
 
@@ -99,8 +102,6 @@ for rule_file in $RULE_FILES; do
     # SOFT 규칙 (AC02)
     SOFT_RULES="${SOFT_RULES}- [$(basename "$rule_file" .md)] ${RULE_TITLE}\n"
 
-    # Update occurrences for SOFT rule
-    _VS_DB=$(find "$PROJECT_ROOT" -maxdepth 1 -name "vibespec.db" 2>/dev/null | head -1)
     if [ -n "$_VS_DB" ] && [ -n "$RULE_ID" ]; then
       sqlite3 "$_VS_DB" "UPDATE self_improve_rules SET occurrences = occurrences + 1, last_triggered_at = datetime('now') WHERE id = '$RULE_ID'" 2>/dev/null || true
     fi
@@ -110,8 +111,6 @@ done
 # HARD 규칙이 있으면 exit 2로 강제 차단 (AC01)
 HARD_COUNT=$(echo "$HARD_RULES_JSON" | jq 'length')
 if [ "$HARD_COUNT" -gt 0 ]; then
-  # Update occurrences for HARD rules
-  _VS_DB=$(find "$PROJECT_ROOT" -maxdepth 1 -name "vibespec.db" 2>/dev/null | head -1)
   if [ -n "$_VS_DB" ]; then
     for _HARD_RULE_ID in $(echo "$HARD_RULES_JSON" | jq -r '.[].rule_id // empty' 2>/dev/null); do
       if [ -n "$_HARD_RULE_ID" ]; then

@@ -16,12 +16,7 @@
           },
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/careful-guard.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "CLAUDE_TOOL_NAME=Bash bash ${CLAUDE_PLUGIN_ROOT}/hooks/freeze-boundary.sh",
+            "command": "CLAUDE_TOOL_NAME=Bash bash ${CLAUDE_PLUGIN_ROOT}/hooks/safety-guard.sh",
             "timeout": 5
           }
         ]
@@ -31,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CLAUDE_TOOL_NAME=Edit bash ${CLAUDE_PLUGIN_ROOT}/hooks/freeze-boundary.sh",
+            "command": "CLAUDE_TOOL_NAME=Edit bash ${CLAUDE_PLUGIN_ROOT}/hooks/safety-guard.sh",
             "timeout": 5
           }
         ]
@@ -41,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CLAUDE_TOOL_NAME=Write bash ${CLAUDE_PLUGIN_ROOT}/hooks/freeze-boundary.sh",
+            "command": "CLAUDE_TOOL_NAME=Write bash ${CLAUDE_PLUGIN_ROOT}/hooks/safety-guard.sh",
             "timeout": 5
           }
         ]

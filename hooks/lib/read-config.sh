@@ -63,3 +63,22 @@ vs_config_get() {
     echo "$value"
   fi
 }
+
+# jq 사전 체크 — 미설치 시 에러 메시지와 함께 차단
+vs_require_jq() {
+  local caller="${1:-hook}"
+  if ! command -v jq &>/dev/null; then
+    echo "{\"decision\":\"block\",\"reason\":\"[$caller] jq가 설치되어 있지 않습니다. brew install jq 또는 apt install jq로 설치하세요.\"}"
+    exit 2
+  fi
+}
+
+# CLAUDE_TOOL_INPUT에서 command 필드 추출
+vs_extract_command() {
+  echo "${CLAUDE_TOOL_INPUT:-}" | jq -r '.command // empty' 2>/dev/null
+}
+
+# CLAUDE_TOOL_INPUT에서 file_path 필드 추출
+vs_extract_file_path() {
+  echo "${CLAUDE_TOOL_INPUT:-}" | jq -r '.file_path // empty' 2>/dev/null
+}
