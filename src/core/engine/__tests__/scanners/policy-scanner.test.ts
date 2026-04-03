@@ -42,7 +42,8 @@ describe('PolicyScanner', () => {
         'import moment',
         '```',
       ].join('\n');
-      fs.writeFileSync(path.join(tmpDir, 'POLICY.md'), policyContent, 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'docs/POLICY.md'), policyContent, 'utf-8');
 
       const srcDir = path.join(tmpDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
@@ -64,7 +65,8 @@ describe('PolicyScanner', () => {
         '- **금지 의존성**: moment.js (→ dayjs), lodash 전체 import (→ 개별 함수)',
         '- 금지: express 사용',
       ].join('\n');
-      fs.writeFileSync(path.join(tmpDir, 'POLICY.md'), policyContent, 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'docs/POLICY.md'), policyContent, 'utf-8');
 
       const srcDir = path.join(tmpDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
@@ -82,7 +84,8 @@ describe('PolicyScanner', () => {
         '',
         '- **금지**: `moment.js` 사용 금지',
       ].join('\n');
-      fs.writeFileSync(path.join(tmpDir, 'POLICY.md'), policyContent, 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'docs/POLICY.md'), policyContent, 'utf-8');
 
       const srcDir = path.join(tmpDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
@@ -106,7 +109,8 @@ describe('PolicyScanner', () => {
         '- 사용자 입력 데이터는 반드시 검증 후 처리한다.',
         '- 보안 취약점 발견 시 즉시 보고한다.',
       ].join('\n');
-      fs.writeFileSync(path.join(tmpDir, 'POLICY.md'), policyContent, 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'docs/POLICY.md'), policyContent, 'utf-8');
 
       const srcDir = path.join(tmpDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
@@ -127,7 +131,8 @@ describe('PolicyScanner', () => {
         '',
         '- **금지**: `badlib` 사용 금지',
       ].join('\n');
-      fs.writeFileSync(path.join(tmpDir, 'POLICY.md'), policyContent, 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'docs/POLICY.md'), policyContent, 'utf-8');
 
       const srcDir = path.join(tmpDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
@@ -146,7 +151,8 @@ describe('PolicyScanner', () => {
         '',
         '- **금지**: `badlib` 사용 금지',
       ].join('\n');
-      fs.writeFileSync(path.join(tmpDir, 'POLICY.md'), policyContent, 'utf-8');
+      fs.mkdirSync(path.join(tmpDir, 'docs'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'docs/POLICY.md'), policyContent, 'utf-8');
 
       const srcDir = path.join(tmpDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });

@@ -52,7 +52,7 @@ docs/              # 프로젝트 문서
 ### 상태 관리
 - **플랜/태스크**: SQLite DB (plans, tasks, backlog 테이블)
 - **QA 설정**: YAML 파일 (.claude/qa-rules.yaml) + DB 오버라이드
-- **골격 문서**: 프로젝트 루트 마크다운 파일 (PRD.md, POLICY.md 등)
+- **골격 문서**: docs/ 디렉토리 마크다운 파일 (docs/PRD.md, docs/POLICY.md 등)
 
 <!-- [REQUIRED] ADR -->
 ## Architecture Decision Records

@@ -4,7 +4,7 @@ import { generateId } from '../../utils.js';
 import type { GCFinding, GCScanner } from '../../types.js';
 import { escapeRegex, searchFileForViolations } from './scanner-utils.js';
 
-const POLICY_FILE = 'POLICY.md';
+const POLICY_FILE = 'docs/POLICY.md';
 
 interface PolicyRule {
   ruleId: string;
