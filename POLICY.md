@@ -51,3 +51,31 @@
 | DB 테이블 | snake_case | `skeleton_checks` |
 | CLI 명령 | kebab-case | `vs plan create` |
 | 스킬명 | kebab-case with prefix | `vs-skeleton-init` |
+
+<!-- [OPTIONAL] Code Review Policy -->
+## Code Review Policy
+
+- **리뷰 프로세스**: PR 기반, GitHub Actions CI 통과 필수
+- **자동 검증**: `tsc --noEmit` (타입 체크) + `vitest run` (테스트) + `validate-plugin.ts` (플러그인 구조 검증)
+- **머지 조건**: CI 전체 통과 + 빌드 성공
+- **리뷰 범위**: 기능 변경 시 관련 테스트 포함 필수
+
+<!-- [OPTIONAL] Testing Policy -->
+## Testing Policy
+
+- **프레임워크**: Vitest 3.x (ESM 네이티브)
+- **테스트 위치**: 소스 파일과 같은 디렉토리의 `__tests__/` 하위
+- **네이밍**: `{모듈명}.test.ts`
+- **현재 커버리지**: 31개 테스트 파일 (엔진, 모델, CLI, DB, 스크립트)
+- **필수 테스트 대상**: 모든 engine/model 모듈, CLI 명령어
+- **커버리지 도구**: 미설정 (향후 `@vitest/coverage-v8` 도입 권장)
+
+<!-- [OPTIONAL] Deployment Policy -->
+## Deployment Policy
+
+- **배포 방식**: npm 레지스트리 퍼블리시 (`npm publish --access public`)
+- **트리거**: git 태그 `v*` 푸시 시 자동 배포 (`.github/workflows/release.yml`)
+- **파이프라인**: `npm ci` → `npm test` → `npm run build` → `npm pack --dry-run` → `npm publish`
+- **GitHub Release**: `softprops/action-gh-release@v2`로 자동 생성
+- **시크릿**: `NPM_TOKEN` (GitHub Secrets)
+- **릴리스 스킬**: `/vs-release`로 버전 범프 + 태그 + 변경로그 자동 생성

@@ -53,3 +53,14 @@ SDD(Spec-Driven Development) 기반의 바이브코딩 플러그인으로, Claud
 - 클라우드 서버 기반 데이터 동기화
 - GUI 기반 대시보드 (CLI 전용)
 - 자체 에디터/IDE 구현
+
+<!-- [OPTIONAL] Metrics -->
+## Metrics
+
+| 지표 | 측정 방법 | 목표 |
+|------|----------|------|
+| 태스크 완료 속도 (Velocity) | StatsEngine: 일별/주별 완료 태스크 수 | 일 5+ 태스크 |
+| 플랜 완료율 | DashboardEngine: done/total 비율 | 80%+ |
+| 정체 태스크 감지 | AlertsEngine: N일 이상 in_progress 상태 | 48시간 내 경고 |
+| QA 발견 사항 | qa-findings-analyzer: 심각도별 분류 | critical 0건 유지 |
+| 백로그 소화율 | DashboardEngine: open/total 비율 추적 | 주별 감소 추세 |
