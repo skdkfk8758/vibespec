@@ -239,6 +239,63 @@ export interface NewRule {
   rule_type?: RuleType;
 }
 
+// GC (Garbage Collection) types
+export type GCScanType = 'full' | 'incremental';
+export type GCScanStatus = 'running' | 'completed' | 'failed';
+export type GCFindingCategory = 'DEAD_CODE' | 'RULE_VIOLATION' | 'POLICY_VIOLATION' | 'REFACTOR_CANDIDATE';
+export type GCFindingSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type GCSafetyLevel = 'SAFE' | 'RISKY';
+export type GCRuleSource = 'SELF_IMPROVE' | 'POLICY' | 'ARCHITECTURE' | 'BUILTIN';
+export type GCFindingStatus = 'detected' | 'auto_fixed' | 'approved' | 'dismissed' | 'reverted';
+
+export interface GCScanOptions {
+  scan_type: GCScanType;
+  path?: string;
+}
+
+export interface GCScan {
+  id: string;
+  scan_type: GCScanType;
+  started_at: string;
+  completed_at: string | null;
+  files_scanned: number;
+  findings_count: number;
+  auto_fixed_count: number;
+  status: GCScanStatus;
+}
+
+export interface GCFinding {
+  id: string;
+  scan_id: string;
+  category: GCFindingCategory;
+  severity: GCFindingSeverity;
+  safety_level: GCSafetyLevel;
+  file_path: string;
+  line_start: number;
+  line_end: number;
+  rule_source: GCRuleSource;
+  rule_id: string | null;
+  description: string;
+  suggested_fix: string | null;
+  status: GCFindingStatus;
+  resolved_at: string | null;
+}
+
+export interface GCChange {
+  id: string;
+  finding_id: string;
+  commit_sha: string;
+  file_path: string;
+  diff_content: string;
+  rollback_cmd: string;
+  created_at: string;
+}
+
+export interface GCScanner {
+  name: string;
+  scan(files: string[]): Promise<GCFinding[]>;
+}
+
 // QA types
 export type QARunTrigger = 'manual' | 'auto' | 'milestone' | 'post_merge';
 export type QARunStatus = 'pending' | 'running' | 'completed' | 'failed';

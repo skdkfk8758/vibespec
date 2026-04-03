@@ -10,6 +10,7 @@ import { registerKnowledgeCommands } from './commands/knowledge.js';
 import { registerQualityCommands } from './commands/quality.js';
 import { registerGenerationCommands } from './commands/generation.js';
 import { registerCodexCommands } from './commands/codex.js';
+import { registerGCCommands } from './commands/gc.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -65,5 +66,8 @@ registerCodexCommands(program, initModels);
 
 // ── backlog (→ commands/backlog.ts) ──────────────────────────────────
 registerBacklogCommands(program, initModels);
+
+// ── gc (→ commands/gc.ts) ───────────────────────────────────────────
+registerGCCommands(program, initModels);
 
 program.parse();

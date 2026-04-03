@@ -682,4 +682,55 @@ export function applyMigrations(db: Database.Database): void {
 
     db.pragma('user_version = 14');
   }
+
+  if (version < 15) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS gc_scans (
+        id               TEXT PRIMARY KEY,
+        scan_type        TEXT NOT NULL CHECK(scan_type IN ('full', 'incremental')),
+        started_at       TEXT NOT NULL,
+        completed_at     TEXT,
+        files_scanned    INTEGER DEFAULT 0,
+        findings_count   INTEGER DEFAULT 0,
+        auto_fixed_count INTEGER DEFAULT 0,
+        status           TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed')) DEFAULT 'running'
+      );
+
+      CREATE TABLE IF NOT EXISTS gc_findings (
+        id               TEXT PRIMARY KEY,
+        scan_id          TEXT NOT NULL REFERENCES gc_scans(id) ON DELETE CASCADE,
+        category         TEXT NOT NULL CHECK(category IN ('DEAD_CODE', 'RULE_VIOLATION', 'POLICY_VIOLATION', 'REFACTOR_CANDIDATE')),
+        severity         TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+        safety_level     TEXT NOT NULL CHECK(safety_level IN ('SAFE', 'RISKY')),
+        file_path        TEXT NOT NULL,
+        line_start       INTEGER NOT NULL,
+        line_end         INTEGER NOT NULL,
+        rule_source      TEXT NOT NULL CHECK(rule_source IN ('SELF_IMPROVE', 'POLICY', 'ARCHITECTURE', 'BUILTIN')),
+        rule_id          TEXT,
+        description      TEXT NOT NULL,
+        suggested_fix    TEXT,
+        status           TEXT NOT NULL CHECK(status IN ('detected', 'auto_fixed', 'approved', 'dismissed', 'reverted')) DEFAULT 'detected',
+        resolved_at      TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS gc_changes (
+        id               TEXT PRIMARY KEY,
+        finding_id       TEXT NOT NULL REFERENCES gc_findings(id) ON DELETE CASCADE,
+        commit_sha       TEXT NOT NULL,
+        file_path        TEXT NOT NULL,
+        diff_content     TEXT NOT NULL,
+        rollback_cmd     TEXT NOT NULL,
+        created_at       TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_gc_scans_status ON gc_scans(status);
+      CREATE INDEX IF NOT EXISTS idx_gc_findings_scan ON gc_findings(scan_id);
+      CREATE INDEX IF NOT EXISTS idx_gc_findings_category ON gc_findings(category);
+      CREATE INDEX IF NOT EXISTS idx_gc_findings_status ON gc_findings(status);
+      CREATE INDEX IF NOT EXISTS idx_gc_findings_severity ON gc_findings(severity);
+      CREATE INDEX IF NOT EXISTS idx_gc_changes_finding ON gc_changes(finding_id);
+    `);
+
+    db.pragma('user_version = 15');
+  }
 }

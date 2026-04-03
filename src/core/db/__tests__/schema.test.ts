@@ -214,7 +214,7 @@ describe('Schema', () => {
 
     // Assert: version should be latest (all migrations applied)
     const version = v2Db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(14);
+    expect(version).toBe(15);
 
     v2Db.close();
   });
@@ -237,9 +237,9 @@ describe('Schema', () => {
     expect(tables.map((t) => t.name)).toContain('skill_usage');
   });
 
-  it('should set user_version to 14 after all migrations on fresh DB', () => {
+  it('should set user_version to 15 after all migrations on fresh DB', () => {
     const version = db.pragma('user_version', { simple: true }) as number;
-    expect(version).toBe(14);
+    expect(version).toBe(15);
   });
 
   describe('AC01: migration 11 - enforcement columns', () => {
@@ -373,7 +373,7 @@ describe('Schema', () => {
         noVecDb.pragma('user_version = 11');
         expect(() => applyMigrations(noVecDb)).not.toThrow();
         const version = noVecDb.pragma('user_version', { simple: true }) as number;
-        expect(version).toBe(14);
+        expect(version).toBe(15);
         noVecDb.close();
       } finally {
         loadVecSpy.mockRestore();
@@ -383,7 +383,7 @@ describe('Schema', () => {
     it('AC05: migration 12 is idempotent', () => {
       expect(() => applyMigrations(db)).not.toThrow();
       const version = db.pragma('user_version', { simple: true }) as number;
-      expect(version).toBe(14);
+      expect(version).toBe(15);
     });
 
     it('AC03: error_embeddings can store and query data', () => {
