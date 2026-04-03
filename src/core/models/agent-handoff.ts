@@ -85,14 +85,11 @@ export class AgentHandoffModel {
   }
 
   cleanByPlan(planId: string): void {
-    // Get all task IDs for this plan to clean files
     const handoffs = this.list(planId);
     const taskIds = new Set(handoffs.map(h => h.task_id).filter(Boolean));
 
-    // Delete DB records
     this.db.prepare(`DELETE FROM agent_handoffs WHERE plan_id = ?`).run(planId);
 
-    // Clean handoff directories for each task
     for (const tid of taskIds) {
       const taskDir = join(this.baseDir, tid!);
       if (existsSync(taskDir)) {

@@ -12,7 +12,7 @@ export class SkillUsageModel extends BaseRepository<SkillUsage> {
     const id = generateId();
     const planId = opts?.planId ?? null;
     const sessionId = opts?.sessionId ?? null;
-    const createdAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const createdAt = new Date().toISOString();
     this.db
       .prepare(
         `INSERT INTO skill_usage (id, skill_name, plan_id, session_id, created_at)

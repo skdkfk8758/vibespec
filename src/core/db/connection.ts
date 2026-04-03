@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
+import { normalizeError } from '../utils.js';
 
 let _db: Database.Database | null = null;
 
@@ -55,7 +56,7 @@ export function detectGitContext(): GitContext {
       isWorktree,
     };
   } catch (e) {
-    console.error('[connection] Git root detection failed:', e instanceof Error ? e.message : e);
+    console.error('[connection] Git root detection failed:', normalizeError(e).message);
     return { branch: null, worktreeName: null, isWorktree: false };
   }
 }

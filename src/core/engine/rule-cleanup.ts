@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { generateId } from '../utils.js';
+import { generateId, normalizeError } from '../utils.js';
 import type { SelfImproveEngine } from './self-improve.js';
 import type { SelfImproveRule } from '../types.js';
 
@@ -195,7 +195,7 @@ export class RuleCleanup {
 
       return report;
     } catch (err: unknown) {
-      console.error('[Cleanup] 세션 정리 실패:', err instanceof Error ? err.message : err);
+      console.error('[Cleanup] 세션 정리 실패:', normalizeError(err).message);
       return { duplicates: 0, conflicts: 0, archived: 0 };
     }
   }

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import type { NewBacklogItem, BacklogPriority, BacklogCategory } from '../core/types.js';
+import { normalizeError } from '../core/utils.js';
 
 export interface ImportResult {
   items: NewBacklogItem[];
@@ -35,7 +36,7 @@ export function importFromGithub(
   try {
     validateRepoFormat(repo);
   } catch (e: unknown) {
-    errors.push(e instanceof Error ? e.message : String(e));
+    errors.push(normalizeError(e).message);
     return { items: [], source_prefix: `github:${repo}`, errors };
   }
 
@@ -55,7 +56,7 @@ export function importFromGithub(
   try {
     jsonStr = execFileSync('gh', args, { encoding: 'utf-8', timeout: 30000 });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = normalizeError(e).message;
     if (msg.includes('command not found') || msg.includes('not found') || msg.includes('ENOENT')) {
       errors.push('gh CLI가 설치되어 있지 않습니다. https://cli.github.com 에서 설치하세요.');
     } else {
@@ -123,7 +124,7 @@ export function importFromFile(filepath: string): ImportResult {
   try {
     content = readFileSync(filepath, 'utf-8');
   } catch (e: unknown) {
-    errors.push(`파일 읽기 실패: ${e instanceof Error ? e.message : String(e)}`);
+    errors.push(`파일 읽기 실패: ${normalizeError(e).message}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
 

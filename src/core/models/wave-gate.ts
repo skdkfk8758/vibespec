@@ -17,11 +17,6 @@ export class WaveGateModel extends BaseRepository<WaveGate> {
     return this.getById(id)!;
   }
 
-  /** @deprecated Use getById() instead */
-  get(id: string): WaveGate | null {
-    return this.getById(id);
-  }
-
   listByPlan(planId: string): WaveGate[] {
     return this.db.prepare(
       'SELECT * FROM wave_gates WHERE plan_id = ? ORDER BY wave_number ASC'

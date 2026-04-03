@@ -17,11 +17,6 @@ export class PlanRevisionModel extends BaseRepository<PlanRevision> {
     return this.getById(id)!;
   }
 
-  /** @deprecated Use getById() instead */
-  get(id: string): PlanRevision | null {
-    return this.getById(id);
-  }
-
   listByPlan(planId: string): PlanRevision[] {
     return this.db.prepare(
       'SELECT * FROM plan_revisions WHERE plan_id = ? ORDER BY created_at DESC'

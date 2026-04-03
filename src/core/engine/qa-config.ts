@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as YAML from 'yaml';
 import * as fs from 'node:fs';
+import { normalizeError } from '../utils.js';
 
 // --- Sub-schemas ---
 
@@ -306,7 +307,7 @@ export function loadYamlConfig(yamlPath: string): ResolvedQaConfig {
     return deepMerge(DEFAULT_QA_CONFIG, validated) as ResolvedQaConfig;
   } catch (err) {
     console.warn(
-      `[VibeSpec] qa-rules.yaml 파싱 실패, L0 기본값을 사용합니다: ${err instanceof Error ? err.message : String(err)}`,
+      `[VibeSpec] qa-rules.yaml 파싱 실패, L0 기본값을 사용합니다: ${normalizeError(err).message}`,
     );
     return { ...DEFAULT_QA_CONFIG };
   }

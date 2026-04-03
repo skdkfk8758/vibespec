@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { BacklogItem, PlanProgress, QARunSummary, SkillStats } from '../types.js';
+import { normalizeError } from '../utils.js';
 import type { SkillUsageModel } from '../models/skill-usage.js';
 
 export interface BacklogOverview {
@@ -85,7 +86,7 @@ export class DashboardEngine {
 
       return { total: totalRow.total, open, by_priority, top_items };
     } catch (e) {
-      console.error('[dashboard] backlog query failed:', e instanceof Error ? e.message : e);
+      console.error('[dashboard] backlog query failed:', normalizeError(e).message);
       return { total: 0, open: 0, by_priority: { critical: 0, high: 0, medium: 0, low: 0 }, top_items: [] };
     }
   }
@@ -108,7 +109,7 @@ export class DashboardEngine {
         .get(planId) as QARunSummary | undefined;
       return row ?? null;
     } catch (e) {
-      console.error('[dashboard] QA run query failed:', e instanceof Error ? e.message : e);
+      console.error('[dashboard] QA run query failed:', normalizeError(e).message);
       return null;
     }
   }
@@ -133,7 +134,7 @@ export class DashboardEngine {
       }
       return result;
     } catch (e) {
-      console.error('[dashboard] alert counts query failed:', e instanceof Error ? e.message : e);
+      console.error('[dashboard] alert counts query failed:', normalizeError(e).message);
       return { critical: 0, high: 0, medium: 0, low: 0 };
     }
   }

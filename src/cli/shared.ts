@@ -1,5 +1,6 @@
 import { getDb } from '../core/db/connection.js';
 import { initSchema } from '../core/db/schema.js';
+import { normalizeError } from '../core/utils.js';
 import { DashboardEngine } from '../core/engine/dashboard.js';
 import { AlertsEngine } from '../core/engine/alerts.js';
 import { StatsEngine } from '../core/engine/stats.js';
@@ -62,10 +63,11 @@ export function withErrorHandler(fn: () => void): void {
   try {
     fn();
   } catch (e: unknown) {
-    if (verboseMode && e instanceof Error && e.stack) {
-      console.error(e.stack);
+    const error = normalizeError(e);
+    if (verboseMode && error.stack) {
+      console.error(error.stack);
     }
-    outputError(e instanceof Error ? e.message : String(e));
+    outputError(error.message);
   }
 }
 

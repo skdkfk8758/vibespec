@@ -189,7 +189,7 @@ export class RetryEngine {
       });
       return { escalated: true, fallbackAgent, attempts };
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = normalizeError(err);
       attempts.push({ success: false, attempt: attempts.length + 1, error });
 
       // 최종 실패 시 error-kb 기록

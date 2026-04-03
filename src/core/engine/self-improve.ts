@@ -62,7 +62,6 @@ export class SelfImproveEngine {
       : newRule.ruleContent;
     fs.writeFileSync(fullPath, content, 'utf-8');
 
-    // Insert DB record
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_type, rule_path, occurrences, prevented, status, enforcement, created_at)
@@ -114,7 +113,6 @@ export class SelfImproveEngine {
       fs.renameSync(srcPath, destPath);
     }
 
-    // Update DB
     const newRulePath = path.join(ARCHIVE_DIR, path.basename(rule.rule_path));
     this.db.prepare(
       'UPDATE self_improve_rules SET status = ?, rule_path = ? WHERE id = ?'
@@ -326,9 +324,9 @@ export class SelfImproveEngine {
       }
     }
 
-    // Add remaining unprocessed as kept
+    const keptSet = new Set(kept);
     for (let i = 0; i < ruleFiles.length; i++) {
-      if (!processed.has(i) && !kept.includes(ruleFiles[i].filename)) {
+      if (!processed.has(i) && !keptSet.has(ruleFiles[i].filename)) {
         kept.push(ruleFiles[i].filename);
       }
     }
@@ -431,7 +429,6 @@ export class DreamResult {
       this.engine.moveToArchive(filename);
     }
 
-    // Write merged content to primary file
     for (const pair of this.merged) {
       this.engine.writeRuleFile(pair.mergedFilename, pair.mergedContent);
     }

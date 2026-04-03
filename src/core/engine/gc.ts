@@ -33,14 +33,12 @@ export class GCEngine {
     const scanId = generateId();
     const startedAt = new Date().toISOString();
 
-    // Create scan record
     this.db.prepare(`
       INSERT INTO gc_scans (id, scan_type, started_at, status)
       VALUES (?, ?, ?, 'running')
     `).run(scanId, options.scan_type, startedAt);
 
     try {
-      // Collect target files
       const targetPath = options.path ?? this.projectRoot;
       const files = await this.collectFiles(targetPath);
 
@@ -76,7 +74,6 @@ export class GCEngine {
 
       insertMany(allFindings);
 
-      // Update scan record
       const completedAt = new Date().toISOString();
       this.db.prepare(`
         UPDATE gc_scans SET completed_at = ?, files_scanned = ?, findings_count = ?, status = 'completed'
@@ -112,10 +109,8 @@ export class GCEngine {
   }
 
   async applySafeFixes(scanId: string): Promise<GCChange[]> {
-    // Check for uncommitted changes
     this.assertCleanWorkingTree();
 
-    // Get SAFE findings with suggested_fix
     const findings = this.db.prepare(
       "SELECT * FROM gc_findings WHERE scan_id = ? AND safety_level = 'SAFE' AND suggested_fix IS NOT NULL AND status = 'detected'",
     ).all(scanId) as GCFinding[];
@@ -128,7 +123,6 @@ export class GCEngine {
       const change = this.applyFixToFile(finding);
       if (change) {
         changes.push(change);
-        // Update finding status
         this.db.prepare(
           "UPDATE gc_findings SET status = 'auto_fixed', resolved_at = ? WHERE id = ?",
         ).run(new Date().toISOString(), finding.id);
@@ -136,15 +130,12 @@ export class GCEngine {
     }
 
     if (changes.length > 0) {
-      // Stage and commit all changes as a single commit
       execSync('git add -A', { cwd: this.projectRoot, stdio: 'pipe' });
       const commitMsg = `chore(gc): auto-fix ${changes.length} safe findings from scan ${scanId}`;
       execSync(`git commit -m "${commitMsg}"`, { cwd: this.projectRoot, stdio: 'pipe' });
 
-      // Get commit SHA
       const commitSha = execSync('git rev-parse HEAD', { cwd: this.projectRoot, stdio: 'pipe' }).toString().trim();
 
-      // Record changes in DB
       const insertChange = this.db.prepare(
         'INSERT INTO gc_changes (id, finding_id, commit_sha, file_path, diff_content, rollback_cmd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       );
@@ -155,7 +146,6 @@ export class GCEngine {
         insertChange.run(change.id, change.finding_id, commitSha, change.file_path, change.diff_content, change.rollback_cmd, now);
       }
 
-      // Update scan auto_fixed_count
       this.db.prepare(
         'UPDATE gc_scans SET auto_fixed_count = ? WHERE id = ?',
       ).run(changes.length, scanId);
@@ -193,7 +183,6 @@ export class GCEngine {
       'INSERT INTO gc_changes (id, finding_id, commit_sha, file_path, diff_content, rollback_cmd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ).run(change.id, change.finding_id, commitSha, change.file_path, change.diff_content, change.rollback_cmd, now);
 
-    // Update finding status
     this.db.prepare(
       "UPDATE gc_findings SET status = 'approved', resolved_at = ? WHERE id = ?",
     ).run(now, finding.id);
@@ -210,7 +199,6 @@ export class GCEngine {
       execSync(`git revert --no-edit ${commit_sha}`, { cwd: this.projectRoot, stdio: 'pipe' });
     }
 
-    // Update finding statuses to reverted
     this.db.prepare(
       "UPDATE gc_findings SET status = 'reverted', resolved_at = ? WHERE scan_id = ? AND status IN ('auto_fixed', 'approved')",
     ).run(new Date().toISOString(), scanId);

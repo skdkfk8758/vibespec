@@ -7,6 +7,7 @@ import { DeadCodeScanner } from '../../core/engine/scanners/dead-code-scanner.js
 import { RefactorScanner } from '../../core/engine/scanners/refactor-scanner.js';
 import { output, outputError, initDb } from '../shared.js';
 import type { Models } from '../shared.js';
+import { normalizeError } from '../../core/utils.js';
 
 function getGCEngine(): GCEngine {
   const db = initDb();
@@ -41,7 +42,7 @@ export function registerGCCommands(program: Command, _getModels: () => Models): 
           `   Scan ID: ${result.id}`,
         ].join('\n'));
       } catch (e) {
-        outputError(e instanceof Error ? e.message : String(e));
+        outputError(normalizeError(e).message);
       }
     });
 
@@ -126,7 +127,7 @@ export function registerGCCommands(program: Command, _getModels: () => Models): 
           ...changes.map(c => `  - ${c.file_path}`),
         ].join('\n'));
       } catch (e) {
-        outputError(e instanceof Error ? e.message : String(e));
+        outputError(normalizeError(e).message);
       }
     });
 
@@ -159,7 +160,7 @@ export function registerGCCommands(program: Command, _getModels: () => Models): 
         await engine.revertScan(scanId);
         output({ reverted: scanId }, `✅ Reverted scan ${scanId}`);
       } catch (e) {
-        outputError(e instanceof Error ? e.message : String(e));
+        outputError(normalizeError(e).message);
       }
     });
 }

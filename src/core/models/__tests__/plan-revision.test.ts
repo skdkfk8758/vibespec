@@ -68,17 +68,17 @@ describe('PlanRevisionModel', () => {
     });
   });
 
-  describe('get', () => {
+  describe('getById', () => {
     it('AC01: should return a revision by id', () => {
       const created = model.create(planId, 'design_flaw', null, 'Test', '{}');
-      const fetched = model.get(created.id);
+      const fetched = model.getById(created.id);
 
       expect(fetched).not.toBeNull();
       expect(fetched!.id).toBe(created.id);
     });
 
     it('AC01: should return null for non-existent id', () => {
-      const result = model.get('non-existent');
+      const result = model.getById('non-existent');
       expect(result).toBeNull();
     });
   });

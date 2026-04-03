@@ -6,6 +6,7 @@ import type { Plan, Task } from '../types.js';
 import { RetryEngine, type RetryConfig, DEFAULT_RETRY_CONFIG, type ExecuteFn } from './retry.js';
 import { WaveCoordinator } from './wave-coordinator.js';
 import { PlanVerifier } from './plan-verifier.js';
+import { normalizeError } from '../utils.js';
 
 export class LifecycleEngine {
   private db: Database.Database;
@@ -59,7 +60,7 @@ export class LifecycleEngine {
         console.log(`[lifecycle] AC verification score: ${verification.overallScore}/100`);
       }
     }).catch((err: unknown) => {
-      console.error(`[lifecycle] Plan ${planId} verification failed:`, err instanceof Error ? err.message : err);
+      console.error(`[lifecycle] Plan ${planId} verification failed:`, normalizeError(err).message);
     });
 
     const plan = this.planModel.complete(planId);

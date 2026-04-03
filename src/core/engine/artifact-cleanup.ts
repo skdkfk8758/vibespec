@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { generateId } from '../utils.js';
+import { generateId, normalizeError } from '../utils.js';
 import { RuleCleanup } from './rule-cleanup.js';
 import { SelfImproveEngine } from './self-improve.js';
 
@@ -69,11 +69,15 @@ export class ArtifactCleanup {
     return result;
   }
 
+  private cutoffMs(retentionDays: number): number {
+    return Date.now() - retentionDays * 86_400_000;
+  }
+
   private cleanHandoffs(retentionDays: number, dryRun: boolean, details: string[]): number {
     const handoffDir = join(this.claudeDir, 'handoff');
     if (!existsSync(handoffDir)) return 0;
 
-    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const cutoff = this.cutoffMs(retentionDays);
     const activeTaskIds = this.getActiveHandoffTaskIds();
     let removed = 0;
 
@@ -101,7 +105,7 @@ export class ArtifactCleanup {
           removed++;
         }
       } catch (err) {
-        details.push(`error cleaning handoff ${entry}: ${err instanceof Error ? err.message : String(err)}`);
+        details.push(`error cleaning handoff ${entry}: ${normalizeError(err).message}`);
       }
     }
 
@@ -109,7 +113,7 @@ export class ArtifactCleanup {
   }
 
   private cleanReports(retentionDays: number, dryRun: boolean, details: string[]): number {
-    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const cutoff = this.cutoffMs(retentionDays);
     const reportDirs = ['session-reports', 'reports'];
     let removed = 0;
 
@@ -129,7 +133,7 @@ export class ArtifactCleanup {
             removed++;
           }
         } catch (err) {
-          details.push(`error cleaning ${dirName}/${entry}: ${err instanceof Error ? err.message : String(err)}`);
+          details.push(`error cleaning ${dirName}/${entry}: ${normalizeError(err).message}`);
         }
       }
     }
@@ -148,7 +152,7 @@ export class ArtifactCleanup {
       details.push(`rule cleanup: ${report.length} duplicate groups, ${conflicts.length} conflicts, ${staleArchived.length} stale archived`);
       return { archived: staleArchived.length, conflicts: conflicts.length };
     } catch (err) {
-      details.push(`rule cleanup error: ${err instanceof Error ? err.message : String(err)}`);
+      details.push(`rule cleanup error: ${normalizeError(err).message}`);
       return { archived: 0, conflicts: 0 };
     }
   }
@@ -175,7 +179,7 @@ export class ArtifactCleanup {
             removed++;
           }
         } catch (err) {
-          details.push(`error cleaning ${dirName}/${entry}: ${err instanceof Error ? err.message : String(err)}`);
+          details.push(`error cleaning ${dirName}/${entry}: ${normalizeError(err).message}`);
         }
       }
     }

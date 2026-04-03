@@ -4,7 +4,7 @@ import type { EventModel } from './event.js';
 import type { AgentHandoffModel } from './agent-handoff.js';
 import { BaseRepository } from './base-repository.js';
 import { detectGitContext } from '../db/connection.js';
-import { generateId, buildUpdateQuery, validateTransition, withTransaction, type AllowedTransitions } from '../utils.js';
+import { generateId, buildUpdateQuery, validateTransition, withTransaction, normalizeError, type AllowedTransitions } from '../utils.js';
 
 export const PLAN_TRANSITIONS: AllowedTransitions = {
   draft: ['active'],
@@ -100,7 +100,7 @@ export class PlanModel extends BaseRepository<Plan> {
       this.events?.record('plan', id, 'updated', JSON.stringify({ running_summary: plan.running_summary }), JSON.stringify({ running_summary: summary }));
       return this.requireById(id);
     } catch (err) {
-      console.error(`[updateRunningSummary] failed: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`[updateRunningSummary] failed: ${normalizeError(err).message}`);
       return null;
     }
   }

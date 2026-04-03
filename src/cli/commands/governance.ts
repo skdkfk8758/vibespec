@@ -1,46 +1,14 @@
 import { Command } from 'commander';
 import { resolve, join } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { getConfig, setConfig, deleteConfig } from '../../core/config.js';
 import { output, outputError, initDb, withErrorHandler } from '../shared.js';
+import { normalizeError } from '../../core/utils.js';
 import type { Models } from '../shared.js';
 import { listDeferredSkills, promoteSkill, demoteSkill } from './skill-deferred-helpers.js';
 import { AgentHandoffModel } from '../../core/models/agent-handoff.js';
 import { ArtifactCleanup } from '../../core/engine/artifact-cleanup.js';
 import type { RevisionStatus, RevisionTriggerType } from '../../core/types.js';
 
-/** Register/unregister PreToolUse hooks in .claude/settings.local.json */
-function manageHook(action: 'add' | 'remove', hookId: string, toolName: string, scriptPath: string) {
-  const settingsDir = join(process.cwd(), '.claude');
-  const settingsPath = join(settingsDir, 'settings.local.json');
-  let settings: Record<string, unknown> = {};
-  if (existsSync(settingsPath)) {
-    try { settings = JSON.parse(readFileSync(settingsPath, 'utf8')); } catch { settings = {}; }
-  }
-  if (!settings.hooks) settings.hooks = {};
-  const hooks = settings.hooks as Record<string, unknown[]>;
-  if (!hooks.PreToolUse) hooks.PreToolUse = [];
-  const preToolUse = hooks.PreToolUse as Array<Record<string, unknown>>;
-
-  if (action === 'add') {
-    // Remove existing hook with same id before adding
-    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
-    (hooks.PreToolUse as Array<Record<string, unknown>>).push({
-      id: hookId,
-      type: 'command',
-      matcher: toolName,
-      command: scriptPath,
-    });
-    // Ensure script is executable
-    if (existsSync(scriptPath)) {
-      try { chmodSync(scriptPath, 0o755); } catch { /* ignore */ }
-    }
-  } else {
-    hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
-  }
-
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-}
 
 export function registerGovernanceCommands(program: Command, _getModels: () => Models): void {
   // ── careful ──
@@ -52,8 +20,6 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
     .action(() => {
       const db = initDb();
       setConfig(db, 'careful.enabled', 'true');
-      const scriptPath = join(process.cwd(), 'bin', 'check-careful.sh');
-      manageHook('add', 'vs-careful', 'Bash', scriptPath);
       output({ careful: true }, '⚠️ careful 모드 활성화됨 — 파괴적 명령이 차단됩니다.');
     });
 
@@ -63,7 +29,6 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
     .action(() => {
       const db = initDb();
       setConfig(db, 'careful.enabled', 'false');
-      manageHook('remove', 'vs-careful', 'Bash', '');
       output({ careful: false }, 'careful 모드 비활성화됨.');
     });
 
@@ -87,9 +52,6 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
       const db = initDb();
       const absPath = resolve(inputPath);
       setConfig(db, 'freeze.path', absPath);
-      const scriptPath = join(process.cwd(), 'bin', 'check-freeze.sh');
-      manageHook('add', 'vs-freeze-edit', 'Edit', scriptPath);
-      manageHook('add', 'vs-freeze-write', 'Write', scriptPath);
       output({ freeze: absPath }, `🔒 freeze 활성화됨 — 편집 범위: ${absPath}`);
     });
 
@@ -99,8 +61,6 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
     .action(() => {
       const db = initDb();
       deleteConfig(db, 'freeze.path');
-      manageHook('remove', 'vs-freeze-edit', 'Edit', '');
-      manageHook('remove', 'vs-freeze-write', 'Write', '');
       output({ freeze: null }, 'freeze 비활성화됨 — 편집 범위 제한 해제.');
     });
 
@@ -128,11 +88,6 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
       const absPath = resolve(inputPath);
       setConfig(db, 'careful.enabled', 'true');
       setConfig(db, 'freeze.path', absPath);
-      const carefulScript = join(process.cwd(), 'bin', 'check-careful.sh');
-      const freezeScript = join(process.cwd(), 'bin', 'check-freeze.sh');
-      manageHook('add', 'vs-careful', 'Bash', carefulScript);
-      manageHook('add', 'vs-freeze-edit', 'Edit', freezeScript);
-      manageHook('add', 'vs-freeze-write', 'Write', freezeScript);
       output(
         { careful: true, freeze: absPath },
         `🛡️ guard 활성화됨 — careful + freeze: ${absPath}`
@@ -146,9 +101,6 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
       const db = initDb();
       setConfig(db, 'careful.enabled', 'false');
       deleteConfig(db, 'freeze.path');
-      manageHook('remove', 'vs-careful', 'Bash', '');
-      manageHook('remove', 'vs-freeze-edit', 'Edit', '');
-      manageHook('remove', 'vs-freeze-write', 'Write', '');
       output({ careful: false, freeze: null }, 'guard 비활성화됨 — careful + freeze 모두 해제.');
     });
 
@@ -387,7 +339,7 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
           `  rules — archived: ${result.rulesArchived}, conflicts: ${result.rulesConflicts}`,
         ].join('\n'));
       } catch (err) {
-        outputError(`Artifact cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+        outputError(`Artifact cleanup failed: ${normalizeError(err).message}`);
       }
     });
 }
