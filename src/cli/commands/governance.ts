@@ -6,6 +6,7 @@ import { output, outputError, initDb, withErrorHandler } from '../shared.js';
 import type { Models } from '../shared.js';
 import { listDeferredSkills, promoteSkill, demoteSkill } from './skill-deferred-helpers.js';
 import { AgentHandoffModel } from '../../core/models/agent-handoff.js';
+import { ArtifactCleanup } from '../../core/engine/artifact-cleanup.js';
 import type { RevisionStatus, RevisionTriggerType } from '../../core/types.js';
 
 /** Register/unregister PreToolUse hooks in .claude/settings.local.json */
@@ -358,5 +359,35 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
         const rev = models.planRevisionModel.updateStatus(id, opts.status as RevisionStatus);
         output(rev, `Revision ${rev.id} updated to: ${rev.status}`);
       });
+    });
+
+  // ── artifact cleanup ──
+  const artifact = program.command('artifact').description('Manage .claude/ artifacts');
+
+  artifact
+    .command('cleanup')
+    .description('Clean up expired artifacts (handoffs, reports, rules)')
+    .option('--retention-days <days>', 'Retention period in days', '7')
+    .option('--dry-run', 'Show what would be removed without deleting')
+    .action(async (opts: { retentionDays: string; dryRun?: boolean }) => {
+      try {
+        const db = initDb();
+        const cleanup = new ArtifactCleanup(db, process.cwd());
+        const result = await cleanup.run({
+          retentionDays: parseInt(opts.retentionDays, 10),
+          dryRun: opts.dryRun ?? false,
+          trigger: 'manual',
+        });
+
+        const total = result.handoffsRemoved + result.reportsRemoved + result.emptyDirsRemoved;
+        output(result, [
+          opts.dryRun ? '[DRY RUN] ' : '',
+          `Artifact cleanup: ${total} items removed`,
+          `  handoffs: ${result.handoffsRemoved}, reports: ${result.reportsRemoved}, empty dirs: ${result.emptyDirsRemoved}`,
+          `  rules — archived: ${result.rulesArchived}, conflicts: ${result.rulesConflicts}`,
+        ].join('\n'));
+      } catch (err) {
+        outputError(`Artifact cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     });
 }

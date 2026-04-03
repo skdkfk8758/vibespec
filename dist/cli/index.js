@@ -2733,6 +2733,45 @@ function applyMigrations(db) {
     `);
     db.pragma("user_version = 15");
   }
+  if (version < 16) {
+    if (!hasColumn(db, "merge_reports", "pr_number")) {
+      db.exec("ALTER TABLE merge_reports ADD COLUMN pr_number INTEGER");
+    }
+    if (!hasColumn(db, "merge_reports", "pr_url")) {
+      db.exec("ALTER TABLE merge_reports ADD COLUMN pr_url TEXT");
+    }
+    if (!hasColumn(db, "merge_reports", "merge_method")) {
+      db.exec("ALTER TABLE merge_reports ADD COLUMN merge_method TEXT");
+    }
+    if (!hasColumn(db, "merge_reports", "closed_issues")) {
+      db.exec("ALTER TABLE merge_reports ADD COLUMN closed_issues TEXT");
+    }
+    if (!hasColumn(db, "merge_reports", "auto_resolved_files")) {
+      db.exec("ALTER TABLE merge_reports ADD COLUMN auto_resolved_files TEXT");
+    }
+    if (!hasColumn(db, "merge_reports", "conflict_levels")) {
+      db.exec("ALTER TABLE merge_reports ADD COLUMN conflict_levels TEXT");
+    }
+    db.pragma("user_version = 16");
+  }
+  if (version < 17) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS artifact_cleanups (
+        id                TEXT PRIMARY KEY,
+        trigger           TEXT NOT NULL,
+        started_at        TEXT NOT NULL,
+        completed_at      TEXT,
+        handoffs_removed  INTEGER DEFAULT 0,
+        reports_removed   INTEGER DEFAULT 0,
+        rules_archived    INTEGER DEFAULT 0,
+        rules_conflicts   INTEGER DEFAULT 0,
+        empty_dirs_removed INTEGER DEFAULT 0,
+        dry_run           INTEGER DEFAULT 0,
+        summary           TEXT
+      );
+    `);
+    db.pragma("user_version = 17");
+  }
 }
 
 // src/core/engine/dashboard.ts
@@ -5132,8 +5171,8 @@ function initDb() {
 }
 
 // src/cli/commands/governance.ts
-import { resolve as resolve2, join as join4 } from "path";
-import { existsSync as existsSync5, readFileSync as readFileSync5, writeFileSync as writeFileSync4, chmodSync } from "fs";
+import { resolve as resolve2, join as join6 } from "path";
+import { existsSync as existsSync7, readFileSync as readFileSync6, writeFileSync as writeFileSync5, chmodSync } from "fs";
 
 // src/core/config-schema.ts
 import { z as z2 } from "zod";
@@ -5256,14 +5295,716 @@ function demoteSkill(skillsDir, skillName) {
   };
 }
 
+// src/core/engine/artifact-cleanup.ts
+import { existsSync as existsSync6, readdirSync as readdirSync5, rmSync as rmSync2, statSync as statSync2 } from "fs";
+import { join as join5 } from "path";
+
+// src/core/engine/rule-cleanup.ts
+function tokenize(text) {
+  return new Set(
+    text.toLowerCase().split(/\s+/).filter((t) => t.length > 0)
+  );
+}
+function jaccardSimilarity(a, b) {
+  if (a.size === 0 && b.size === 0) return 1;
+  const intersection = new Set([...a].filter((x) => b.has(x)));
+  const union = /* @__PURE__ */ new Set([...a, ...b]);
+  return intersection.size / union.size;
+}
+var RuleCleanup = class {
+  db;
+  engine;
+  // In-memory store for detected groups (keyed by group id)
+  groups = /* @__PURE__ */ new Map();
+  constructor(db, engine) {
+    this.db = db;
+    this.engine = engine;
+  }
+  detectDuplicates() {
+    const rules = this.engine.listRules("active");
+    if (rules.length === 0) {
+      this.groups.clear();
+      return [];
+    }
+    const grouped = /* @__PURE__ */ new Map();
+    const similarityMap = /* @__PURE__ */ new Map();
+    for (let i = 0; i < rules.length; i++) {
+      for (let j = i + 1; j < rules.length; j++) {
+        const ruleA = rules[i];
+        const ruleB = rules[j];
+        const tokensA = tokenize(ruleA.title);
+        const tokensB = tokenize(ruleB.title);
+        const sim = jaccardSimilarity(tokensA, tokensB);
+        if (sim >= 0.7) {
+          similarityMap.set(`${ruleA.id}:${ruleB.id}`, sim);
+          if (!grouped.has(ruleA.id)) grouped.set(ruleA.id, /* @__PURE__ */ new Set([ruleA.id]));
+          if (!grouped.has(ruleB.id)) grouped.set(ruleB.id, /* @__PURE__ */ new Set([ruleB.id]));
+          const setA = grouped.get(ruleA.id);
+          const setB = grouped.get(ruleB.id);
+          const merged = /* @__PURE__ */ new Set([...setA, ...setB]);
+          for (const id of merged) {
+            grouped.set(id, merged);
+          }
+        }
+      }
+    }
+    const seen = /* @__PURE__ */ new Set();
+    const result = [];
+    this.groups.clear();
+    for (const [, set] of grouped) {
+      if (seen.has(set)) continue;
+      seen.add(set);
+      const ids = [...set];
+      if (ids.length < 2) continue;
+      const ruleObjs = ids.map((id) => {
+        const rule = rules.find((r) => r.id === id);
+        let maxSim = 0;
+        for (const otherId of ids) {
+          if (otherId === id) continue;
+          const key1 = `${id}:${otherId}`;
+          const key2 = `${otherId}:${id}`;
+          const sim = similarityMap.get(key1) ?? similarityMap.get(key2) ?? 0;
+          if (sim > maxSim) maxSim = sim;
+        }
+        return { id, title: rule.title, similarity: maxSim };
+      });
+      const groupId = generateId();
+      const group = { id: groupId, rules: ruleObjs };
+      this.groups.set(groupId, group);
+      result.push(group);
+    }
+    return result;
+  }
+  detectConflicts() {
+    const rules = this.engine.listRules("active");
+    if (rules.length < 2) return [];
+    const FORBIDDEN_KEYWORDS = ["\uD558\uC9C0 \uB9C8", "\uAE08\uC9C0", "\uC0AC\uC6A9\uD558\uC9C0", "\uD53C\uD558", "don't", "avoid", "never"];
+    const RECOMMEND_KEYWORDS = ["\uC0AC\uC6A9\uD558", "\uD574\uC57C", "\uD544\uC218", "always", "must", "use"];
+    const ALL_ACTION_KEYWORDS = [...FORBIDDEN_KEYWORDS, ...RECOMMEND_KEYWORDS];
+    function classifyAction(title) {
+      const lower = title.toLowerCase();
+      if (FORBIDDEN_KEYWORDS.some((k) => lower.includes(k))) return "forbidden";
+      if (RECOMMEND_KEYWORDS.some((k) => lower.includes(k))) return "recommend";
+      return "neutral";
+    }
+    function stripActionKeywords(title) {
+      const tokens = [...tokenize(title)];
+      const filtered = tokens.filter((t) => !ALL_ACTION_KEYWORDS.some((k) => t.includes(k.toLowerCase())));
+      return new Set(filtered.length > 0 ? filtered : tokens);
+    }
+    const conflicts = [];
+    for (let i = 0; i < rules.length; i++) {
+      for (let j = i + 1; j < rules.length; j++) {
+        const ruleA = rules[i];
+        const ruleB = rules[j];
+        if (ruleA.category !== ruleB.category) continue;
+        const actionA = classifyAction(ruleA.title);
+        const actionB = classifyAction(ruleB.title);
+        if (actionA === "neutral" || actionB === "neutral") continue;
+        if (actionA === actionB) continue;
+        const tokensA = stripActionKeywords(ruleA.title);
+        const tokensB = stripActionKeywords(ruleB.title);
+        const sim = jaccardSimilarity(tokensA, tokensB);
+        if (sim < 0.5) continue;
+        conflicts.push({
+          ruleA: { id: ruleA.id, title: ruleA.title },
+          ruleB: { id: ruleB.id, title: ruleB.title },
+          reason: `\uAC19\uC740 \uCE74\uD14C\uACE0\uB9AC(${ruleA.category}) \uB0B4 \uC0C1\uBC18\uB418\uB294 action (\uC720\uC0AC\uB3C4: ${Math.round(sim * 100)}%)`
+        });
+      }
+    }
+    return conflicts;
+  }
+  async runSessionCleanup() {
+    try {
+      const duplicateGroups = this.detectDuplicates();
+      const conflicts = this.detectConflicts();
+      const archivedIds = this.engine.autoArchiveStale();
+      const report = {
+        duplicates: duplicateGroups.length,
+        conflicts: conflicts.length,
+        archived: archivedIds.length
+      };
+      console.log(
+        `[Cleanup] \uC138\uC158 \uC815\uB9AC \uC644\uB8CC \u2014 \uC911\uBCF5: ${report.duplicates}, \uCDA9\uB3CC: ${report.conflicts}, \uC544\uCE74\uC774\uBE0C: ${report.archived}`
+      );
+      return report;
+    } catch (err) {
+      console.error("[Cleanup] \uC138\uC158 \uC815\uB9AC \uC2E4\uD328:", err instanceof Error ? err.message : err);
+      return { duplicates: 0, conflicts: 0, archived: 0 };
+    }
+  }
+  mergeDuplicates(groupId) {
+    const group = this.groups.get(groupId);
+    if (!group) return;
+    const ruleIds = group.rules.map((r) => r.id);
+    if (ruleIds.length < 2) return;
+    const ruleRecords = ruleIds.map((id) => this.engine.listRules().find((r) => r.id === id)).filter((r) => r !== void 0);
+    if (ruleRecords.length === 0) return;
+    const representative = ruleRecords.reduce((latest, r) => {
+      return r.created_at > latest.created_at ? r : latest;
+    });
+    const totalOccurrences = ruleRecords.reduce((sum, r) => sum + r.occurrences, 0);
+    const totalPrevented = ruleRecords.reduce((sum, r) => sum + r.prevented, 0);
+    this.db.prepare(
+      "UPDATE self_improve_rules SET occurrences = ?, prevented = ? WHERE id = ?"
+    ).run(totalOccurrences, totalPrevented, representative.id);
+    for (const rule of ruleRecords) {
+      if (rule.id !== representative.id) {
+        this.engine.archiveRule(rule.id);
+      }
+    }
+  }
+};
+
+// src/core/engine/self-improve.ts
+import * as fs2 from "fs";
+import * as path2 from "path";
+var RULES_DIR = ".claude/rules";
+var ARCHIVE_DIR = ".claude/rules/archive";
+var PENDING_DIR = ".claude/self-improve/pending";
+var PROCESSED_DIR = ".claude/self-improve/processed";
+var CONFIG_LAST_RUN = "self_improve_last_run";
+var MAX_ACTIVE_RULES = 30;
+var SelfImproveEngine = class {
+  db;
+  projectRoot;
+  rulesDir;
+  archiveDir;
+  pendingDir;
+  processedDir;
+  constructor(db, projectRoot) {
+    this.db = db;
+    this.projectRoot = projectRoot;
+    this.rulesDir = path2.join(projectRoot, RULES_DIR);
+    this.archiveDir = path2.join(projectRoot, ARCHIVE_DIR);
+    this.pendingDir = path2.join(projectRoot, PENDING_DIR);
+    this.processedDir = path2.join(projectRoot, PROCESSED_DIR);
+    this.ensureDirectories();
+  }
+  ensureDirectories() {
+    fs2.mkdirSync(this.rulesDir, { recursive: true });
+    fs2.mkdirSync(this.archiveDir, { recursive: true });
+    fs2.mkdirSync(this.pendingDir, { recursive: true });
+    fs2.mkdirSync(this.processedDir, { recursive: true });
+  }
+  createRule(newRule) {
+    const id = generateId();
+    const slug = newRule.title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
+    const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
+    const rulePath = path2.join(RULES_DIR, filename);
+    const fullPath = path2.join(this.projectRoot, rulePath);
+    const enforcement = newRule.enforcement ?? "SOFT";
+    const ruleType = newRule.rule_type ?? "preventive";
+    const content = ruleType === "procedural" ? this.buildProceduralTemplate(newRule.title, newRule.ruleContent) : newRule.ruleContent;
+    fs2.writeFileSync(fullPath, content, "utf-8");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(`
+      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_type, rule_path, occurrences, prevented, status, enforcement, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
+    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, ruleType, rulePath, enforcement, now);
+    return {
+      id,
+      error_kb_id: newRule.error_kb_id ?? null,
+      title: newRule.title,
+      category: newRule.category,
+      rule_type: ruleType,
+      rule_path: rulePath,
+      occurrences: 0,
+      prevented: 0,
+      status: "active",
+      enforcement,
+      escalated_at: null,
+      created_at: now,
+      last_triggered_at: null
+    };
+  }
+  listRules(status, type) {
+    const conditions = [];
+    const params = [];
+    if (status) {
+      conditions.push("status = ?");
+      params.push(status);
+    }
+    if (type) {
+      conditions.push("rule_type = ?");
+      params.push(type);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const order = status ? "ORDER BY created_at DESC" : "ORDER BY status ASC, created_at DESC";
+    return this.db.prepare(`SELECT * FROM self_improve_rules ${where} ${order}`).all(...params);
+  }
+  getRule(id) {
+    return this.db.prepare(
+      "SELECT * FROM self_improve_rules WHERE id = ?"
+    ).get(id) ?? null;
+  }
+  archiveRule(id) {
+    const rule = this.getRule(id);
+    if (!rule || rule.status === "archived") return false;
+    const srcPath = path2.join(this.projectRoot, rule.rule_path);
+    const destPath = path2.join(this.archiveDir, path2.basename(rule.rule_path));
+    if (fs2.existsSync(srcPath)) {
+      fs2.renameSync(srcPath, destPath);
+    }
+    const newRulePath = path2.join(ARCHIVE_DIR, path2.basename(rule.rule_path));
+    this.db.prepare(
+      "UPDATE self_improve_rules SET status = ?, rule_path = ? WHERE id = ?"
+    ).run("archived", newRulePath, id);
+    return true;
+  }
+  incrementPrevented(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
+  updateOccurrences(id, occurrences) {
+    this.db.prepare(
+      "UPDATE self_improve_rules SET occurrences = ? WHERE id = ?"
+    ).run(occurrences, id);
+  }
+  getPendingCount() {
+    if (!fs2.existsSync(this.pendingDir)) return 0;
+    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).length;
+  }
+  listPending() {
+    if (!fs2.existsSync(this.pendingDir)) return [];
+    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).map((f) => path2.join(this.pendingDir, f)).sort();
+  }
+  movePendingToProcessed(pendingPath) {
+    const filename = path2.basename(pendingPath);
+    const destPath = path2.join(this.processedDir, filename);
+    if (fs2.existsSync(pendingPath)) {
+      fs2.renameSync(pendingPath, destPath);
+    }
+  }
+  getLastRunTimestamp() {
+    return getConfig(this.db, CONFIG_LAST_RUN);
+  }
+  setLastRunTimestamp() {
+    setConfig(this.db, CONFIG_LAST_RUN, (/* @__PURE__ */ new Date()).toISOString());
+  }
+  getRuleStats() {
+    const row = this.db.prepare(`
+      SELECT
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
+        COALESCE(SUM(prevented), 0) AS total_prevented
+      FROM self_improve_rules
+    `).get();
+    return {
+      active: row?.active ?? 0,
+      archived: row?.archived ?? 0,
+      total_prevented: row?.total_prevented ?? 0
+    };
+  }
+  getEffectiveness(id) {
+    const rule = this.getRule(id);
+    if (!rule) return 0;
+    const total = rule.prevented + rule.occurrences;
+    if (total === 0) return 0;
+    return rule.prevented / total;
+  }
+  isAtCapacity() {
+    const stats = this.getRuleStats();
+    return stats.active >= MAX_ACTIVE_RULES;
+  }
+  getMaxActiveRules() {
+    return MAX_ACTIVE_RULES;
+  }
+  escalateRule(id) {
+    const rule = this.getRule(id);
+    if (!rule || rule.enforcement === "HARD") return false;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET enforcement = ?, escalated_at = ? WHERE id = ?"
+    ).run("HARD", now, id);
+    const fullPath = path2.join(this.projectRoot, rule.rule_path);
+    if (fs2.existsSync(fullPath)) {
+      let content = fs2.readFileSync(fullPath, "utf-8");
+      content = content.replace(/Enforcement:\s*SOFT/g, "Enforcement: HARD");
+      fs2.writeFileSync(fullPath, content, "utf-8");
+    }
+    return true;
+  }
+  checkEscalation() {
+    const rows = this.db.prepare(`
+      SELECT id, title, rule_path, created_at, occurrences, prevented,
+        CAST((julianday('now') - julianday(created_at)) AS INTEGER) AS days_since_creation
+      FROM self_improve_rules
+      WHERE status = 'active'
+        AND enforcement = 'SOFT'
+        AND occurrences >= 3
+        AND prevented = 0
+        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= 30
+      ORDER BY occurrences DESC
+    `).all();
+    return rows;
+  }
+  autoArchiveStale(days = 60) {
+    const rows = this.db.prepare(`
+      SELECT id, rule_path FROM self_improve_rules
+      WHERE status = 'active'
+        AND occurrences = 0
+        AND prevented = 0
+        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= ?
+    `).all(days);
+    const archivedIds = [];
+    for (const row of rows) {
+      if (this.archiveRule(row.id)) {
+        archivedIds.push(row.id);
+      }
+    }
+    return archivedIds;
+  }
+  recordViolation(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET occurrences = occurrences + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
+  recordPrevention(id) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    this.db.prepare(
+      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
+    ).run(now, id);
+  }
+  buildProceduralTemplate(title, content) {
+    return `# ${title}
+
+## When to Use
+${content}
+
+## Procedure
+(\uC808\uCC28\uB97C \uAE30\uC220\uD558\uC138\uC694)
+
+## Pitfalls
+(\uC54C\uB824\uC9C4 \uD568\uC815\uC744 \uAE30\uC220\uD558\uC138\uC694)
+`;
+  }
+  getRulesDir() {
+    return this.rulesDir;
+  }
+  getPendingDir() {
+    return this.pendingDir;
+  }
+  getProcessedDir() {
+    return this.processedDir;
+  }
+  // --- Dream: auto-cleanup of duplicate/conflicting rules ---
+  dream() {
+    const ruleFiles = this.listRuleFiles();
+    if (ruleFiles.length === 0) {
+      return new DreamResult([], [], ruleFiles.map((r) => r.filename), this);
+    }
+    const merged = [];
+    const archived = [];
+    const kept = [];
+    const processed = /* @__PURE__ */ new Set();
+    for (let i = 0; i < ruleFiles.length; i++) {
+      if (processed.has(i)) continue;
+      let foundDuplicate = false;
+      for (let j = i + 1; j < ruleFiles.length; j++) {
+        if (processed.has(j)) continue;
+        const overlap = this.keywordOverlap(ruleFiles[i].keywords, ruleFiles[j].keywords);
+        if (overlap >= 0.5) {
+          merged.push({
+            source: [ruleFiles[i].filename, ruleFiles[j].filename],
+            mergedContent: this.mergeContents(ruleFiles[i], ruleFiles[j]),
+            mergedFilename: ruleFiles[i].filename
+          });
+          archived.push(ruleFiles[j].filename);
+          processed.add(j);
+          foundDuplicate = true;
+          break;
+        }
+      }
+      if (!foundDuplicate) {
+        kept.push(ruleFiles[i].filename);
+      } else {
+        processed.add(i);
+      }
+    }
+    for (let i = 0; i < ruleFiles.length; i++) {
+      if (!processed.has(i) && !kept.includes(ruleFiles[i].filename)) {
+        kept.push(ruleFiles[i].filename);
+      }
+    }
+    return new DreamResult(merged, archived, kept, this);
+  }
+  listRuleFiles() {
+    if (!fs2.existsSync(this.rulesDir)) return [];
+    const files = fs2.readdirSync(this.rulesDir).filter((f) => f.endsWith(".md"));
+    const results = [];
+    for (const file of files) {
+      const fullPath = path2.join(this.rulesDir, file);
+      try {
+        const content = fs2.readFileSync(fullPath, "utf-8");
+        const keywords = this.extractKeywords(content);
+        results.push({ filename: file, content, keywords, fullPath });
+      } catch {
+        console.warn(`[dream] Skipping unreadable rule file: ${file}`);
+      }
+    }
+    return results;
+  }
+  extractKeywords(content) {
+    const words = content.toLowerCase().replace(/[^a-z0-9가-힣\s-]/g, " ").split(/\s+/).filter((w) => w.length > 2);
+    return new Set(words);
+  }
+  keywordOverlap(a, b) {
+    if (a.size === 0 || b.size === 0) return 0;
+    let overlap = 0;
+    for (const word of a) {
+      if (b.has(word)) overlap++;
+    }
+    const minSize = Math.min(a.size, b.size);
+    return overlap / minSize;
+  }
+  mergeContents(a, b) {
+    return `${a.content}
+
+---
+## Merged from: ${b.filename}
+${b.content}`;
+  }
+  /** Move a file to archive directory (used by DreamResult.apply) */
+  moveToArchive(filename) {
+    const srcPath = path2.join(this.rulesDir, filename);
+    const destPath = path2.join(this.archiveDir, filename);
+    if (fs2.existsSync(srcPath)) {
+      fs2.renameSync(srcPath, destPath);
+    }
+  }
+  /** Overwrite a rule file's content (used by DreamResult.apply) */
+  writeRuleFile(filename, content) {
+    const fullPath = path2.join(this.rulesDir, filename);
+    fs2.writeFileSync(fullPath, content, "utf-8");
+  }
+};
+var DreamResult = class {
+  merged;
+  archived;
+  kept;
+  engine;
+  constructor(merged, archived, kept, engine) {
+    this.merged = merged;
+    this.archived = archived;
+    this.kept = kept;
+    this.engine = engine;
+  }
+  get isEmpty() {
+    return this.merged.length === 0 && this.archived.length === 0;
+  }
+  apply() {
+    for (const filename of this.archived) {
+      this.engine.moveToArchive(filename);
+    }
+    for (const pair of this.merged) {
+      this.engine.writeRuleFile(pair.mergedFilename, pair.mergedContent);
+    }
+  }
+  /** Generate a human-readable diff summary for display */
+  formatDiff() {
+    if (this.isEmpty) return "";
+    const lines = [];
+    lines.push(`## Dream \uACB0\uACFC: ${this.merged.length}\uAC74 \uBCD1\uD569, ${this.archived.length}\uAC74 \uC544\uCE74\uC774\uBE0C
+`);
+    for (const pair of this.merged) {
+      lines.push(`### \uBCD1\uD569: ${pair.source[0]} + ${pair.source[1]}`);
+      lines.push(`\u2192 ${pair.mergedFilename} (\uD1B5\uD569\uBCF8)`);
+      lines.push(`  - ${pair.source[1]} \u2192 archive/ \uC774\uB3D9`);
+      lines.push("");
+    }
+    if (this.kept.length > 0) {
+      lines.push(`### \uC720\uC9C0: ${this.kept.length}\uAC1C \uADDC\uCE59 \uBCC0\uACBD \uC5C6\uC74C`);
+    }
+    return lines.join("\n");
+  }
+};
+
+// src/core/engine/artifact-cleanup.ts
+var PRESERVED_DIRS = /* @__PURE__ */ new Set(["archive", "hooks", "error-kb", "plans", "qa-reports", "qa-results", "self-improve"]);
+var ArtifactCleanup = class {
+  db;
+  projectRoot;
+  claudeDir;
+  constructor(db, projectRoot) {
+    this.db = db;
+    this.projectRoot = projectRoot;
+    this.claudeDir = join5(projectRoot, ".claude");
+  }
+  async run(options) {
+    const retentionDays = options?.retentionDays ?? 7;
+    const dryRun = options?.dryRun ?? false;
+    const trigger = options?.trigger ?? "manual";
+    const result = {
+      handoffsRemoved: 0,
+      reportsRemoved: 0,
+      rulesArchived: 0,
+      rulesConflicts: 0,
+      emptyDirsRemoved: 0,
+      details: []
+    };
+    if (!existsSync6(this.claudeDir)) {
+      result.details.push(".claude/ directory not found, skipping");
+      return result;
+    }
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    result.handoffsRemoved = this.cleanHandoffs(retentionDays, dryRun, result.details);
+    result.reportsRemoved = this.cleanReports(retentionDays, dryRun, result.details);
+    const ruleResult = this.runRuleCleanup(result.details);
+    result.rulesArchived = ruleResult.archived;
+    result.rulesConflicts = ruleResult.conflicts;
+    result.emptyDirsRemoved = this.cleanEmptyDirs(dryRun, result.details);
+    this.recordCleanup(generateId(), trigger, startedAt, dryRun, result);
+    return result;
+  }
+  cleanHandoffs(retentionDays, dryRun, details) {
+    const handoffDir = join5(this.claudeDir, "handoff");
+    if (!existsSync6(handoffDir)) return 0;
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1e3;
+    const activeTaskIds = this.getActiveHandoffTaskIds();
+    let removed = 0;
+    for (const entry of readdirSync5(handoffDir)) {
+      const fullPath = join5(handoffDir, entry);
+      try {
+        const stat = statSync2(fullPath);
+        if (!stat.isDirectory()) continue;
+        const isActive = activeTaskIds.has(entry);
+        const contents = readdirSync5(fullPath);
+        if (contents.length === 0 && !isActive) {
+          if (!dryRun) rmSync2(fullPath, { recursive: true });
+          details.push(`${dryRun ? "[dry-run] " : ""}removed empty handoff: ${entry}`);
+          removed++;
+          continue;
+        }
+        if (stat.mtimeMs < cutoff && !isActive) {
+          if (!dryRun) rmSync2(fullPath, { recursive: true });
+          details.push(`${dryRun ? "[dry-run] " : ""}removed expired handoff: ${entry}`);
+          removed++;
+        }
+      } catch (err) {
+        details.push(`error cleaning handoff ${entry}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return removed;
+  }
+  cleanReports(retentionDays, dryRun, details) {
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1e3;
+    const reportDirs = ["session-reports", "reports"];
+    let removed = 0;
+    for (const dirName of reportDirs) {
+      const dir = join5(this.claudeDir, dirName);
+      if (!existsSync6(dir)) continue;
+      for (const entry of readdirSync5(dir)) {
+        const fullPath = join5(dir, entry);
+        try {
+          const stat = statSync2(fullPath);
+          if (!stat.isFile()) continue;
+          if (stat.mtimeMs < cutoff) {
+            if (!dryRun) rmSync2(fullPath);
+            details.push(`${dryRun ? "[dry-run] " : ""}removed ${dirName}/${entry}`);
+            removed++;
+          }
+        } catch (err) {
+          details.push(`error cleaning ${dirName}/${entry}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+    return removed;
+  }
+  runRuleCleanup(details) {
+    try {
+      const engine = new SelfImproveEngine(this.db, this.projectRoot);
+      const cleanup = new RuleCleanup(this.db, engine);
+      const report = cleanup.detectDuplicates();
+      const conflicts = cleanup.detectConflicts();
+      const staleArchived = engine.autoArchiveStale();
+      details.push(`rule cleanup: ${report.length} duplicate groups, ${conflicts.length} conflicts, ${staleArchived.length} stale archived`);
+      return { archived: staleArchived.length, conflicts: conflicts.length };
+    } catch (err) {
+      details.push(`rule cleanup error: ${err instanceof Error ? err.message : String(err)}`);
+      return { archived: 0, conflicts: 0 };
+    }
+  }
+  cleanEmptyDirs(dryRun, details) {
+    let removed = 0;
+    const dirsToCheck = ["worktrees"];
+    for (const dirName of dirsToCheck) {
+      const dir = join5(this.claudeDir, dirName);
+      if (!existsSync6(dir)) continue;
+      for (const entry of readdirSync5(dir)) {
+        const fullPath = join5(dir, entry);
+        try {
+          const stat = statSync2(fullPath);
+          if (!stat.isDirectory()) continue;
+          if (PRESERVED_DIRS.has(entry)) continue;
+          const contents = readdirSync5(fullPath);
+          if (contents.length === 0) {
+            if (!dryRun) rmSync2(fullPath, { recursive: true });
+            details.push(`${dryRun ? "[dry-run] " : ""}removed empty dir: ${dirName}/${entry}`);
+            removed++;
+          }
+        } catch (err) {
+          details.push(`error cleaning ${dirName}/${entry}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+    return removed;
+  }
+  getActiveHandoffTaskIds() {
+    try {
+      const rows = this.db.prepare(`
+        SELECT DISTINCT ah.task_id
+        FROM agent_handoffs ah
+        JOIN plans p ON ah.plan_id = p.id
+        WHERE p.status IN ('draft', 'active', 'approved')
+      `).all();
+      return new Set(rows.map((r) => r.task_id));
+    } catch {
+      return /* @__PURE__ */ new Set();
+    }
+  }
+  recordCleanup(id, trigger, startedAt, dryRun, result) {
+    try {
+      const summary = [
+        `handoffs: ${result.handoffsRemoved}`,
+        `reports: ${result.reportsRemoved}`,
+        `rules archived: ${result.rulesArchived}`,
+        `conflicts: ${result.rulesConflicts}`,
+        `empty dirs: ${result.emptyDirsRemoved}`
+      ].join(", ");
+      this.db.prepare(`
+        INSERT INTO artifact_cleanups (id, trigger, started_at, completed_at, handoffs_removed, reports_removed, rules_archived, rules_conflicts, empty_dirs_removed, dry_run, summary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        trigger,
+        startedAt,
+        (/* @__PURE__ */ new Date()).toISOString(),
+        result.handoffsRemoved,
+        result.reportsRemoved,
+        result.rulesArchived,
+        result.rulesConflicts,
+        result.emptyDirsRemoved,
+        dryRun ? 1 : 0,
+        summary
+      );
+    } catch {
+    }
+  }
+};
+
 // src/cli/commands/governance.ts
 function manageHook(action, hookId, toolName, scriptPath) {
-  const settingsDir = join4(process.cwd(), ".claude");
-  const settingsPath = join4(settingsDir, "settings.local.json");
+  const settingsDir = join6(process.cwd(), ".claude");
+  const settingsPath = join6(settingsDir, "settings.local.json");
   let settings = {};
-  if (existsSync5(settingsPath)) {
+  if (existsSync7(settingsPath)) {
     try {
-      settings = JSON.parse(readFileSync5(settingsPath, "utf8"));
+      settings = JSON.parse(readFileSync6(settingsPath, "utf8"));
     } catch {
       settings = {};
     }
@@ -5280,7 +6021,7 @@ function manageHook(action, hookId, toolName, scriptPath) {
       matcher: toolName,
       command: scriptPath
     });
-    if (existsSync5(scriptPath)) {
+    if (existsSync7(scriptPath)) {
       try {
         chmodSync(scriptPath, 493);
       } catch {
@@ -5289,14 +6030,14 @@ function manageHook(action, hookId, toolName, scriptPath) {
   } else {
     hooks.PreToolUse = preToolUse.filter((h) => h.id !== hookId);
   }
-  writeFileSync4(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  writeFileSync5(settingsPath, JSON.stringify(settings, null, 2) + "\n");
 }
 function registerGovernanceCommands(program2, _getModels) {
   const careful = program2.command("careful").description("Manage careful mode (destructive command guard)");
   careful.command("on").description("Enable careful mode").action(() => {
     const db = initDb();
     setConfig(db, "careful.enabled", "true");
-    const scriptPath = join4(process.cwd(), "bin", "check-careful.sh");
+    const scriptPath = join6(process.cwd(), "bin", "check-careful.sh");
     manageHook("add", "vs-careful", "Bash", scriptPath);
     output({ careful: true }, "\u26A0\uFE0F careful \uBAA8\uB4DC \uD65C\uC131\uD654\uB428 \u2014 \uD30C\uAD34\uC801 \uBA85\uB839\uC774 \uCC28\uB2E8\uB429\uB2C8\uB2E4.");
   });
@@ -5316,7 +6057,7 @@ function registerGovernanceCommands(program2, _getModels) {
     const db = initDb();
     const absPath = resolve2(inputPath);
     setConfig(db, "freeze.path", absPath);
-    const scriptPath = join4(process.cwd(), "bin", "check-freeze.sh");
+    const scriptPath = join6(process.cwd(), "bin", "check-freeze.sh");
     manageHook("add", "vs-freeze-edit", "Edit", scriptPath);
     manageHook("add", "vs-freeze-write", "Write", scriptPath);
     output({ freeze: absPath }, `\u{1F512} freeze \uD65C\uC131\uD654\uB428 \u2014 \uD3B8\uC9D1 \uBC94\uC704: ${absPath}`);
@@ -5342,8 +6083,8 @@ function registerGovernanceCommands(program2, _getModels) {
     const absPath = resolve2(inputPath);
     setConfig(db, "careful.enabled", "true");
     setConfig(db, "freeze.path", absPath);
-    const carefulScript = join4(process.cwd(), "bin", "check-careful.sh");
-    const freezeScript = join4(process.cwd(), "bin", "check-freeze.sh");
+    const carefulScript = join6(process.cwd(), "bin", "check-careful.sh");
+    const freezeScript = join6(process.cwd(), "bin", "check-freeze.sh");
     manageHook("add", "vs-careful", "Bash", carefulScript);
     manageHook("add", "vs-freeze-edit", "Edit", freezeScript);
     manageHook("add", "vs-freeze-write", "Write", freezeScript);
@@ -5436,7 +6177,7 @@ function registerGovernanceCommands(program2, _getModels) {
   });
   const skillDeferred = program2.command("skill-deferred").description("Manage deferred skill loading (promote/demote)");
   skillDeferred.command("list").description("List skills with invocation: deferred").action(() => {
-    const skillsDir = join4(process.cwd(), "skills");
+    const skillsDir = join6(process.cwd(), "skills");
     const skills = listDeferredSkills(skillsDir);
     output(
       skills,
@@ -5445,14 +6186,14 @@ function registerGovernanceCommands(program2, _getModels) {
   });
   skillDeferred.command("promote").argument("<skill>", "Skill name to promote (deferred \u2192 user)").description("Promote a deferred skill to user invocation").action((skillName) => {
     withErrorHandler(() => {
-      const skillsDir = join4(process.cwd(), "skills");
+      const skillsDir = join6(process.cwd(), "skills");
       const result = promoteSkill(skillsDir, skillName);
       output(result, `${result.name}: deferred \u2192 user \uC804\uD658 \uC644\uB8CC`);
     });
   });
   skillDeferred.command("demote").argument("<skill>", "Skill name to demote (user \u2192 deferred)").description("Demote a user skill to deferred invocation").action((skillName) => {
     withErrorHandler(() => {
-      const skillsDir = join4(process.cwd(), "skills");
+      const skillsDir = join6(process.cwd(), "skills");
       const result = demoteSkill(skillsDir, skillName);
       output(result, `${result.name}: ${result.previous} \u2192 deferred \uC804\uD658 \uC644\uB8CC`);
     });
@@ -5496,11 +6237,32 @@ function registerGovernanceCommands(program2, _getModels) {
       output(rev, `Revision ${rev.id} updated to: ${rev.status}`);
     });
   });
+  const artifact = program2.command("artifact").description("Manage .claude/ artifacts");
+  artifact.command("cleanup").description("Clean up expired artifacts (handoffs, reports, rules)").option("--retention-days <days>", "Retention period in days", "7").option("--dry-run", "Show what would be removed without deleting").action(async (opts) => {
+    try {
+      const db = initDb();
+      const cleanup = new ArtifactCleanup(db, process.cwd());
+      const result = await cleanup.run({
+        retentionDays: parseInt(opts.retentionDays, 10),
+        dryRun: opts.dryRun ?? false,
+        trigger: "manual"
+      });
+      const total = result.handoffsRemoved + result.reportsRemoved + result.emptyDirsRemoved;
+      output(result, [
+        opts.dryRun ? "[DRY RUN] " : "",
+        `Artifact cleanup: ${total} items removed`,
+        `  handoffs: ${result.handoffsRemoved}, reports: ${result.reportsRemoved}, empty dirs: ${result.emptyDirsRemoved}`,
+        `  rules \u2014 archived: ${result.rulesArchived}, conflicts: ${result.rulesConflicts}`
+      ].join("\n"));
+    } catch (err) {
+      outputError(`Artifact cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
 }
 
 // src/cli/importers.ts
 import { execFileSync } from "child_process";
-import { readFileSync as readFileSync6, existsSync as existsSync6 } from "fs";
+import { readFileSync as readFileSync7, existsSync as existsSync8 } from "fs";
 var REPO_FORMAT_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/;
 function validateRepoFormat(repo) {
   const trimmed = repo.trim();
@@ -5586,13 +6348,13 @@ function inferCategoryFromLabels(labels) {
 }
 function importFromFile(filepath) {
   const errors = [];
-  if (!existsSync6(filepath)) {
+  if (!existsSync8(filepath)) {
     errors.push(`\uD30C\uC77C\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${filepath}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
   }
   let content;
   try {
-    content = readFileSync6(filepath, "utf-8");
+    content = readFileSync7(filepath, "utf-8");
   } catch (e) {
     errors.push(`\uD30C\uC77C \uC77D\uAE30 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`);
     return { items: [], source_prefix: `file:${filepath}`, errors };
@@ -6191,373 +6953,6 @@ function formatMergeReportList(reports) {
   });
   return [header, sep2, ...rows].join("\n");
 }
-
-// src/core/engine/self-improve.ts
-import * as fs2 from "fs";
-import * as path2 from "path";
-var RULES_DIR = ".claude/rules";
-var ARCHIVE_DIR = ".claude/rules/archive";
-var PENDING_DIR = ".claude/self-improve/pending";
-var PROCESSED_DIR = ".claude/self-improve/processed";
-var CONFIG_LAST_RUN = "self_improve_last_run";
-var MAX_ACTIVE_RULES = 30;
-var SelfImproveEngine = class {
-  db;
-  projectRoot;
-  rulesDir;
-  archiveDir;
-  pendingDir;
-  processedDir;
-  constructor(db, projectRoot) {
-    this.db = db;
-    this.projectRoot = projectRoot;
-    this.rulesDir = path2.join(projectRoot, RULES_DIR);
-    this.archiveDir = path2.join(projectRoot, ARCHIVE_DIR);
-    this.pendingDir = path2.join(projectRoot, PENDING_DIR);
-    this.processedDir = path2.join(projectRoot, PROCESSED_DIR);
-    this.ensureDirectories();
-  }
-  ensureDirectories() {
-    fs2.mkdirSync(this.rulesDir, { recursive: true });
-    fs2.mkdirSync(this.archiveDir, { recursive: true });
-    fs2.mkdirSync(this.pendingDir, { recursive: true });
-    fs2.mkdirSync(this.processedDir, { recursive: true });
-  }
-  createRule(newRule) {
-    const id = generateId();
-    const slug = newRule.title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
-    const filename = `${newRule.category.toLowerCase()}-${slug}.md`;
-    const rulePath = path2.join(RULES_DIR, filename);
-    const fullPath = path2.join(this.projectRoot, rulePath);
-    const enforcement = newRule.enforcement ?? "SOFT";
-    const ruleType = newRule.rule_type ?? "preventive";
-    const content = ruleType === "procedural" ? this.buildProceduralTemplate(newRule.title, newRule.ruleContent) : newRule.ruleContent;
-    fs2.writeFileSync(fullPath, content, "utf-8");
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(`
-      INSERT INTO self_improve_rules (id, error_kb_id, title, category, rule_type, rule_path, occurrences, prevented, status, enforcement, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?)
-    `).run(id, newRule.error_kb_id ?? null, newRule.title, newRule.category, ruleType, rulePath, enforcement, now);
-    return {
-      id,
-      error_kb_id: newRule.error_kb_id ?? null,
-      title: newRule.title,
-      category: newRule.category,
-      rule_type: ruleType,
-      rule_path: rulePath,
-      occurrences: 0,
-      prevented: 0,
-      status: "active",
-      enforcement,
-      escalated_at: null,
-      created_at: now,
-      last_triggered_at: null
-    };
-  }
-  listRules(status, type) {
-    const conditions = [];
-    const params = [];
-    if (status) {
-      conditions.push("status = ?");
-      params.push(status);
-    }
-    if (type) {
-      conditions.push("rule_type = ?");
-      params.push(type);
-    }
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const order = status ? "ORDER BY created_at DESC" : "ORDER BY status ASC, created_at DESC";
-    return this.db.prepare(`SELECT * FROM self_improve_rules ${where} ${order}`).all(...params);
-  }
-  getRule(id) {
-    return this.db.prepare(
-      "SELECT * FROM self_improve_rules WHERE id = ?"
-    ).get(id) ?? null;
-  }
-  archiveRule(id) {
-    const rule = this.getRule(id);
-    if (!rule || rule.status === "archived") return false;
-    const srcPath = path2.join(this.projectRoot, rule.rule_path);
-    const destPath = path2.join(this.archiveDir, path2.basename(rule.rule_path));
-    if (fs2.existsSync(srcPath)) {
-      fs2.renameSync(srcPath, destPath);
-    }
-    const newRulePath = path2.join(ARCHIVE_DIR, path2.basename(rule.rule_path));
-    this.db.prepare(
-      "UPDATE self_improve_rules SET status = ?, rule_path = ? WHERE id = ?"
-    ).run("archived", newRulePath, id);
-    return true;
-  }
-  incrementPrevented(id) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(
-      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
-    ).run(now, id);
-  }
-  updateOccurrences(id, occurrences) {
-    this.db.prepare(
-      "UPDATE self_improve_rules SET occurrences = ? WHERE id = ?"
-    ).run(occurrences, id);
-  }
-  getPendingCount() {
-    if (!fs2.existsSync(this.pendingDir)) return 0;
-    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).length;
-  }
-  listPending() {
-    if (!fs2.existsSync(this.pendingDir)) return [];
-    return fs2.readdirSync(this.pendingDir).filter((f) => f.endsWith(".json")).map((f) => path2.join(this.pendingDir, f)).sort();
-  }
-  movePendingToProcessed(pendingPath) {
-    const filename = path2.basename(pendingPath);
-    const destPath = path2.join(this.processedDir, filename);
-    if (fs2.existsSync(pendingPath)) {
-      fs2.renameSync(pendingPath, destPath);
-    }
-  }
-  getLastRunTimestamp() {
-    return getConfig(this.db, CONFIG_LAST_RUN);
-  }
-  setLastRunTimestamp() {
-    setConfig(this.db, CONFIG_LAST_RUN, (/* @__PURE__ */ new Date()).toISOString());
-  }
-  getRuleStats() {
-    const row = this.db.prepare(`
-      SELECT
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
-        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived,
-        COALESCE(SUM(prevented), 0) AS total_prevented
-      FROM self_improve_rules
-    `).get();
-    return {
-      active: row?.active ?? 0,
-      archived: row?.archived ?? 0,
-      total_prevented: row?.total_prevented ?? 0
-    };
-  }
-  getEffectiveness(id) {
-    const rule = this.getRule(id);
-    if (!rule) return 0;
-    const total = rule.prevented + rule.occurrences;
-    if (total === 0) return 0;
-    return rule.prevented / total;
-  }
-  isAtCapacity() {
-    const stats = this.getRuleStats();
-    return stats.active >= MAX_ACTIVE_RULES;
-  }
-  getMaxActiveRules() {
-    return MAX_ACTIVE_RULES;
-  }
-  escalateRule(id) {
-    const rule = this.getRule(id);
-    if (!rule || rule.enforcement === "HARD") return false;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(
-      "UPDATE self_improve_rules SET enforcement = ?, escalated_at = ? WHERE id = ?"
-    ).run("HARD", now, id);
-    const fullPath = path2.join(this.projectRoot, rule.rule_path);
-    if (fs2.existsSync(fullPath)) {
-      let content = fs2.readFileSync(fullPath, "utf-8");
-      content = content.replace(/Enforcement:\s*SOFT/g, "Enforcement: HARD");
-      fs2.writeFileSync(fullPath, content, "utf-8");
-    }
-    return true;
-  }
-  checkEscalation() {
-    const rows = this.db.prepare(`
-      SELECT id, title, rule_path, created_at, occurrences, prevented,
-        CAST((julianday('now') - julianday(created_at)) AS INTEGER) AS days_since_creation
-      FROM self_improve_rules
-      WHERE status = 'active'
-        AND enforcement = 'SOFT'
-        AND occurrences >= 3
-        AND prevented = 0
-        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= 30
-      ORDER BY occurrences DESC
-    `).all();
-    return rows;
-  }
-  autoArchiveStale(days = 60) {
-    const rows = this.db.prepare(`
-      SELECT id, rule_path FROM self_improve_rules
-      WHERE status = 'active'
-        AND occurrences = 0
-        AND prevented = 0
-        AND CAST((julianday('now') - julianday(created_at)) AS INTEGER) >= ?
-    `).all(days);
-    const archivedIds = [];
-    for (const row of rows) {
-      if (this.archiveRule(row.id)) {
-        archivedIds.push(row.id);
-      }
-    }
-    return archivedIds;
-  }
-  recordViolation(id) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(
-      "UPDATE self_improve_rules SET occurrences = occurrences + 1, last_triggered_at = ? WHERE id = ?"
-    ).run(now, id);
-  }
-  recordPrevention(id) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    this.db.prepare(
-      "UPDATE self_improve_rules SET prevented = prevented + 1, last_triggered_at = ? WHERE id = ?"
-    ).run(now, id);
-  }
-  buildProceduralTemplate(title, content) {
-    return `# ${title}
-
-## When to Use
-${content}
-
-## Procedure
-(\uC808\uCC28\uB97C \uAE30\uC220\uD558\uC138\uC694)
-
-## Pitfalls
-(\uC54C\uB824\uC9C4 \uD568\uC815\uC744 \uAE30\uC220\uD558\uC138\uC694)
-`;
-  }
-  getRulesDir() {
-    return this.rulesDir;
-  }
-  getPendingDir() {
-    return this.pendingDir;
-  }
-  getProcessedDir() {
-    return this.processedDir;
-  }
-  // --- Dream: auto-cleanup of duplicate/conflicting rules ---
-  dream() {
-    const ruleFiles = this.listRuleFiles();
-    if (ruleFiles.length === 0) {
-      return new DreamResult([], [], ruleFiles.map((r) => r.filename), this);
-    }
-    const merged = [];
-    const archived = [];
-    const kept = [];
-    const processed = /* @__PURE__ */ new Set();
-    for (let i = 0; i < ruleFiles.length; i++) {
-      if (processed.has(i)) continue;
-      let foundDuplicate = false;
-      for (let j = i + 1; j < ruleFiles.length; j++) {
-        if (processed.has(j)) continue;
-        const overlap = this.keywordOverlap(ruleFiles[i].keywords, ruleFiles[j].keywords);
-        if (overlap >= 0.5) {
-          merged.push({
-            source: [ruleFiles[i].filename, ruleFiles[j].filename],
-            mergedContent: this.mergeContents(ruleFiles[i], ruleFiles[j]),
-            mergedFilename: ruleFiles[i].filename
-          });
-          archived.push(ruleFiles[j].filename);
-          processed.add(j);
-          foundDuplicate = true;
-          break;
-        }
-      }
-      if (!foundDuplicate) {
-        kept.push(ruleFiles[i].filename);
-      } else {
-        processed.add(i);
-      }
-    }
-    for (let i = 0; i < ruleFiles.length; i++) {
-      if (!processed.has(i) && !kept.includes(ruleFiles[i].filename)) {
-        kept.push(ruleFiles[i].filename);
-      }
-    }
-    return new DreamResult(merged, archived, kept, this);
-  }
-  listRuleFiles() {
-    if (!fs2.existsSync(this.rulesDir)) return [];
-    const files = fs2.readdirSync(this.rulesDir).filter((f) => f.endsWith(".md"));
-    const results = [];
-    for (const file of files) {
-      const fullPath = path2.join(this.rulesDir, file);
-      try {
-        const content = fs2.readFileSync(fullPath, "utf-8");
-        const keywords = this.extractKeywords(content);
-        results.push({ filename: file, content, keywords, fullPath });
-      } catch {
-        console.warn(`[dream] Skipping unreadable rule file: ${file}`);
-      }
-    }
-    return results;
-  }
-  extractKeywords(content) {
-    const words = content.toLowerCase().replace(/[^a-z0-9가-힣\s-]/g, " ").split(/\s+/).filter((w) => w.length > 2);
-    return new Set(words);
-  }
-  keywordOverlap(a, b) {
-    if (a.size === 0 || b.size === 0) return 0;
-    let overlap = 0;
-    for (const word of a) {
-      if (b.has(word)) overlap++;
-    }
-    const minSize = Math.min(a.size, b.size);
-    return overlap / minSize;
-  }
-  mergeContents(a, b) {
-    return `${a.content}
-
----
-## Merged from: ${b.filename}
-${b.content}`;
-  }
-  /** Move a file to archive directory (used by DreamResult.apply) */
-  moveToArchive(filename) {
-    const srcPath = path2.join(this.rulesDir, filename);
-    const destPath = path2.join(this.archiveDir, filename);
-    if (fs2.existsSync(srcPath)) {
-      fs2.renameSync(srcPath, destPath);
-    }
-  }
-  /** Overwrite a rule file's content (used by DreamResult.apply) */
-  writeRuleFile(filename, content) {
-    const fullPath = path2.join(this.rulesDir, filename);
-    fs2.writeFileSync(fullPath, content, "utf-8");
-  }
-};
-var DreamResult = class {
-  merged;
-  archived;
-  kept;
-  engine;
-  constructor(merged, archived, kept, engine) {
-    this.merged = merged;
-    this.archived = archived;
-    this.kept = kept;
-    this.engine = engine;
-  }
-  get isEmpty() {
-    return this.merged.length === 0 && this.archived.length === 0;
-  }
-  apply() {
-    for (const filename of this.archived) {
-      this.engine.moveToArchive(filename);
-    }
-    for (const pair of this.merged) {
-      this.engine.writeRuleFile(pair.mergedFilename, pair.mergedContent);
-    }
-  }
-  /** Generate a human-readable diff summary for display */
-  formatDiff() {
-    if (this.isEmpty) return "";
-    const lines = [];
-    lines.push(`## Dream \uACB0\uACFC: ${this.merged.length}\uAC74 \uBCD1\uD569, ${this.archived.length}\uAC74 \uC544\uCE74\uC774\uBE0C
-`);
-    for (const pair of this.merged) {
-      lines.push(`### \uBCD1\uD569: ${pair.source[0]} + ${pair.source[1]}`);
-      lines.push(`\u2192 ${pair.mergedFilename} (\uD1B5\uD569\uBCF8)`);
-      lines.push(`  - ${pair.source[1]} \u2192 archive/ \uC774\uB3D9`);
-      lines.push("");
-    }
-    if (this.kept.length > 0) {
-      lines.push(`### \uC720\uC9C0: ${this.kept.length}\uAC1C \uADDC\uCE59 \uBCC0\uACBD \uC5C6\uC74C`);
-    }
-    return lines.join("\n");
-  }
-};
 
 // src/core/engine/qa-findings-analyzer.ts
 import * as fs3 from "fs";

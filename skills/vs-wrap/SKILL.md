@@ -239,6 +239,28 @@ last_triggered: {YYYY-MM-DD}
 - Follow-ups 상위 3개 (high 우선)
 - 리포트 파일 경로
 
+### Step 8a: 아티팩트 정리 (자동)
+
+세션 리포트 생성 후 .claude/ 아티팩트를 자동으로 정리합니다.
+
+Bash 도구로 실행하세요:
+```bash
+vs --json artifact cleanup 2>/dev/null
+```
+
+**결과 처리**:
+- 성공 시 (삭제 건수 > 0): 세션 요약에 정리 결과를 포함하세요:
+  ```
+  ### Artifact Cleanup
+  - handoffs: {N}, reports: {N}, empty dirs: {N}
+  - rules — archived: {N}, conflicts: {N}
+  ```
+- 성공 시 (삭제 건수 = 0): "Artifact cleanup: 정리 대상 없음" 한 줄만 표시
+- **실패 시**: 경고만 출력하고 vs-wrap을 정상 종료하세요:
+  ```
+  ⚠ Artifact cleanup 실패 — 다음에 다시 시도합니다.
+  ```
+
 ### Step 9: 백로그 연결 (선택적)
 
 followup-suggester 결과에서 `priority`가 `"high"`인 항목을 백로그 추가 대상으로 처리하세요.

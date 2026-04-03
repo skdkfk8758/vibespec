@@ -739,4 +739,48 @@ export function applyMigrations(db: Database.Database): void {
 
     db.pragma('user_version = 15');
   }
+
+  if (version < 16) {
+    // merge_reports: 6개 누락 컬럼 추가 (version 10 CREATE TABLE에 포함되었으나 기존 DB 미적용)
+    if (!hasColumn(db, 'merge_reports', 'pr_number')) {
+      db.exec('ALTER TABLE merge_reports ADD COLUMN pr_number INTEGER');
+    }
+    if (!hasColumn(db, 'merge_reports', 'pr_url')) {
+      db.exec('ALTER TABLE merge_reports ADD COLUMN pr_url TEXT');
+    }
+    if (!hasColumn(db, 'merge_reports', 'merge_method')) {
+      db.exec('ALTER TABLE merge_reports ADD COLUMN merge_method TEXT');
+    }
+    if (!hasColumn(db, 'merge_reports', 'closed_issues')) {
+      db.exec('ALTER TABLE merge_reports ADD COLUMN closed_issues TEXT');
+    }
+    if (!hasColumn(db, 'merge_reports', 'auto_resolved_files')) {
+      db.exec('ALTER TABLE merge_reports ADD COLUMN auto_resolved_files TEXT');
+    }
+    if (!hasColumn(db, 'merge_reports', 'conflict_levels')) {
+      db.exec('ALTER TABLE merge_reports ADD COLUMN conflict_levels TEXT');
+    }
+
+    db.pragma('user_version = 16');
+  }
+
+  if (version < 17) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS artifact_cleanups (
+        id                TEXT PRIMARY KEY,
+        trigger           TEXT NOT NULL,
+        started_at        TEXT NOT NULL,
+        completed_at      TEXT,
+        handoffs_removed  INTEGER DEFAULT 0,
+        reports_removed   INTEGER DEFAULT 0,
+        rules_archived    INTEGER DEFAULT 0,
+        rules_conflicts   INTEGER DEFAULT 0,
+        empty_dirs_removed INTEGER DEFAULT 0,
+        dry_run           INTEGER DEFAULT 0,
+        summary           TEXT
+      );
+    `);
+
+    db.pragma('user_version = 17');
+  }
 }
