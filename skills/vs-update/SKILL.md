@@ -1,7 +1,7 @@
 ---
 name: vs-update
 description: [Util] Update VibeSpec plugin to the latest version.
-invocation: user
+invocation: deferred
 ---
 
 # VibeSpec Update

@@ -1,7 +1,7 @@
 ---
 name: vs-design-init
 description: "[Design] Create project design system via interview."
-invocation: user
+invocation: deferred
 ---
 
 # Design System 초기화

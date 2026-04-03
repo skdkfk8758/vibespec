@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { getConfig, setConfig, deleteConfig } from '../../core/config.js';
 import { output, outputError, initDb, withErrorHandler } from '../shared.js';
 import type { Models } from '../shared.js';
+import { listDeferredSkills, promoteSkill, demoteSkill } from './skill-deferred-helpers.js';
 import { AgentHandoffModel } from '../../core/models/agent-handoff.js';
 import type { RevisionStatus, RevisionTriggerType } from '../../core/types.js';
 
@@ -254,6 +255,47 @@ export function registerGovernanceCommands(program: Command, _getModels: () => M
           { plan_id: planId, deleted: before },
           `Cleaned ${before} handoff record(s) for plan: ${planId}`,
         );
+      });
+    });
+
+  // ── skill-deferred ──
+  const skillDeferred = program.command('skill-deferred').description('Manage deferred skill loading (promote/demote)');
+
+  skillDeferred
+    .command('list')
+    .description('List skills with invocation: deferred')
+    .action(() => {
+      const skillsDir = join(process.cwd(), 'skills');
+      const skills = listDeferredSkills(skillsDir);
+      output(
+        skills,
+        skills.length === 0
+          ? 'deferred 스킬이 없습니다.'
+          : skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n'),
+      );
+    });
+
+  skillDeferred
+    .command('promote')
+    .argument('<skill>', 'Skill name to promote (deferred → user)')
+    .description('Promote a deferred skill to user invocation')
+    .action((skillName: string) => {
+      withErrorHandler(() => {
+        const skillsDir = join(process.cwd(), 'skills');
+        const result = promoteSkill(skillsDir, skillName);
+        output(result, `${result.name}: deferred → user 전환 완료`);
+      });
+    });
+
+  skillDeferred
+    .command('demote')
+    .argument('<skill>', 'Skill name to demote (user → deferred)')
+    .description('Demote a user skill to deferred invocation')
+    .action((skillName: string) => {
+      withErrorHandler(() => {
+        const skillsDir = join(process.cwd(), 'skills');
+        const result = demoteSkill(skillsDir, skillName);
+        output(result, `${result.name}: ${result.previous} → deferred 전환 완료`);
       });
     });
 

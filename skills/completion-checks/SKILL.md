@@ -17,6 +17,62 @@ type: domain
 
 ---
 
+## 0. Context Compaction (Running Summary 갱신)
+
+태스크 완료 시 플랜의 running_summary에 태스크 결과 요약을 append하여 이전 태스크의 상세 컨텍스트를 압축한다.
+
+### 트리거 조건
+
+태스크 상태가 **done, blocked, skipped** 중 하나로 전환될 때 실행한다.
+
+### 실행 절차
+
+1. 태스크 결과 정보를 수집하세요:
+   - `git diff --stat HEAD~1`으로 변경 파일 수와 목록 파악
+   - 테스트 결과 (verifier 리포트에서 추출 또는 직전 테스트 실행 결과)
+   - 태스크 spec에서 핵심 내용 1줄 요약
+
+2. 상태별 요약 포맷을 구성하세요:
+
+   **done 태스크:**
+   ```
+   ### T-{task_id}: {title} [done]
+   - 변경: {files_changed}개 파일 ({file_list_abbreviated})
+   - 테스트: {test_count}개 ({pass/fail})
+   - 핵심: {1줄 요약 — 무엇을 왜 어떻게}
+   ```
+
+   **blocked 태스크:**
+   ```
+   ### T-{task_id}: {title} [blocked]
+   - 사유: {block_reason}
+   ```
+
+   **skipped 태스크:**
+   ```
+   ### T-{task_id}: {title} [skipped]
+   - 사유: {skip_reason}
+   ```
+
+3. Bash 도구로 `vs --json plan summary <plan_id>`를 실행하여 현재 running_summary를 확인하세요.
+
+4. `PlanModel.appendRunningSummary(plan_id, taskSummary)`를 CLI로 호출하세요:
+   ```bash
+   vs --json plan update <plan_id> --running-summary-append "{위에서 구성한 요약}"
+   ```
+   CLI에서 append 옵션이 지원되지 않으면, 현재 running_summary를 읽고 수동으로 append한 뒤 전체를 업데이트하세요.
+
+5. running_summary 조회로 정상 기록 확인: `vs plan summary <plan_id>`
+
+### 실패 처리 (EC5)
+
+compaction 중 에러가 발생하면:
+- 에러를 stderr에 로그로 기록
+- 태스크 완료 흐름을 **중단하지 않고** 계속 진행
+- "⚠ Compaction 실패: {에러 요약}. running_summary가 갱신되지 않았습니다." 메시지만 표시
+
+---
+
 ## 1. QA Shadow 병렬 디스패치
 
 verifier 디스패치와 동시에, qa-shadow 에이전트도 병렬로 디스패치한다.

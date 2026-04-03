@@ -58,6 +58,41 @@ export class PlanModel extends BaseRepository<Plan> {
     return this.db.prepare(`SELECT * FROM plans ${where} ORDER BY created_at DESC`).all(...params) as Plan[];
   }
 
+  appendRunningSummary(id: string, taskSummary: string): Plan {
+    const plan = this.requireById(id);
+    let newSummary: string;
+
+    if (plan.running_summary === null || plan.running_summary === undefined) {
+      newSummary = taskSummary;
+    } else {
+      newSummary = plan.running_summary + '\n\n' + taskSummary;
+    }
+
+    // '### T-' 블록이 10개 초과 시 가장 오래된 블록을 첫 줄(### T-...)만 남기고 압축
+    const blocks = newSummary.split('\n\n');
+    const tBlockIndices: number[] = [];
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].trimStart().startsWith('### T-')) {
+        tBlockIndices.push(i);
+      }
+    }
+
+    if (tBlockIndices.length > 10) {
+      // 가장 오래된 T-블록의 내용을 첫 줄만 남기고 압축
+      const oldestIdx = tBlockIndices[0];
+      const firstLine = blocks[oldestIdx].split('\n')[0];
+      blocks[oldestIdx] = firstLine;
+      newSummary = blocks.join('\n\n');
+    }
+
+    this.db.prepare('UPDATE plans SET running_summary = ? WHERE id = ?').run(newSummary, id);
+    this.events?.record('plan', id, 'updated',
+      JSON.stringify({ running_summary: plan.running_summary }),
+      JSON.stringify({ running_summary: newSummary })
+    );
+    return this.requireById(id);
+  }
+
   updateRunningSummary(id: string, summary: string): Plan | null {
     try {
       const plan = this.requireById(id);

@@ -1,7 +1,7 @@
 ---
 name: vs-setup
 description: [Util] Initial VibeSpec setup and SDD onboarding.
-invocation: user
+invocation: deferred
 ---
 
 # VibeSpec Setup

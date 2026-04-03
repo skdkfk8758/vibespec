@@ -1,7 +1,7 @@
 ---
 name: vs-plan-design-review
 description: "[Design] Review UI/UX design decisions at plan stage."
-invocation: user
+invocation: deferred
 ---
 
 # Plan Design Review (플랜 디자인 리뷰)

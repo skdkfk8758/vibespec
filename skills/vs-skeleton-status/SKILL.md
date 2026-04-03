@@ -1,7 +1,7 @@
 ---
 name: vs-skeleton-status
 description: "[Core] 골격 문서 건강도 대시보드"
-invocation: user
+invocation: deferred
 ---
 
 # Skeleton Status (골격 문서 건강도)

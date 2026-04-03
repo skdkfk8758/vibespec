@@ -1,7 +1,7 @@
 ---
 name: vs-merge
 description: [Env] Squash-merge worktree branch into target.
-invocation: user
+invocation: deferred
 argument-hint: "[target-branch]"
 ---
 

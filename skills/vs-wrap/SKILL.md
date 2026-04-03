@@ -1,7 +1,7 @@
 ---
 name: vs-wrap
 description: "[Lifecycle] Session wrap-up with multi-agent learning pipeline. (세션 마무리)"
-invocation: user
+invocation: deferred
 argument-hint: "[commit message] [--quick]"
 ---
 

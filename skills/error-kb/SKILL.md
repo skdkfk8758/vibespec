@@ -1,7 +1,7 @@
 ---
 name: error-kb
 description: "[Learn] Search and record error patterns and solutions."
-invocation: user
+invocation: deferred
 ---
 
 # Error Knowledge Base

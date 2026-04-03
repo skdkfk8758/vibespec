@@ -1,7 +1,7 @@
 ---
 name: vs-design-review
 description: "[Design] Audit UI implementation against DESIGN.md."
-invocation: user
+invocation: deferred
 ---
 
 # Design Review (디자인 감사)

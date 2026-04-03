@@ -1,7 +1,7 @@
 ---
 name: self-improve
 description: "[Learn] Generate improvement rules from fix/error signals."
-invocation: user
+invocation: deferred
 ---
 
 # Self-Improve

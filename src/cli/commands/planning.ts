@@ -140,6 +140,21 @@ export function registerPlanningCommands(program: Command, getModels: () => Mode
       });
     });
 
+  plan
+    .command('summary')
+    .argument('<id>', 'Plan ID')
+    .description('Show the running summary of a plan')
+    .action((id: string) => {
+      const { planModel } = getModels();
+      const p = planModel.getById(id);
+      if (!p) return outputError(`Plan not found: ${id}`);
+      if (!p.running_summary) {
+        output({ plan_id: id, running_summary: null }, `No running summary for plan: ${id}`);
+        return;
+      }
+      output({ plan_id: id, running_summary: p.running_summary }, p.running_summary);
+    });
+
   // ── task ───────────────────────────────────────────────────────────────
 
   const task = program.command('task').description('Manage tasks');

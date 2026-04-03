@@ -333,6 +333,70 @@ describe('PlanModel with EventModel', () => {
   });
 });
 
+describe('PlanModel.appendRunningSummary', () => {
+  let db: Database.Database;
+  let model: PlanModel;
+
+  beforeEach(() => {
+    db = createMemoryDb();
+    initSchema(db);
+    model = new PlanModel(db);
+  });
+
+  it('AC02: running_summary null일 때 첫 항목 정상 설정', () => {
+    const plan = model.create('Test Plan');
+    expect(plan.running_summary).toBeNull();
+
+    const summary = '### T-abc123: 첫 번째 태스크 [done]\n- 변경: 1개 파일\n- 테스트: 2개 (pass)\n- 핵심: 초기 설정';
+    const updated = model.appendRunningSummary(plan.id, summary);
+
+    expect(updated.running_summary).toBe(summary);
+  });
+
+  it('AC01: appendRunningSummary가 기존 내용 보존하면서 append', () => {
+    const plan = model.create('Test Plan');
+    const first = '### T-aaa111: 첫 번째 태스크 [done]\n- 변경: 1개 파일\n- 테스트: 2개 (pass)\n- 핵심: 초기 설정';
+    model.appendRunningSummary(plan.id, first);
+
+    const second = '### T-bbb222: 두 번째 태스크 [done]\n- 변경: 2개 파일\n- 테스트: 3개 (pass)\n- 핵심: 기능 추가';
+    const updated = model.appendRunningSummary(plan.id, second);
+
+    expect(updated.running_summary).toBe(first + '\n\n' + second);
+  });
+
+  it('AC03: 10개 초과 시 오래된 블록 1줄 압축', () => {
+    const plan = model.create('Test Plan');
+
+    // 10개 블록을 append
+    for (let i = 1; i <= 10; i++) {
+      const summary = `### T-task${String(i).padStart(3, '0')}: 태스크 ${i} [done]\n- 변경: 1개 파일\n- 테스트: 2개 (pass)\n- 핵심: 요약 ${i}`;
+      model.appendRunningSummary(plan.id, summary);
+    }
+
+    const beforeAdd = model.requireById(plan.id);
+    const blocksBefore = (beforeAdd.running_summary ?? '').split('\n\n').filter(b => b.trim().startsWith('### T-'));
+    expect(blocksBefore).toHaveLength(10);
+
+    // 11번째 추가 → 가장 오래된 블록이 1줄로 압축됨 (총 블록 수는 11개, 단 오래된 블록은 1줄)
+    const eleventh = '### T-task011: 열한 번째 태스크 [done]\n- 변경: 1개 파일\n- 테스트: 2개 (pass)\n- 핵심: 11번째';
+    const updated = model.appendRunningSummary(plan.id, eleventh);
+
+    const blocks = (updated.running_summary ?? '').split('\n\n').filter(b => b.trim().startsWith('### T-'));
+    // 총 T-블록 수는 11개 (가장 오래된 것이 1줄로 압축됨)
+    expect(blocks).toHaveLength(11);
+
+    // 가장 오래된 블록(task001)은 첫 줄만 남아야 함
+    const oldestBlock = blocks[0];
+    expect(oldestBlock.startsWith('### T-task001:')).toBe(true);
+    expect(oldestBlock).not.toContain('\n'); // 1줄만
+
+    // 11번째 블록은 그대로 존재
+    const newestBlock = blocks[blocks.length - 1];
+    expect(newestBlock).toContain('### T-task011:');
+    expect(newestBlock).toContain('열한 번째 태스크');
+  });
+});
+
 describe('PlanModel transaction rollback', () => {
   let db: Database.Database;
   let events: EventModel;

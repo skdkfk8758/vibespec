@@ -1,7 +1,7 @@
 ---
 name: self-improve-review
 description: "[Learn] Review and clean up self-improve rules."
-invocation: user
+invocation: deferred
 ---
 
 # Self-Improve Review
