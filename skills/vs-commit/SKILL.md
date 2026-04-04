@@ -1,13 +1,33 @@
 ---
 name: vs-commit
-description: [Core] Commit changes with task tracing. (커밋)
+description: "[Core] Commit changes with task tracing. (커밋)"
 invocation: user
+argument-hint: "[all | <path>] [--interactive] [--skip-phase7] [--from-chain]"
 ---
 
 # VibeSpec Commit
 
 변경사항을 분석하여 논리 단위로 그룹화하고, 한글 커밋 메시지로 커밋합니다.
 현재 in_progress 태스크가 있으면 커밋 메시지에 태스크 ID를 자동 포함합니다.
+
+## Step 0: 모드 판정
+
+`$ARGUMENTS`에 다음 플래그가 있는지 확인하세요:
+- **`--interactive`**: 기존 모든 대화형 체크포인트 활성화
+- **`--skip-phase7`** 또는 **`--from-chain`**: 체이닝 호출 — Phase 7(플랜 완료 감지) 재질문을 스킵
+- **플래그 없음 → 자동 모드 (기본)**: 아래 기본값으로 자동 진행
+
+**자동 모드 기본값 테이블** (상세: `docs/UX_DEFAULTS.md`):
+| 체크포인트 | 자동 기본값 |
+|---|---|
+| Phase 0 simplify-loop | **건너뛰기** (질문 없음) |
+| Phase 4 커밋 계획 | **자동 승인** (계획은 표시, 사용자가 Ctrl+C로 중단 가능) |
+| staged 파일 처리 | **전체 통합 분석** |
+| Phase 7 플랜 검증 | **안내만** (체이닝 시 완전 스킵) |
+
+**안전장치 예외** (모드 무관하게 항상 경고/질문):
+- Secrets 감지 (.env/credentials/tokens 의심 파일) → 항상 경고
+- 백업 덮어쓰기 → 항상 경고
 
 ## Input Resolution
 
@@ -21,7 +41,9 @@ invocation: user
 
 커밋 전에 코드 품질을 높이기 위한 선택적 단계입니다.
 
-**체크포인트**: `AskUserQuestion`으로 코드 정리 여부를 확인하세요:
+**자동 모드 (기본)**: 이 Phase를 건너뛰고 Phase 1로 바로 진행합니다 (질문 없음).
+
+**interactive 모드**: `AskUserQuestion`으로 코드 정리 여부를 확인하세요:
 - question: "커밋 전에 코드 정리를 실행할까요?"
 - header: "코드 정리"
 - multiSelect: false
@@ -84,6 +106,9 @@ git diff --cached --stat
 진행할까요? (Y / 수정할 그룹 번호 / 재분류)
 ```
 
+**자동 모드 (기본)**: 계획을 표시한 후 **자동으로 Y(승인)** 처리하고 Phase 5로 진행합니다. 사용자는 계획이 부적절하면 Ctrl+C로 중단 가능.
+
+**interactive 모드**:
 - **Y** → Phase 5 진행
 - **번호** → 해당 그룹 수정 (파일 이동, 분할, 합치기)
 - **재분류** → Phase 3 재수행
@@ -155,6 +180,12 @@ EOF
 5. 매칭 항목이 없거나 open 백로그가 없으면 이 Phase를 조용히 건너뛰세요
 
 ### Phase 7: 플랜 완료 감지
+
+**체이닝 스킵 조건**: `$ARGUMENTS`에 `--skip-phase7` 또는 `--from-chain` 플래그가 있으면 이 Phase 전체를 **스킵**하세요 (상위 스킬이 이미 결정 완료).
+
+**자동 모드 (기본, 체이닝 아님)**: 모든 태스크 완료 감지 시 1줄 안내만 표시 — `"✓ 플랜 전체 완료. /vs-plan-verify로 검증하거나 그대로 종료 가능."` (질문 없음)
+
+**interactive 모드**: 아래 기존 로직 수행.
 
 커밋 완료 후, 활성 플랜이 있으면 남은 태스크를 확인하세요:
 - `vs --json task next <plan_id>`를 Bash 도구로 실행하세요
