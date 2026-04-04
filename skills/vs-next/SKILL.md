@@ -18,7 +18,7 @@ argument-hint: "[--interactive]"
 **자동 모드 기본값 테이블** (상세: `docs/UX_DEFAULTS.md`):
 | 체크포인트 | 자동 기본값 |
 |---|---|
-| stash 복원 | 현재 브랜치 1개 매칭 시 **자동 복원 + 알림** |
+| stash 복원 | **알림만** (자동 조작 금지 — 파일 소실 방지, CLAUDE.md 정책) |
 | 워크트리 확인 | **경고 안내만** (질문 없음) |
 | Complex 재추천 | trigger 미충족 시 스킵 |
 | 구현 방식 선택 | **TDD 자동 판별 테이블 적용** |
@@ -48,10 +48,14 @@ argument-hint: "[--interactive]"
      - stash 메시지에서 브랜치를 파싱하세요 (형식: `vibespec-session:{branch}:{worktree}:{plan}:{task}:{timestamp}`)
      - 현재 브랜치와 일치하는 stash만 복원 대상으로 표시하세요
 
-     **자동 모드 (기본)**:
-     - 매칭 stash가 **정확히 1개**이면: `git stash apply stash@{N}` 자동 실행 → 성공 시 `git stash drop` 정리 → "이전 stash 자동 복원됨" 알림
-     - 충돌 발생 시: 충돌 파일 표시하고 수동 해결 안내 (질문 없음)
-     - 매칭 stash가 **2개 이상**이면: interactive 모드로 전환 (선택 필요)
+     **자동 모드 (기본)**: **stash를 절대 자동 조작하지 않습니다** (파일 소실·덮어쓰기 위험). 매칭 stash가 있으면 1줄 알림만 표시 후 진행:
+     ```
+     ⚠ 이전 세션 stash 발견 ({N}개, 현재 브랜치 매칭 {M}개).
+       필요 시 수동 복원: git stash list && git stash apply stash@{n}
+     ```
+     이 알림 외에 `git stash apply`/`drop` 등의 조작을 자동 실행하지 마세요.
+
+     > **정책 근거** (CLAUDE.md): stash 자동화는 파일 소실 이력이 있어 금지. 복원도 working tree 덮어쓰기 위험이 있으므로 사용자 수동 조작만 허용합니다.
 
      **interactive 모드**: `AskUserQuestion`으로 복원 여부를 확인하세요:
        - question: "이전 세션의 미커밋 변경사항이 stash에 보존되어 있습니다. 어떻게 처리할까요?"
