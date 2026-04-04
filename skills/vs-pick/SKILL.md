@@ -1,12 +1,21 @@
 ---
 name: vs-pick
-description: [Core] Pick a specific task from the plan to start.
+description: "[Core] Pick a specific task from the plan to start."
 invocation: user
+argument-hint: "[--interactive]"
 ---
 
 # Pick Task
 
 플랜의 태스크 목록을 인터랙티브하게 보여주고, 사용자가 선택한 태스크로 작업을 시작합니다.
+
+## Step 0: 모드 판정
+
+`$ARGUMENTS`에 `--interactive` 플래그가 있는지 확인하세요.
+- **자동 모드 (기본)**: Complex 재추천은 안내만 표시 (질문 없음)
+- **interactive 모드**: 기존 전체 체크포인트 활성화
+
+**안전장치 예외** (모드 무관): 다중 플랜 선택, 태스크 선택, 의존성 미충족 경고는 pick의 핵심 기능이므로 항상 유지됩니다.
 
 ## When to Use
 
@@ -96,7 +105,9 @@ invocation: user
      1. `complexity_hint`가 `complex`임
      2. 현재 워크트리 밖에서 작업 중 (Step 1에서 확인한 결과 활용)
    - 조건 미충족 시 (complexity_hint가 null/simple/moderate이거나 이미 워크트리 안) 이 단계를 스킵하세요
-   - 추천 시 `AskUserQuestion`으로 안내하세요:
+   **자동 모드 (기본)**: 1줄 경고만 표시하고 진행 — `"⚠ Complex 태스크 감지. 워크트리 격리 권장. /vs-worktree 사용 가능."`
+
+   **interactive 모드**: `AskUserQuestion`으로 안내하세요:
      - question: "이 태스크는 complex 복잡도로, 여러 파일/모듈을 변경할 수 있습니다. 격리 환경을 강력히 권장합니다. 워크트리를 생성하시겠습니까?"
      - header: "Complex 태스크"
      - multiSelect: false
