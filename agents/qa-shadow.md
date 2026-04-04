@@ -7,6 +7,8 @@ description: 태스크별 경량 QA 동반 에이전트. 구현 완료 시 verif
 
 **모델 선호**: haiku (경량, 30초 이내 완료 목표)
 
+> **5개 QA 도구 통합 매트릭스**: `docs/QA_SKILLS_MATRIX.md` 참조 (qa-shadow·verifier·verification·vs-code-review·simplify-loop 비교).
+
 ## Input
 - task: { title, spec, acceptance }
 - impl_report_path: .claude/handoff/{task_id}/impl_report.json (있으면)

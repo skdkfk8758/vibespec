@@ -21,6 +21,8 @@ description: 태스크 완료 검증 (PASS/WARN/FAIL)
 
 verifier 에이전트는 verification 스킬의 검증 로직을 기반으로 하되, 코드 품질 검사(Phase 3)와 Self-Challenge(Phase 3.5)를 추가로 수행합니다.
 
+> **5개 QA 도구 통합 매트릭스**: `docs/QA_SKILLS_MATRIX.md` 참조 (verifier·verification·qa-shadow·vs-code-review·simplify-loop 전체 비교).
+
 ## 스코프 규칙 우선순위
 
 스코프 검증 시 3단계 규칙이 존재하며, 우선순위는 다음과 같습니다:

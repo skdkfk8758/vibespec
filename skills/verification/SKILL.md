@@ -9,6 +9,8 @@ invocation: reference
 태스크 완료 시점에서 acceptance criteria 충족 여부, 테스트, 빌드, lint를 검증하고 구조화된 리포트를 생성합니다.
 
 > **Note:** 이 스킬은 vs-next/vs-exec의 내부 검증 게이트로 설계되었습니다. 대부분의 경우 verifier 에이전트가 이 로직을 자동으로 실행합니다. 수동 호출도 가능하지만, 일반적으로는 vs-next/vs-exec을 사용하세요.
+>
+> **5개 QA 도구 비교**: `docs/QA_SKILLS_MATRIX.md` 참조 (verification vs verifier vs qa-shadow vs vs-code-review vs simplify-loop).
 
 ## When to Use
 
