@@ -13,7 +13,7 @@ if ! command -v jq &>/dev/null; then
   exit 2
 fi
 
-COMMAND=$(echo "$CLAUDE_TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+COMMAND=$(echo "${CLAUDE_TOOL_INPUT:-}" | jq -r '.command // empty' 2>/dev/null)
 
 # git 명령이 아니면 통과
 if ! echo "$COMMAND" | grep -qE '^\s*git\b'; then
