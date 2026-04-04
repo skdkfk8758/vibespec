@@ -116,6 +116,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/guardrail-status.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/recap-hint.sh",
+            "timeout": 5
           }
         ]
       }
