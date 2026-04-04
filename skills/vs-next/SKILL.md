@@ -1,12 +1,33 @@
 ---
 name: vs-next
-description: [Core] Start the next pending task. (다음 태스크)
+description: "[Core] Start the next pending task. (다음 태스크)"
 invocation: user
+argument-hint: "[--interactive]"
 ---
 
 # Next Task
 
 다음 태스크를 가져와서 작업을 시작합니다.
+
+## Step 0: 모드 판정
+
+`$ARGUMENTS`에 `--interactive` 플래그가 있는지 확인하세요:
+- **포함됨 → interactive 모드**: 아래 Steps의 모든 AskUserQuestion 체크포인트가 활성화됩니다
+- **미포함 → 자동 모드 (기본)**: 각 체크포인트가 기본값을 자동 선택하고 핵심 결정만 질문합니다
+
+**자동 모드 기본값 테이블** (상세: `docs/UX_DEFAULTS.md`):
+| 체크포인트 | 자동 기본값 |
+|---|---|
+| stash 복원 | 현재 브랜치 1개 매칭 시 **자동 복원 + 알림** |
+| 워크트리 확인 | **경고 안내만** (질문 없음) |
+| Complex 재추천 | trigger 미충족 시 스킵 |
+| 구현 방식 선택 | **TDD 자동 판별 테이블 적용** |
+| 마일스톤 QA | **나중에** (첫 도달 시만 1회 알림) |
+| 완료 후 체크포인트 | **다음 태스크 자동** |
+
+**안전장치 예외** (모드 무관하게 항상 질문):
+- FAIL verdict 강제 완료 사유 입력
+- 순환 의존성 blocked 처리 확인
 
 ## When to Use
 
@@ -26,7 +47,13 @@ invocation: user
    - 매칭되는 stash가 있으면:
      - stash 메시지에서 브랜치를 파싱하세요 (형식: `vibespec-session:{branch}:{worktree}:{plan}:{task}:{timestamp}`)
      - 현재 브랜치와 일치하는 stash만 복원 대상으로 표시하세요
-     - `AskUserQuestion`으로 복원 여부를 확인하세요:
+
+     **자동 모드 (기본)**:
+     - 매칭 stash가 **정확히 1개**이면: `git stash apply stash@{N}` 자동 실행 → 성공 시 `git stash drop` 정리 → "이전 stash 자동 복원됨" 알림
+     - 충돌 발생 시: 충돌 파일 표시하고 수동 해결 안내 (질문 없음)
+     - 매칭 stash가 **2개 이상**이면: interactive 모드로 전환 (선택 필요)
+
+     **interactive 모드**: `AskUserQuestion`으로 복원 여부를 확인하세요:
        - question: "이전 세션의 미커밋 변경사항이 stash에 보존되어 있습니다. 어떻게 처리할까요?"
        - header: "Stash 복원"
        - multiSelect: false
@@ -43,7 +70,10 @@ invocation: user
 2. **워크트리 환경 확인**
    - `git worktree list`로 현재 워크트리 내부인지 확인하세요
    - 워크트리 밖이면 (메인 저장소에서 직접 작업 중):
-     → `AskUserQuestion`으로 확인하세요:
+
+     **자동 모드 (기본)**: 1줄 경고만 표시하고 진행 — `"⚠ 메인 브랜치에서 직접 작업 중. 격리가 필요하면 /vs-worktree를 실행하세요."`
+
+     **interactive 모드**: `AskUserQuestion`으로 확인하세요:
      - question: "메인 브랜치에서 직접 작업하게 됩니다. 격리 환경을 먼저 세팅하시겠습니까?"
      - header: "워크트리 확인"
      - multiSelect: false
@@ -74,7 +104,9 @@ invocation: user
      1. `complexity_hint`가 `complex`임
      2. 현재 워크트리 밖에서 작업 중 (Step 1에서 확인한 결과 활용)
    - 조건 미충족 시 (complexity_hint가 null/simple/moderate이거나 이미 워크트리 안) 이 단계를 스킵하세요
-   - 추천 시 `AskUserQuestion`으로 안내하세요:
+   **자동 모드 (기본)**: 1줄 경고만 표시하고 진행 — `"⚠ Complex 태스크 감지. 워크트리 격리 권장. /vs-worktree로 분리 가능."`
+
+   **interactive 모드**: `AskUserQuestion`으로 안내하세요:
      - question: "이 태스크는 complex 복잡도로, 여러 파일/모듈을 변경할 수 있습니다. 격리 환경을 강력히 권장합니다. 워크트리를 생성하시겠습니까?"
      - header: "Complex 태스크"
      - multiSelect: false
@@ -127,7 +159,9 @@ invocation: user
 9. **구현**
    - Bash 도구로 `vs --json task update <id> in_progress` 명령을 실행하여 status를 in_progress로 변경하세요
 
-   **체크포인트**: `AskUserQuestion`으로 구현 방식을 선택받으세요:
+   **자동 모드 (기본)**: 아래 "TDD 자동 판별 테이블"을 적용하여 자동 결정합니다 (질문 없음). 판별 결과를 1줄 로그로 표시 (예: `"→ TDD 에이전트 디스패치 (판별: .ts 확장자 + 함수 키워드)"`).
+
+   **interactive 모드**: `AskUserQuestion`으로 구현 방식을 선택받으세요:
    - question: "이 태스크를 어떻게 구현할까요?"
    - header: "구현 방식 선택"
    - multiSelect: false
@@ -242,7 +276,11 @@ invocation: user
    5. 해당 플랜의 `qa_overrides`에서 `dismissed_milestones`를 확인하세요:
       - 이미 해당 마일스톤이 dismissed_milestones에 있으면 → 스킵
       - 이미 해당 마일스톤에서 QA Run(`vs --json qa run list --plan <plan_id>`)이 있으면 → 스킵
-   6. 마일스톤에 도달했고 위 조건에 해당하지 않으면 `AskUserQuestion`으로 제안하세요:
+   6. 마일스톤에 도달했고 위 조건에 해당하지 않으면:
+
+      **자동 모드 (기본)**: 1줄 알림만 표시하고 `dismissed_milestones`에 기록 — `"ℹ 진행률 {N}% 도달. QA 필요 시 /vs-qa를 실행하세요."` (질문 없음)
+
+      **interactive 모드**: `AskUserQuestion`으로 제안하세요:
       - question: "플랜 진행률이 {N}%에 도달했습니다. QA를 실행하시겠습니까?"
       - header: "QA 자동 트리거"
       - multiSelect: false
@@ -283,7 +321,11 @@ invocation: user
      → 다음 체크포인트에서 "플랜 검증" 선택지를 **우선 표시**하세요
    - 남은 태스크가 있으면 일반 체크포인트를 표시하세요
 
-   **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+   **자동 모드 (기본)**:
+   - 남은 태스크가 있으면: **자동으로 Step 3부터 반복** (다음 태스크 바로 시작). 1줄 로그: `"→ 다음 태스크로 자동 진행"`
+   - 남은 태스크가 없으면: 1줄 안내만 표시 — `"✓ 모든 태스크 완료. /vs-plan-verify로 플랜 검증 또는 /vs-commit로 커밋하세요."` (질문 없음)
+
+   **interactive 모드**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - question: "다음으로 무엇을 하시겠습니까?"
    - header: "다음 작업"
    - multiSelect: false
