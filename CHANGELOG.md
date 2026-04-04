@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.37.1] - 2026-04-04
+
+### 버그 수정
+- **vs-next**: stash 자동 복원 로직 제거 — v0.37.0에서 추가된 "1개 매칭 시 자동 apply"가 working tree 덮어쓰기 위험으로 CLAUDE.md 정책과 충돌. 자동 모드에서도 stash는 알림만 표시하고 수동 복원 명령을 안내 (850ed28)
+- **policy**: CLAUDE.md에 "git stash 자동 조작 금지 (전체)" 규칙 추가 — 훅뿐 아니라 스킬 본문에서도 apply/pop/drop/push 자동 실행 금지 (850ed28)
+
 ## [0.37.0] - 2026-04-04
 
 ### 새 기능
