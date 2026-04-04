@@ -11,6 +11,12 @@
 
 문서 계층: PRD > POLICY > ARCHITECTURE > DESIGN (충돌 시 상위 우선)
 
+## UX 기본 모드
+
+VibeSpec 스킬은 **자동 진행이 기본값**이다. 모든 `/vs-*` 스킬은 `--interactive` 플래그 없이 호출되면 기본값 옵션을 자동 선택하고 핵심 결정만 질문한다. 상세: `docs/UX_DEFAULTS.md` 참조.
+
+안전장치(파괴적 명령, 강제 완료 사유, 머지 충돌, 백업 덮어쓰기, secrets 감지)는 모드 무관하게 항상 사용자 확인을 받는다.
+
 ## 금지 패턴
 
 - **git stash 자동화 금지**: hooks.json에 git stash를 자동 실행하는 훅(Stop, SessionStart 등)을 등록하지 말 것. 세션 종료 시 자동 stash는 작업 파일 소실을 유발함. worktree dirty check만 허용.
