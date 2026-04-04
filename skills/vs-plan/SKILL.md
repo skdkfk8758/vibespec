@@ -1,10 +1,25 @@
 ---
 name: vs-plan
-description: [Core] Create spec-driven plans. (플래닝, 계획, 스펙)
+description: "[Core] Create spec-driven plans. (플래닝, 계획, 스펙)"
 invocation: user
+argument-hint: "[요구사항] [--interactive]"
 ---
 
 # Spec → Plan 생성 워크플로우
+
+## Step 0: 모드 판정
+
+`$ARGUMENTS`에 `--interactive` 플래그가 있는지 확인하세요:
+- **interactive 모드**: 모든 체크포인트(백로그 중복, 워크트리 추천 등) 활성화
+- **자동 모드 (기본)**: Step 6 통합 체크포인트만 유지, 나머지는 안내만 표시
+
+**자동 모드 기본값**:
+| 체크포인트 | 자동 기본값 |
+|---|---|
+| Step 0g 백로그 중복 감지 | **새로 플래닝** (매칭 시 1줄 알림만) |
+| Step 6 통합 체크포인트 | ✕ 예외 — 항상 질문 (필수 확인) |
+| Step 7a 디자인 점수 | C 이상은 자동 진행, D/F만 질문 |
+| Step 8 워크트리 추천 | **안내만** (질문 없음) |
 
 사용자의 요구사항을 SDD 스펙으로 정리하고 실행 가능한 플랜으로 분해합니다.
 
@@ -447,7 +462,9 @@ invocation: user
    - 이미 워크트리 안에 있을 때 (현재 경로에 `/worktrees/`가 포함)
    - 태스크가 2개 이하이고 단일 모듈 내 변경
 
-   해당 조건을 충족하면 `AskUserQuestion`으로 선택지를 제시하세요:
+   **자동 모드 (기본)**: 1줄 안내만 표시하고 Step 9로 진행 — `"ℹ {추천 근거}. 격리가 필요하면 /vs-worktree 실행 가능."` (질문 없음)
+
+   **interactive 모드**: 조건 충족 시 `AskUserQuestion`으로 선택지를 제시하세요:
    - header: "워크트리 추천"
    - question: "이 플랜은 {추천 근거}. 격리된 워크트리에서 작업하시겠습니까?"
    - multiSelect: false

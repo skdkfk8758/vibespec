@@ -1,10 +1,22 @@
 ---
 name: vs-plan-verify
-description: [QA] Verify completed plan with regression tests.
+description: "[QA] Verify completed plan with regression tests."
 invocation: user
+argument-hint: "[<plan_id>] [--interactive]"
 ---
 
 # Plan Verification
+
+## Step 0: 모드 판정
+
+`$ARGUMENTS`에 `--interactive` 플래그가 있는지 확인하세요:
+- **interactive 모드**: PASS/WARN 후속 체크포인트가 활성화됩니다
+- **자동 모드 (기본)**: PASS 시 "안내만 표시" (질문 없음), WARN 시에도 안내 + 다음 단계 제안만
+
+**안전장치 예외** (모드 무관):
+- FAIL 시 "실패 항목 수정/강제 완료/유지" 선택 — 항상 질문
+- 강제 완료 사유 입력 — 항상 질문
+- 다중 활성 플랜 선택 — 항상 질문
 
 플랜의 모든 태스크 완료 후, 전체 구현의 완성도를 검증합니다.
 개별 태스크 검증(`verification`)이 "나무"를 본다면, 이 스킬은 "숲"을 봅니다.
@@ -202,7 +214,10 @@ invocation: user
 7. **판정별 후속 처리**
 
    **PASS:**
-   → **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+
+   **자동 모드 (기본)**: 1줄 안내만 표시 — `"✓ PASS. vs plan complete <plan_id>로 완료 처리하거나 /vs-merge로 머지하세요."` (질문 없음)
+
+   **interactive 모드**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - "플랜 검증이 통과했습니다. 어떻게 진행할까요?"
    - 선택지:
      - "플랜 완료" → `vs plan complete <plan_id> --json`을 Bash 도구로 실행
@@ -211,7 +226,10 @@ invocation: user
 
    **WARN:**
    → 리포트를 사용자에게 보여주세요
-   → **체크포인트**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
+
+   **자동 모드 (기본)**: 1줄 안내 표시 — `"⚠ WARN {N}건. 세부는 리포트 참조. 주의사항 수용 시 vs plan complete --has-concerns 사용."` (질문 없음)
+
+   **interactive 모드**: `AskUserQuestion`으로 다음 선택지를 제시하세요:
    - "검증에 주의 사항이 있습니다. 어떻게 진행할까요?"
    - 선택지:
      - "플랜 완료" → `vs plan complete <plan_id> --json`을 Bash 도구로 실행
