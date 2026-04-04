@@ -1,48 +1,13 @@
 ---
 name: adhoc
-description: [Util] Use when making quick fixes without spec/plan workflow.
+description: "[Util] Quick fixes without spec/plan workflow (see vs-ideate HARD-GATE for criteria)."
 invocation: user
 ---
 
 # Ad-hoc 즉시 처리
 
-스펙/플랜 워크플로우 없이 간단한 수정을 즉시 처리합니다.
+스펙/플랜 워크플로우 없이 단순 버그·오타·설정·의존성·스타일링 수정을 즉시 처리합니다.
 
-## HARD-GATE와의 관계
+**판단 기준**: `skills/vs-ideate/SKILL.md`의 `<HARD-GATE>` 블록 내 "HARD-GATE 예외 판단 표" 참조.
 
-이 스킬은 vs-ideate의 HARD-GATE 예외 범위와 정확히 일치합니다:
-
-| 작업 유형 | adhoc 사용 | vs-ideate/vs-plan 사용 |
-|----------|-----------|---------------------|
-| 버그 수정 | O | X |
-| 오타 교정 | O | X |
-| 설정 변경 | O | X |
-| 의존성 업데이트 | O | X |
-| 단일 파일 스타일링 수정 | O | X |
-| **기능 추가** (아무리 간단해도) | **X** | **O** |
-| **새 API/모듈 도입** | **X** | **O** |
-| **설계 결정이 필요한 변경** | **X** | **O** |
-
-## When to Use
-
-**사용하세요:**
-- 단순 버그 수정 (원인이 명확하고 수정 범위가 1-2개 파일)
-- 오타, 문서 수정
-- 설정 파일 변경 (config, env, package.json 등)
-- 의존성 버전 업데이트
-- 기존 UI의 사소한 스타일링 수정
-
-**사용하지 마세요 (vs-ideate/vs-plan 사용):**
-- 새로운 기능 추가 (아무리 간단해도)
-- 3개 이상 파일 변경이 예상되는 작업
-- 설계 결정이 필요한 리팩토링
-- 새 API, 데이터 모델, 모듈 도입
-
-## Process
-
-1. 문제/요청을 파악합니다
-2. 관련 코드를 읽고 수정합니다
-3. 테스트가 있으면 실행하여 회귀 없음을 확인합니다
-4. 변경 사항을 커밋합니다
-
-별도의 스펙, 플랜, 검증 게이트는 적용하지 않습니다.
+**세션 라벨**: adhoc 세션은 `.claude/session-reports/YYYY-MM-DD-adhoc.md`로 기록되며, vs-wrap·session-analyst가 `plan_status: "adhoc"`으로 분류합니다.
