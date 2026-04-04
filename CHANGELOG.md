@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.37.0] - 2026-04-04
+
+### 새 기능
+- **hooks**: recap-hint SessionStart 훅 추가 — 직전 머지 리포트 있으면 1줄 안내 주입 (fe5cde2)
+- **skills**: /vs-plan-close 번들 스킬 신설 — plan-verify → design-review → acceptance 순차 실행 (65b2437)
+
+### 리팩토링
+- **vs-next**: --interactive 플래그 + 자동 진행 기본 모드 — 체크포인트 6개 → 2~3개로 축소 (6e2f1ab)
+- **vs-commit**: --interactive/--from-chain 플래그 + 자동 진행 — Phase 7 체이닝 스킵 구현 (bffae3c)
+- **skills**: vs-plan-verify/plan/exec 후속 체크포인트 통합 — 세션 레벨 단일 의사결정 (cbeaa01)
+- **vs-pick**: Complex 재추천 조건 강화 + 자동 진행 기본화 (da45048)
+- **ideate**: adhoc 판단 기준을 vs-ideate HARD-GATE로 통합 — adhoc shim으로 축소 (abc3042)
+
+### 문서
+- **ux**: UX 체크포인트 감사 + 회귀 검증 리포트 — AskUserQuestion 호출 수 41→12회(-70.7%) (88947a1)
+- **ux**: UX 기본 모드 원칙 문서 + CLAUDE.md 규칙 추가 — 자동 진행 기본, --interactive opt-in (6d48fc3)
+- **qa**: QA 스킬 역할 매트릭스 추가 + cross-link — 5개 도구 비교 레퍼런스 (6667fb3)
+- **schedule**: 주기 작업 /schedule 등록 가이드 추가 — vs-gc·vs-security·self-improve-review 주기화 (2221da1)
+
 ## [0.36.0] - 2026-04-03
 
 ### 새 기능

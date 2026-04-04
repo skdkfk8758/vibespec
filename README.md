@@ -61,6 +61,7 @@ Skills, Hooks가 자동으로 설치됩니다.
 | `/vs-merge` | 워크트리 브랜치를 squash-merge로 메인 브랜치에 병합 |
 | `/vs-release` | Conventional Commits 기반 릴리즈 자동화 |
 | `/vs-plan-verify` | 플랜 전체 구현 완성도 검증 (태스크 상태 + 회귀 테스트 + 성공 기준) |
+| `/vs-plan-close` | 플랜 종결 검증 번들 — plan-verify → design-review → acceptance 순차 실행 |
 | `/vs-update` | 플러그인을 최신 버전으로 업데이트 |
 | `/error-kb` | 에러 지식 베이스 검색/기록 — 과거 해결책 조회, 디버깅 후 자동 기록 |
 | `/self-improve` | fix 커밋 분석 → Error KB 기록 → 반복 패턴 규칙 승격 |
